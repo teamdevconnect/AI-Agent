@@ -1,0 +1,70 @@
+/* Minimal highlight.js token theme wired to our design tokens so code blocks
+   adapt to light/dark automatically instead of shipping a fixed hljs theme. */
+
+.hljs {
+  color: var(--color-text-primary);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag {
+  color: #c792ea;
+}
+
+.hljs-string,
+.hljs-addition,
+.hljs-attr {
+  color: #9ccc65;
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+  color: #f78c6c;
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: #82aaff;
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #ffcb6b;
+}
+
+.hljs-built_in,
+.hljs-builtin-name {
+  color: #89ddff;
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attribute {
+  color: #f07178;
+}
+
+.hljs-tag {
+  color: var(--color-text-secondary);
+}
+
+.hljs-deletion {
+  color: var(--color-danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}

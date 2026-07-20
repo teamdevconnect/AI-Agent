@@ -1,0 +1,11 @@
+.logo {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-primary);
+}
+
+.logo svg {
+  width: 132px;
+  height: auto;
+  display: block;
+}

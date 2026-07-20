@@ -1,0 +1,102 @@
+.page {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+  overflow: hidden;
+  background: var(--color-bg-app);
+}
+
+.blobA,
+.blobB,
+.blobC {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.blobA {
+  width: 480px;
+  height: 480px;
+  top: -160px;
+  left: -120px;
+  background: var(--brand-accent-primary);
+  animation: float-a 16s ease-in-out infinite;
+}
+
+.blobB {
+  width: 400px;
+  height: 400px;
+  bottom: -140px;
+  right: -100px;
+  background: var(--brand-accent-secondary);
+  animation: float-b 18s ease-in-out infinite;
+}
+
+.blobC {
+  width: 320px;
+  height: 320px;
+  top: 40%;
+  left: 60%;
+  background: var(--brand-accent-primary);
+  opacity: 0.2;
+  animation: float-a 22s ease-in-out infinite reverse;
+}
+
+@keyframes float-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, 30px) scale(1.08); }
+}
+
+@keyframes float-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-30px, -40px) scale(1.1); }
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+}
+
+.card {
+  background: color-mix(in srgb, var(--color-bg-surface) 82%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-8);
+}
+
+.logoRow {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--space-6);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: 800;
+  text-align: center;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  text-align: center;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blobA, .blobB, .blobC {
+    animation: none;
+  }
+}

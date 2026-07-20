@@ -1,0 +1,60 @@
+.track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 40px;
+  height: 22px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-surface-elevated);
+  border: 1px solid var(--color-border-strong);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.track:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checked {
+  background: var(--gradient-accent);
+  border-color: transparent;
+}
+
+.thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.checked .thumb {
+  transform: translateX(18px);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.rowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rowLabel {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.rowDescription {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}

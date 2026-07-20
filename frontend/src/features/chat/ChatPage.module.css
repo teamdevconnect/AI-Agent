@@ -1,0 +1,127 @@
+.page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.conversationColumn {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.messageArea {
+  flex: 1;
+  min-height: 0;
+}
+
+.inputArea {
+  flex-shrink: 0;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.welcomeTitle {
+  font-size: var(--text-3xl);
+  font-weight: 800;
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.welcomeSubtitle {
+  color: var(--color-text-muted);
+  font-size: var(--text-md);
+  max-width: 480px;
+}
+
+.suggestionsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 640px;
+}
+
+@media (max-width: 640px) {
+  .suggestionsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.suggestionCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.suggestionCard:hover {
+  border-color: var(--color-accent);
+  background: var(--color-bg-hover);
+}
+
+.suggestionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.suggestionTitle {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 2px;
+}
+
+.messagesInner {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.scrollToBottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--space-4);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.scrollToBottomButton {
+  pointer-events: all;
+  box-shadow: var(--shadow-md);
+}
