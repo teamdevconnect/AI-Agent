@@ -1,0 +1,51 @@
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { Model } from 'mongoose';
+import { RedisCacheService } from '../common/redis/redis-cache.service';
+import { AgentRoleDocument } from '../agent-roles/schemas/agent-role.schema';
+import { ConversationDocument } from './schemas/conversation.schema';
+import { JwtPayload } from '../auth/jwt-payload.interface';
+export interface StreamEvent {
+    type: 'delta' | 'progress' | 'reasoning' | 'plan' | 'agent_done' | 'reflecting';
+    text?: string;
+    tool?: string;
+    agents?: string[];
+    agent?: string;
+    reason?: string;
+}
+export declare class ChatService {
+    private conversationModel;
+    private agentRoleModel;
+    private http;
+    private config;
+    private cache;
+    private jwt;
+    private readonly logger;
+    private readonly agentUrl;
+    constructor(conversationModel: Model<ConversationDocument>, agentRoleModel: Model<AgentRoleDocument>, http: HttpService, config: ConfigService, cache: RedisCacheService, jwt: JwtService);
+    listAgents(caller?: JwtPayload): Promise<import("./agents").ChatAgent[]>;
+    listConversations(userId: string): Promise<{}>;
+    getConversation(userId: string, conversationId: string): Promise<{} | null>;
+    sendMessage(userId: string, userJwt: string, message: string, conversationId?: string, agentId?: string): Promise<{
+        conversationId: string;
+        reply: string;
+        toolsUsed: string[];
+    }>;
+    sendMessageStreaming(userId: string, userJwt: string, message: string, conversationId: string | undefined, onEvent: (event: StreamEvent) => void, agentId?: string, onConversationId?: (id: string) => void): Promise<{
+        conversationId: string;
+        reply: string;
+        toolsUsed: string[];
+    }>;
+    generateSystemConversation(userId: string, agentId: string, promptText: string, title: string): Promise<{
+        conversationId: string;
+        reply: string;
+        toolsUsed: string[];
+    }>;
+    private getOrCreateConversation;
+    private resolveConversationAgent;
+    private finishTurn;
+    private callAgent;
+    private callAgentStreaming;
+    cancelAgent(conversationId: string, userJwt: string): Promise<void>;
+}

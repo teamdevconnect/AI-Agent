@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+<<<<<<< HEAD
+=======
+import { useNotificationsStore } from '@/stores/notificationsStore';
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import styles from './AppLayout.module.css';
@@ -14,6 +18,18 @@ export function AppLayout() {
     if (!isMobile) setMobileSidebarOpen(false);
   }, [isMobile]);
 
+<<<<<<< HEAD
+=======
+  // Fetches existing notifications and subscribes to live push as soon as
+  // any authenticated page mounts — not just when the user opens the
+  // Notifications page — so the TopBar's unread dot (see TopBar.tsx) is
+  // accurate app-wide, and proactive AI notifications (app.workflows in
+  // python-agent) arrive live without a manual refresh.
+  useEffect(() => {
+    useNotificationsStore.getState().init();
+  }, []);
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   if (!isMobile) {
     return (
       <div className={styles.shell}>

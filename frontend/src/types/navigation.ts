@@ -6,4 +6,9 @@ export interface NavItem {
   path: string;
   icon: IconType;
   badge?: number;
+<<<<<<< HEAD
+=======
+  // Only agent_user ever populates this — admin/legacy user roles always see everything.
+  hideForRoles?: string[];
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 }

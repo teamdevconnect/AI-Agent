@@ -1,0 +1,1 @@
+import{j as n,J as i}from"./index-4Phk9MSe.js";const _="_card_1e3jk_1",o="_padded_1e3jk_8",j="_interactive_1e3jk_12",l="_glass_1e3jk_23",s={card:_,padded:o,interactive:j,glass:l};function v({padded:a=!0,interactive:e,glass:t,className:d,children:c,...r}){return n.jsx("div",{className:i(s.card,a&&s.padded,e&&s.interactive,t&&s.glass,d),...r,children:c})}export{v as C};

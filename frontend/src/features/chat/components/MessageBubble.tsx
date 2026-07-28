@@ -10,6 +10,10 @@ import { formatMessageTime } from '@/utils/date';
 import { useAuthStore } from '@/stores/authStore';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@/types';
+<<<<<<< HEAD
+=======
+import { toolLabel } from '../toolLabels';
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 import { CodeBlock } from './CodeBlock';
 import styles from './MessageBubble.module.css';
 
@@ -30,6 +34,10 @@ export function MessageBubble({ message, isLast }: MessageBubbleProps) {
 
   const isUser = message.role === 'user';
   const showCursor = message.status === 'streaming' && isLast;
+<<<<<<< HEAD
+=======
+  const isThinking = message.status === 'streaming' && !message.content;
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -79,6 +87,18 @@ export function MessageBubble({ message, isLast }: MessageBubbleProps) {
               </Button>
             </div>
           </div>
+<<<<<<< HEAD
+=======
+        ) : isThinking ? (
+          <div className={clsx(styles.bubble, styles.bubbleAssistant, styles.bubbleThinking)}>
+            <span className={styles.thinkingDots}>
+              <span className={styles.thinkingDot} />
+              <span className={styles.thinkingDot} />
+              <span className={styles.thinkingDot} />
+            </span>
+            <span className={styles.thinkingLabel}>{message.statusText ?? toolLabel(message.progressTool)}</span>
+          </div>
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
         ) : (
           <div className={clsx(styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant)}>
             <ReactMarkdown

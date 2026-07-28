@@ -2,9 +2,29 @@ from urllib.parse import urlparse
 
 import requests
 
+<<<<<<< HEAD
 from app.config import settings
 from app.memory import integration_store
 
+=======
+from app.cache import cache
+from app.config import settings
+from app.memory import integration_store
+
+# Known-read endpoints, safe to cache. Deliberately excludes /contact/upsert
+# (the only write path through this module) by simply not listing it here —
+# no special-casing needed at any call site.
+_CACHEABLE_PATHS = {
+    "/contact/search/contact",
+    "/contact/search/contact-by-ids",
+    "/deal/getDealsByBusinessId",
+    "/note/getNotes",
+    "/account/fetch-account-list",
+    "/quotes/getQuotes",
+    "/tag/fetchTagList",
+}
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 def resolve_credentials() -> tuple[str, str]:
     """Returns (api_root, api_key) for the CRM connected via the frontend's
@@ -27,13 +47,36 @@ def post_json(api_root: str, api_key: str, path: str, payload: dict):
     """Like post(), but returns the parsed JSON body and raises on failure
     instead of returning a human-readable error string — for callers (e.g.
     the RAG sync job) that need structured data rather than LLM-ready text.
+<<<<<<< HEAD
     """
+=======
+
+    Read-only endpoints (see _CACHEABLE_PATHS) are cached briefly — CRM data
+    is shared/business-wide (not per-user), so this speeds up both repeated
+    lookups within one agentic turn and lookups across different users.
+    """
+    cacheable = path in _CACHEABLE_PATHS
+    key = cache.cache_key(f"crm:{api_root}", path, payload) if cacheable else None
+    if key is not None:
+        hit = cache.get_json(key)
+        if hit is not None:
+            return hit
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     url = f"{api_root.rstrip('/')}{path}"
     # ProspectConnect's auth docs specify the raw key in Authorization,
     # with no "Bearer " scheme prefix.
     response = requests.post(url, headers={"Authorization": api_key}, json=payload, timeout=15)
     response.raise_for_status()
+<<<<<<< HEAD
     return response.json()
+=======
+    body = response.json()
+
+    if key is not None:
+        cache.set_json(key, body, settings.crm_cache_ttl_seconds)
+    return body
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 
 def post(api_root: str, api_key: str, path: str, payload: dict) -> str:

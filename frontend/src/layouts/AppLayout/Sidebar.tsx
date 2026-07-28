@@ -24,6 +24,10 @@ import { useChatStore, type ConversationFilter } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from '@/constants/navigation';
 import { ROUTES } from '@/constants/routes';
+<<<<<<< HEAD
+=======
+import { hasRole } from '@/utils/roles';
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 import { getConversationGroup, CONVERSATION_GROUP_LABELS, type ConversationGroupKey } from '@/utils/date';
 import type { Conversation } from '@/types';
 import styles from './Sidebar.module.css';
@@ -88,6 +92,12 @@ export function Sidebar() {
     return groups;
   }, [filtered]);
 
+<<<<<<< HEAD
+=======
+  const visiblePrimaryNav = PRIMARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
+  const visibleSecondaryNav = SECONDARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   const handleNewChat = () => {
     startNewConversation();
     navigate(ROUTES.chat);
@@ -236,7 +246,11 @@ export function Sidebar() {
       </div>
 
       <nav className={styles.navSection}>
+<<<<<<< HEAD
         {PRIMARY_NAV_ITEMS.map((item) => (
+=======
+        {visiblePrimaryNav.map((item) => (
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
           <NavLink
             key={item.id}
             to={item.path}
@@ -246,7 +260,11 @@ export function Sidebar() {
             {!collapsed && item.label}
           </NavLink>
         ))}
+<<<<<<< HEAD
         {SECONDARY_NAV_ITEMS.map((item) => (
+=======
+        {visibleSecondaryNav.map((item) => (
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
           <NavLink
             key={item.id}
             to={item.path}

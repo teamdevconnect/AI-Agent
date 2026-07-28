@@ -6,10 +6,18 @@ import { FiPaperclip, FiImage, FiMic, FiSend, FiSquare, FiX, FiFile } from 'reac
 import { IconButton, Tooltip } from '@/components/ui';
 import { useAutosizeTextarea } from '@/hooks/useAutosizeTextarea';
 import { useChatStore } from '@/stores/chatStore';
+<<<<<<< HEAD
 import { mockAgents, mockSlashCommands } from '@/services/mock/fixtures/chat';
 import { formatBytes } from '@/utils/format';
 import { generateId } from '@/utils/id';
 import type { MessageAttachment } from '@/types';
+=======
+import { chatService } from '@/services/chatService';
+import { mockSlashCommands } from '@/services/mock/fixtures/chat';
+import { formatBytes } from '@/utils/format';
+import { generateId } from '@/utils/id';
+import type { ChatAgent, MessageAttachment } from '@/types';
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 import styles from './ChatInput.module.css';
 
 type Popup = { type: 'slash'; query: string } | { type: 'mention'; query: string } | null;
@@ -27,6 +35,11 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
   const [popup, setPopup] = useState<Popup>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [recording, setRecording] = useState(false);
+<<<<<<< HEAD
+=======
+  const [agents, setAgents] = useState<ChatAgent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +64,22 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
 
   const isStreamingCurrent = streamingConversationId !== null && streamingConversationId === activeConversationId;
 
+<<<<<<< HEAD
+=======
+  useEffect(() => {
+    chatService.getAgents().then(setAgents).catch(() => setAgents([]));
+  }, []);
+
+  // A freshly-typed @mention only applies to the next message being
+  // composed — once sent, the conversation's persona becomes sticky
+  // server-side (see chatStore's activeAgentId), so there's nothing left
+  // for this local selection to do until the user starts a new/different
+  // conversation.
+  useEffect(() => {
+    setSelectedAgentId(null);
+  }, [activeConversationId]);
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   const slashMatches = useMemo(() => {
     if (popup?.type !== 'slash') return [];
     return mockSlashCommands.filter((c) => c.command.slice(1).toLowerCase().startsWith(popup.query.toLowerCase()));
@@ -58,8 +87,13 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
 
   const mentionMatches = useMemo(() => {
     if (popup?.type !== 'mention') return [];
+<<<<<<< HEAD
     return mockAgents.filter((a) => a.name.toLowerCase().includes(popup.query.toLowerCase()));
   }, [popup]);
+=======
+    return agents.filter((a) => a.name.toLowerCase().includes(popup.query.toLowerCase()));
+  }, [popup, agents]);
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
   const popupItemCount = popup?.type === 'slash' ? slashMatches.length : popup?.type === 'mention' ? mentionMatches.length : 0;
 
@@ -94,11 +128,23 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
     requestAnimationFrame(() => el.focus());
   };
 
+<<<<<<< HEAD
+=======
+  const selectAgentMention = (agent: ChatAgent) => {
+    insertToken(`@${agent.name.replace(/\s+/g, '')}`);
+    setSelectedAgentId(agent.id);
+  };
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   const handleSubmit = () => {
     if (isStreamingCurrent) return;
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
+<<<<<<< HEAD
     void sendMessage(trimmed || 'Please review the attached file(s).');
+=======
+    void sendMessage(trimmed || 'Please review the attached file(s).', selectedAgentId ?? undefined);
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     setText('');
     setAttachments([]);
     setPopup(null);
@@ -120,7 +166,11 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
         event.preventDefault();
         const safeIndex = Math.min(activeIndex, popupItemCount - 1);
         if (popup.type === 'slash') insertToken(slashMatches[safeIndex].command);
+<<<<<<< HEAD
         else insertToken(`@${mentionMatches[safeIndex].name.replace(/\s+/g, '')}`);
+=======
+        else selectAgentMention(mentionMatches[safeIndex]);
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
         return;
       }
       if (event.key === 'Escape') {
@@ -197,7 +247,11 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
                 key={agent.id}
                 type="button"
                 className={clsx(styles.popupItem, index === activeIndex && styles.popupItemActive)}
+<<<<<<< HEAD
                 onClick={() => insertToken(`@${agent.name.replace(/\s+/g, '')}`)}
+=======
+                onClick={() => selectAgentMention(agent)}
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
                 onMouseEnter={() => setActiveIndex(index)}
               >
                 <span className={styles.popupItemIcon} style={{ background: agent.avatarColor, color: '#fff' }}>

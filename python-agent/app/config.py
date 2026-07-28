@@ -10,9 +10,33 @@ class Settings:
 
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     anthropic_model: str = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+<<<<<<< HEAD
 
     mongo_uri: str = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
     qdrant_url: str = os.environ.get("QDRANT_URL", "http://localhost:6333")
+=======
+    # Cheaper/faster model for routing decisions (classify_request, critique_response) —
+    # both are one-shot forced-tool-choice judgments, not final-answer generation, so they
+    # don't need the full model. Defaults to anthropic_model (no behavior change) until a
+    # Haiku-tier model id your API key has access to is set here.
+    anthropic_routing_model: str = os.environ.get("ANTHROPIC_ROUTING_MODEL", anthropic_model)
+
+    # Fast path for tool-free general-knowledge/coding/casual requests
+    # (see app.agent.groq_client) — empty string disables it, falling back
+    # to the Anthropic-only path unchanged.
+    groq_api_key: str = os.environ.get("GROQ_API_KEY", "")
+    groq_model: str = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+    mongo_uri: str = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+    # Only used by app.notifications.client to push proactive notifications
+    # (see app.workflows.definitions) — every other backend<->agent call goes
+    # the other direction (NestJS calls python-agent), this is the one
+    # exception, needed because only the backend owns the Socket.IO
+    # connection the frontend listens on.
+    backend_url: str = os.environ.get("BACKEND_URL", "http://localhost:3000")
+    qdrant_url: str = os.environ.get("QDRANT_URL", "http://localhost:6333")
+    qdrant_api_key: str = os.environ.get("QDRANT_API_KEY", "")
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     qdrant_collection: str = os.environ.get("QDRANT_COLLECTION", "documents")
     redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
@@ -23,6 +47,12 @@ class Settings:
     rag_sync_interval_minutes: int = int(os.environ.get("RAG_SYNC_INTERVAL_MINUTES", "20"))
     rag_sync_max_pages: int = int(os.environ.get("RAG_SYNC_MAX_PAGES", "40"))
 
+<<<<<<< HEAD
+=======
+    crm_cache_ttl_seconds: int = int(os.environ.get("CRM_CACHE_TTL_SECONDS", "90"))
+    outlook_cache_ttl_seconds: int = int(os.environ.get("OUTLOOK_CACHE_TTL_SECONDS", "45"))
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     crm_base_url: str = os.environ.get("CRM_BASE_URL", "")
     crm_api_key: str = os.environ.get("CRM_API_KEY", "")
 

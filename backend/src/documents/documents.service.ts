@@ -4,7 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 
+<<<<<<< HEAD
 interface IngestResult {
+=======
+export interface IngestResult {
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   document_id: string;
   chunks: number;
   status: string;

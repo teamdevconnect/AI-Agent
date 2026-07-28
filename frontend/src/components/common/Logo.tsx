@@ -8,6 +8,7 @@ export interface LogoProps {
 export function Logo({ className }: LogoProps) {
   return (
     <span className={clsx(styles.logo, className)}>
+<<<<<<< HEAD
       <svg viewBox="0 0 150 32" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HaiVE AI">
         <polygon points="16,1 28.5,8.5 28.5,23.5 16,31 3.5,23.5 3.5,8.5" fill="var(--brand-accent-primary)" />
         <polygon
@@ -24,3 +25,10 @@ export function Logo({ className }: LogoProps) {
     </span>
   );
 }
+=======
+      <img src="/haive-logo.png" alt="" className={styles.mark} />
+      <span className={styles.wordmark}>HaiVE</span>
+    </span>
+  );
+}
+>>>>>>> 6a60a8648 (Initial AI Agent source code)

@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+<<<<<<< HEAD
 # Node
 node_modules/
 dist/
@@ -29,3 +31,27 @@ Thumbs.db
 # Model / vector caches
 .cache/
 models/
+=======
+node_modules
+>>>>>>> 8acdff256 (Initial AI Agent source code)
+=======
+node_modules
+>>>>>>> 8acdff256 (Initial AI Agent source code)
+
+# Python
+.venv/
+python-agent/.venv/
+__pycache__/
+*.pyc
+
+# MongoDB
+.mongodata/
+
+# Node
+node_modules/
+
+# Environment
+.env
+
+# Logs
+*.log

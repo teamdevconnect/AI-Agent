@@ -9,11 +9,40 @@ langchain-text-splitters==0.3.4
 langgraph==0.2.60
 anthropic>=0.40.0
 
+<<<<<<< HEAD
 qdrant-client==1.12.1
 sentence-transformers==3.3.1
 
 pymongo==4.10.1
 apscheduler==3.10.4
+=======
+# Used only for the scheduled morning/EOD report crew (app/agent/crew_reports.py) —
+# the live chat loop above stays on langgraph/anthropic, untouched. Pinned to 0.130.0
+# deliberately: newer 1.x releases pull in mcp/textual/kubernetes extras that force an
+# incompatible starlette version and break this FastAPI app (verified during integration —
+# `pip install crewai` alone downgrades starlette to 1.3.1, violating fastapi==0.115.6's
+# starlette<0.42 requirement). chromadb/onnxruntime below are crewai's own hard
+# dependencies (its built-in memory backend), not something this app uses directly.
+crewai==0.130.0
+
+qdrant-client==1.12.1
+sentence-transformers==3.3.1
+jsonschema>=4.20.0
+rank_bm25==0.2.2
+
+# MCP server (app/mcp_server.py), exposing the tool registry to external MCP
+# clients. Same starlette-conflict class as crewai above: the mcp package's
+# own sse-starlette dependency wants to pull starlette to 1.3.1 by default
+# (verified during integration), which breaks fastapi==0.115.6's starlette<0.42
+# requirement — pinning both packages explicitly, at versions confirmed
+# compatible with the already-installed starlette==0.41.3, avoids that.
+mcp==1.9.0
+sse-starlette==2.2.1
+
+pymongo==4.10.1
+apscheduler==3.10.4
+redis==8.0.1
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 pypdf==5.1.0
 python-docx==1.1.2
@@ -21,3 +50,7 @@ pandas==2.2.3
 openpyxl==3.1.5
 beautifulsoup4==4.12.3
 requests==2.32.3
+<<<<<<< HEAD
+=======
+groq==1.6.0
+>>>>>>> 6a60a8648 (Initial AI Agent source code)

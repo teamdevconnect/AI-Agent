@@ -1,22 +1,37 @@
 {
   "compilerOptions": {
     "module": "commonjs",
+<<<<<<< HEAD
     "declaration": false,
+=======
+    "declaration": true,
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     "removeComments": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
+<<<<<<< HEAD
     "esModuleInterop": true,
     "target": "ES2022",
+=======
+    "target": "ES2021",
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
+<<<<<<< HEAD
     "noImplicitAny": true,
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true
+=======
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   }
 }

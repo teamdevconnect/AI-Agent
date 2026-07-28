@@ -7,16 +7,26 @@
 :root {
   /* Brand palette (HaiVE) — do not rename */
   --brand-bg-primary: #070707;
+<<<<<<< HEAD
   --brand-bg-secondary: #161616;
+=======
+  --brand-bg-secondary: #1e1e1e;
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   --brand-accent-primary: #ed7e2c;
   --brand-accent-secondary: #a85a1e;
   --brand-surface-light: #e1ded4;
 
   /* ---- Dark theme (default) ---- */
   --color-bg-app: var(--brand-bg-primary);
+<<<<<<< HEAD
   --color-bg-sidebar: #050505;
   --color-bg-surface: var(--brand-bg-secondary);
   --color-bg-surface-elevated: #1f1f1f;
+=======
+  --color-bg-sidebar: #0a0a0a;
+  --color-bg-surface: var(--brand-bg-secondary);
+  --color-bg-surface-elevated: #292929;
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   --color-bg-hover: rgba(237, 126, 44, 0.1);
   --color-bg-active: rgba(237, 126, 44, 0.18);
   --color-bg-input: #111111;

@@ -1,0 +1,16 @@
+import { Document, Types } from 'mongoose';
+export type IntegrationCredentialDocument = IntegrationCredential & Document<Types.ObjectId>;
+export declare class IntegrationCredential {
+    provider: string;
+    apiKey: string;
+    baseUrl?: string;
+}
+export declare const IntegrationCredentialSchema: import("mongoose").Schema<IntegrationCredential, import("mongoose").Model<IntegrationCredential, any, any, any, Document<unknown, any, IntegrationCredential, any, {}> & IntegrationCredential & {
+    _id: Types.ObjectId;
+} & {
+    __v: number;
+}, any>, {}, {}, {}, {}, import("mongoose").DefaultSchemaOptions, IntegrationCredential, Document<unknown, {}, import("mongoose").FlatRecord<IntegrationCredential>, {}, import("mongoose").DefaultSchemaOptions> & import("mongoose").FlatRecord<IntegrationCredential> & {
+    _id: Types.ObjectId;
+} & {
+    __v: number;
+}>;

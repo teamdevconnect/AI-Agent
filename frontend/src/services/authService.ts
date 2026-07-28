@@ -21,6 +21,10 @@ interface BackendUserProfile {
   email: string;
   name: string;
   roles: string[];
+<<<<<<< HEAD
+=======
+  assignedAgentId?: string;
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 }
 
 function toUser(profile: BackendUserProfile): User {
@@ -30,7 +34,12 @@ function toUser(profile: BackendUserProfile): User {
     email: profile.email,
     firstName: firstName || profile.email,
     lastName: rest.join(' '),
+<<<<<<< HEAD
     role: (profile.roles?.[0] as User['role']) ?? 'member',
+=======
+    roles: profile.roles ?? [],
+    assignedAgentId: profile.assignedAgentId,
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     language: 'en-US',
     createdAt: new Date().toISOString(),

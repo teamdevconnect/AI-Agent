@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+from app.rag import compression
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 from app.rag.retriever import retrieve
 
 SPEC = {
@@ -21,4 +25,16 @@ def run(tool_input: dict, context: dict) -> str:
     hits = retrieve(query, user_id=context.get("user_id", ""), top_k=5)
     if not hits:
         return "No relevant documents found."
+<<<<<<< HEAD
     return "\n\n".join(f"[{h['filename']}] {h['text']}" for h in hits)
+=======
+
+    # [n] markers are a citation convention (see app.agent.llm_client's
+    # SYSTEM_PROMPT) — the model is instructed to keep them next to the
+    # claims they support in its final answer.
+    lines = [
+        f"[{i}] ({h.get('filename')}) {compression.compress(query, h.get('text', ''))}"
+        for i, h in enumerate(hits, start=1)
+    ]
+    return "\n\n".join(lines)
+>>>>>>> 6a60a8648 (Initial AI Agent source code)

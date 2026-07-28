@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 SYSTEM_PROMPT = """You are an enterprise AI assistant with access to internal tools: \
 CRM, Outlook mail, calendar, WhatsApp, email, an employee directory, the user's saved \
 notes/preferences, the user's uploaded documents, and an indexed search over the \
@@ -23,3 +24,28 @@ def call_llm(input_items: list[dict], provider: str = "anthropic") -> tuple[list
     from app.agent import anthropic_client  # lazy: avoids a circular import (anthropic_client imports SYSTEM_PROMPT from here)
 
     return anthropic_client.call(input_items), "anthropic"
+=======
+from app.prompts.registry import render
+
+# Sourced from the centralized prompt registry (app.prompts.definitions) —
+# same content as before, just no longer defined inline here. Kept as a
+# module-level constant since app.agent.anthropic_client, app.agent.crew_reports,
+# and others already import SYSTEM_PROMPT by name; only its definition moved.
+SYSTEM_PROMPT = render("base_system")
+
+
+def call_llm(
+    input_items: list[dict],
+    provider: str = "anthropic",
+    on_event=None,
+    system_prompt: str | None = None,
+    tools: list[dict] | None = None,
+    cancel_event=None,
+) -> tuple[list[dict], str]:
+    """Returns (output_items, provider_actually_used). This app is Anthropic-only."""
+    from app.agent import anthropic_client  # lazy: avoids a circular import (anthropic_client imports SYSTEM_PROMPT from here)
+
+    return anthropic_client.call(
+        input_items, on_event=on_event, system_prompt=system_prompt, tools=tools, cancel_event=cancel_event
+    ), "anthropic"
+>>>>>>> 6a60a8648 (Initial AI Agent source code)

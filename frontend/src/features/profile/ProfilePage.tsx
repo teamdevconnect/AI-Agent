@@ -31,7 +31,11 @@ export function ProfilePage() {
           </div>
           <div className={styles.email}>{user.email}</div>
         </div>
+<<<<<<< HEAD
         <Badge variant="accent">{user.role}</Badge>
+=======
+        <Badge variant="accent">{user.roles.join(', ')}</Badge>
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
       </Card>
 
       <div className={styles.quickLinks}>

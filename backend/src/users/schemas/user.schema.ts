@@ -17,6 +17,17 @@ export class User {
   @Prop({ type: [String], default: ['user'] })
   roles: string[];
 
+<<<<<<< HEAD
+=======
+  // agent_id/slug (CHAT_AGENTS or AgentRole.slug); only meaningful when
+  // roles includes 'agent_user' — see users.service.ts's createByAdmin.
+  @Prop()
+  assignedAgentId?: string;
+
+  @Prop({ default: true })
+  active: boolean;
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   @Prop({ type: Object, default: {} })
   preferences: Record<string, unknown>;
 }

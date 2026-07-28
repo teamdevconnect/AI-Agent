@@ -7,13 +7,21 @@ import { FiFileText, FiMail, FiBarChart2, FiCode } from 'react-icons/fi';
 import { useChatStore } from '@/stores/chatStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
+<<<<<<< HEAD
+=======
+import { chatService } from '@/services/chatService';
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 import { mockPromptSuggestions } from '@/services/mock/fixtures/chat';
 import { ROUTES } from '@/constants/routes';
 import { MessageList } from './components/MessageList';
 import { ChatInput } from './components/ChatInput';
 import { RightPanel } from './components/RightPanel';
 import styles from './ChatPage.module.css';
+<<<<<<< HEAD
 import type { ChatMessage } from '@/types';
+=======
+import type { ChatAgent, ChatMessage } from '@/types';
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 // Stable reference so the zustand selector below never returns a fresh []
 // on every call — a new-array-per-call selector defeats useSyncExternalStore's
@@ -44,10 +52,17 @@ export function ChatPage() {
   }, []);
 
   const activeConversationId = useChatStore((state) => state.activeConversationId);
+<<<<<<< HEAD
   const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewConversation = useChatStore((state) => state.startNewConversation);
   const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
   const streamingConversationId = useChatStore((state) => state.streamingConversationId);
+=======
+  const activeAgentId = useChatStore((state) => state.activeAgentId);
+  const selectConversation = useChatStore((state) => state.selectConversation);
+  const startNewConversation = useChatStore((state) => state.startNewConversation);
+  const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   const messages = useChatStore((state) =>
     state.activeConversationId ? (state.messages[state.activeConversationId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
   );
@@ -56,6 +71,15 @@ export function ChatPage() {
   const rightPanelOpen = useUiStore((state) => state.rightPanelOpen);
   const user = useAuthStore((state) => state.user);
 
+<<<<<<< HEAD
+=======
+  const [agents, setAgents] = useState<ChatAgent[]>([]);
+  useEffect(() => {
+    chatService.getAgents().then(setAgents).catch(() => setAgents([]));
+  }, []);
+  const activeAgentName = agents.find((a) => a.id === activeAgentId)?.name;
+
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   useEffect(() => {
     if (params.conversationId && params.conversationId !== activeConversationId) {
       void selectConversation(params.conversationId);
@@ -72,10 +96,13 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConversationId]);
 
+<<<<<<< HEAD
   const isStreamingCurrent = streamingConversationId !== null && streamingConversationId === activeConversationId;
   const lastMessage = messages[messages.length - 1];
   const showTypingIndicator = isStreamingCurrent && (!lastMessage || lastMessage.content === '');
 
+=======
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
   const handleSuggestionClick = (prompt: string) => {
     if (!activeConversationId) {
       setPrefillText(prompt);
@@ -89,7 +116,12 @@ export function ChatPage() {
       <div className={styles.conversationColumn}>
         {activeConversationId ? (
           <div className={styles.messageArea}>
+<<<<<<< HEAD
             <MessageList messages={messages} isLoading={isLoadingMessages} showTypingIndicator={showTypingIndicator} />
+=======
+            {activeAgentName && <div className={styles.agentIndicator}>Talking to: {activeAgentName}</div>}
+            <MessageList messages={messages} isLoading={isLoadingMessages} />
+>>>>>>> 6a60a8648 (Initial AI Agent source code)
           </div>
         ) : (
           <div className={styles.messageArea}>
