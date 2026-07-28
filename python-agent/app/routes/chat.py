@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 from fastapi import APIRouter, Depends
 
 from app.agent.graph import final_text, get_graph
@@ -26,7 +26,7 @@ from app.security import get_current_user
 router = APIRouter()
 
 
-<<<<<<< HEAD
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
     history = get_recent_messages(payload.conversation_id)
@@ -36,7 +36,7 @@ def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
     result = get_graph().invoke(
         {
             "messages": messages,
-=======
+
 def _build_messages(payload: ChatRequest) -> list[dict]:
     history = get_recent_messages(payload.conversation_id)
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
@@ -49,19 +49,19 @@ def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
     result = run_agent(
         {
             "messages": _build_messages(payload),
->>>>>>> 6a60a8648 (Initial AI Agent source code)
+ 6a60a8648 (Initial AI Agent source code)
             "pending_calls": [],
             "tools_used": [],
             "rounds": 0,
             "provider": "",
             "user_id": payload.user_id,
             "conversation_id": payload.conversation_id,
-<<<<<<< HEAD
+
         }
     )
 
     return ChatResponse(reply=final_text(result), tools_used=result["tools_used"])
-=======
+
             "system_prompt": resolve_system_prompt(payload.agent_id),
         }
     )
@@ -114,4 +114,4 @@ def cancel_stream(payload: CancelRequest, user: dict = Depends(get_current_user)
     this conversation — a no-op (cancelled: false) if nothing is running for
     it, e.g. it already finished before this arrived."""
     return {"cancelled": cancellation.request_cancel(payload.conversation_id)}
->>>>>>> 6a60a8648 (Initial AI Agent source code)
+ (Initial AI Agent source code)
