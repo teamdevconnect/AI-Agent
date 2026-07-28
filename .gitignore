@@ -55,3 +55,30 @@ node_modules/
 
 # Logs
 *.log
+
+.env
+.env.*
+backend/.env
+python-agent/.env
+
+# Node
+node_modules/
+
+# Python
+.venv/
+venv/
+python-agent/.venv/
+__pycache__/
+*.pyc
+
+# MongoDB
+.mongodata/
+
+# Environment
+.env
+.env.*
+backend/.env
+python-agent/.env
+
+# Logs
+*.log
