@@ -1,3 +1,13 @@
+<<<<<<< HEAD
+=======
+
+from fastapi import APIRouter, Depends
+
+from app.agent.graph import final_text, get_graph
+from app.memory.conversation_store import get_recent_messages
+from app.models.schemas import ChatRequest, ChatResponse
+=======
+>>>>>>> 775ce31508926519369b07d336c2c47aff4d3b1d
 import json
 import queue
 import threading
@@ -18,6 +28,20 @@ from app.security import get_current_user
 router = APIRouter()
 
 
+<<<<<<< HEAD
+=======
+
+@router.post("/chat", response_model=ChatResponse)
+def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
+    history = get_recent_messages(payload.conversation_id)
+    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages.append({"role": "user", "content": payload.message})
+
+    result = get_graph().invoke(
+        {
+            "messages": messages,
+
+>>>>>>> 775ce31508926519369b07d336c2c47aff4d3b1d
 def _build_messages(payload: ChatRequest) -> list[dict]:
     history = get_recent_messages(payload.conversation_id)
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
@@ -31,6 +55,10 @@ def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
     result = run_agent(
         {
             "messages": _build_messages(payload),
+<<<<<<< HEAD
+=======
+ 6a60a8648 (Initial AI Agent source code)
+>>>>>>> 775ce31508926519369b07d336c2c47aff4d3b1d
             "pending_calls": [],
             "tools_used": [],
             "rounds": 0,
@@ -38,9 +66,19 @@ def chat(payload: ChatRequest, user: dict = Depends(get_current_user)):
             "user_id": payload.user_id,
             "organization_id": user.get("organizationId"),
             "conversation_id": payload.conversation_id,
+<<<<<<< HEAD
             "system_prompt": persona.system_prompt,
             "allowed_tools": persona.allowed_tools,
             "model_tier": persona.model_tier,
+=======
+
+        }
+    )
+
+    return ChatResponse(reply=final_text(result), tools_used=result["tools_used"])
+
+            "system_prompt": resolve_system_prompt(payload.agent_id),
+>>>>>>> 775ce31508926519369b07d336c2c47aff4d3b1d
         }
     )
 
@@ -97,3 +135,7 @@ def cancel_stream(payload: CancelRequest, user: dict = Depends(get_current_user)
     this conversation — a no-op (cancelled: false) if nothing is running for
     it, e.g. it already finished before this arrived."""
     return {"cancelled": cancellation.request_cancel(payload.conversation_id)}
+<<<<<<< HEAD
+=======
+ (Initial AI Agent source code)
+>>>>>>> 775ce31508926519369b07d336c2c47aff4d3b1d
