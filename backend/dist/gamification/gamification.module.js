@@ -10,6 +10,7 @@ exports.GamificationModule = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const notifications_module_1 = require("../notifications/notifications.module");
+const timeline_module_1 = require("../timeline/timeline.module");
 const gamification_controller_1 = require("./gamification.controller");
 const gamification_service_1 = require("./gamification.service");
 const user_stats_schema_1 = require("./schemas/user-stats.schema");
@@ -18,7 +19,11 @@ let GamificationModule = class GamificationModule {
 exports.GamificationModule = GamificationModule;
 exports.GamificationModule = GamificationModule = __decorate([
     (0, common_1.Module)({
-        imports: [mongoose_1.MongooseModule.forFeature([{ name: user_stats_schema_1.UserStats.name, schema: user_stats_schema_1.UserStatsSchema }]), notifications_module_1.NotificationsModule],
+        imports: [
+            mongoose_1.MongooseModule.forFeature([{ name: user_stats_schema_1.UserStats.name, schema: user_stats_schema_1.UserStatsSchema }]),
+            notifications_module_1.NotificationsModule,
+            timeline_module_1.TimelineModule,
+        ],
         controllers: [gamification_controller_1.GamificationController],
         providers: [gamification_service_1.GamificationService],
         exports: [gamification_service_1.GamificationService],

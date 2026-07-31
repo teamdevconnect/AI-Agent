@@ -34,7 +34,7 @@ let ChatController = class ChatController {
     sendMessage(user, req, dto) {
         const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
         const agentId = dto.agentId ?? (user.roles.includes('agent_user') ? user.assignedAgentId : undefined);
-        return this.chatService.sendMessage(user.sub, bearerToken, dto.message, dto.conversationId, agentId);
+        return this.chatService.sendMessage(user.sub, user.organizationId, bearerToken, dto.message, dto.conversationId, agentId);
     }
 };
 exports.ChatController = ChatController;

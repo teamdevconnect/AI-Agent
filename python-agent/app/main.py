@@ -1,19 +1,13 @@
-<<<<<<< HEAD
-=======
 import sys
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 
 from app.config import settings
-<<<<<<< HEAD
-from app.rag.business_sync import sync_all
-from app.routes import chat, documents, health, sync
-=======
+from app.integrations.crm_mongo_sync import sync_all_orgs as sync_crm_deals_to_mongo
 from app.mcp_server import app as mcp_app
 from app.rag.business_sync import sync_all
-from app.routes import chat, documents, health, prompts as prompt_routes, reports, roles, sync, tasks, workflows as workflow_routes
+from app.routes import chat, documents, health, outlook as outlook_routes, prompts as prompt_routes, reports, roles, sync, tasks, workflows as workflow_routes
 from app.workflows import definitions as _workflow_definitions  # noqa: F401 - import triggers workflow registration
 
 # Windows' console defaults to a legacy codepage (cp1252) that can't encode
@@ -25,24 +19,20 @@ from app.workflows import definitions as _workflow_definitions  # noqa: F401 - i
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 app = FastAPI(title="AI Agent Service")
 
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
-<<<<<<< HEAD
-app.include_router(sync.router)
-=======
 app.include_router(roles.router)
 app.include_router(reports.router)
 app.include_router(sync.router)
 app.include_router(tasks.router)
 app.include_router(workflow_routes.router)
 app.include_router(prompt_routes.router)
+app.include_router(outlook_routes.router)
 app.mount("/mcp", mcp_app)
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 # Keeps CRM/Outlook data indexed for search_business_context without anyone
 # having to trigger it manually. Single-process deployment (no --workers,
@@ -55,6 +45,12 @@ scheduler = BackgroundScheduler()
 @app.on_event("startup")
 def _start_scheduler():
     scheduler.add_job(sync_all, "interval", minutes=settings.rag_sync_interval_minutes, id="rag_sync")
+    scheduler.add_job(
+        sync_crm_deals_to_mongo,
+        "interval",
+        minutes=settings.crm_mongo_sync_interval_minutes,
+        id="crm_mongo_sync",
+    )
     scheduler.start()
 
 

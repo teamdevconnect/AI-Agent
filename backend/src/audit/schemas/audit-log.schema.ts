@@ -13,6 +13,13 @@ export class AuditLog {
   @Prop({ required: true, index: true })
   userId: string;
 
+  // Lets the admin-only GET /audit-logs viewer show only the caller's own
+  // org's activity instead of the entire deployment's — optional because
+  // requests that fail JWT auth entirely (never reach a valid `request.user`)
+  // still get logged with userId 'anonymous' and no org to attach.
+  @Prop({ index: true })
+  organizationId?: string;
+
   @Prop({ required: true })
   method: string;
 

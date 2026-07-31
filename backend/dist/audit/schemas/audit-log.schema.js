@@ -19,6 +19,10 @@ __decorate([
     __metadata("design:type", String)
 ], AuditLog.prototype, "userId", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ index: true }),
+    __metadata("design:type", String)
+], AuditLog.prototype, "organizationId", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], AuditLog.prototype, "method", void 0);

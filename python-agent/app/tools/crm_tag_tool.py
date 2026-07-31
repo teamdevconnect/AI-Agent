@@ -20,7 +20,7 @@ SPEC = {
 
 
 def run(tool_input: dict, context: dict) -> str:
-    base_url, api_key = prospectconnect.resolve_credentials()
+    base_url, api_key = prospectconnect.resolve_credentials(context.get("organization_id"), context.get("user_id", ""))
     if not base_url or not api_key:
         return "No CRM is connected yet. Ask the user to connect one via the Integrations page."
 

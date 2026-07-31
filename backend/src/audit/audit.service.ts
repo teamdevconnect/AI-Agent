@@ -5,6 +5,7 @@ import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 
 export interface AuditEntry {
   userId: string;
+  organizationId?: string;
   method: string;
   route: string;
   statusCode: number;
@@ -30,7 +31,7 @@ export class AuditService {
     }
   }
 
-  list(limit = 200) {
-    return this.auditModel.find().sort({ createdAt: -1 }).limit(limit).exec();
+  list(organizationId: string, limit = 200) {
+    return this.auditModel.find({ organizationId }).sort({ createdAt: -1 }).limit(limit).exec();
   }
 }

@@ -1,15 +1,6 @@
 .logo {
   display: inline-flex;
   align-items: center;
-<<<<<<< HEAD
-  color: var(--color-text-primary);
-}
-
-.logo svg {
-  width: 132px;
-  height: auto;
-  display: block;
-=======
   gap: 8px;
   color: var(--color-text-primary);
 }
@@ -26,5 +17,4 @@
   font-weight: 700;
   letter-spacing: 0.3px;
   color: currentColor;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 }

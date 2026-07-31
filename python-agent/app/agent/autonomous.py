@@ -19,11 +19,24 @@ from app.agent.orchestrator import run as run_agent
 _AUTONOMOUS_USER_ID = "*"
 
 
-def run_autonomous_task(goal: str, user_id: str = _AUTONOMOUS_USER_ID, conversation_id: str = "autonomous") -> dict:
+def run_autonomous_task(
+    goal: str,
+    user_id: str = _AUTONOMOUS_USER_ID,
+    conversation_id: str = "autonomous",
+    organization_id: str | None = None,
+) -> dict:
     """Runs one goal through Planner -> (specialists) -> reflection and
     returns {"reply": str, "tools_used": list[str]}. conversation_id has no
     backing Mongo conversation document (autonomous runs aren't chat turns),
-    so it's a label for logging/tracing only — nothing reads it back."""
+    so it's a label for logging/tracing only — nothing reads it back.
+
+    organization_id (Phase 7): originally absent here, since nothing drove
+    this from more than one org at a time. NestJS's workflow queue schedules
+    per-org runs unattended now, so any tool call this goal makes (CRM
+    lookups especially) must resolve THIS org's credentials, not silently
+    fall back to the single .env-global CRM regardless of which org's
+    workflow actually fired — see app.integrations.prospectconnect.
+    resolve_credentials's tiered resolution."""
     result = run_agent(
         {
             "messages": [{"role": "user", "content": goal}],
@@ -32,6 +45,7 @@ def run_autonomous_task(goal: str, user_id: str = _AUTONOMOUS_USER_ID, conversat
             "rounds": 0,
             "provider": "",
             "user_id": user_id,
+            "organization_id": organization_id,
             "conversation_id": conversation_id,
             "system_prompt": None,
         }

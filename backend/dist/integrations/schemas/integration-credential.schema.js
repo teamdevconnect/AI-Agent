@@ -15,7 +15,11 @@ let IntegrationCredential = class IntegrationCredential {
 };
 exports.IntegrationCredential = IntegrationCredential;
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, unique: true, index: true }),
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], IntegrationCredential.prototype, "organizationId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], IntegrationCredential.prototype, "provider", void 0);
 __decorate([
@@ -30,4 +34,5 @@ exports.IntegrationCredential = IntegrationCredential = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'integration_credentials' })
 ], IntegrationCredential);
 exports.IntegrationCredentialSchema = mongoose_1.SchemaFactory.createForClass(IntegrationCredential);
+exports.IntegrationCredentialSchema.index({ organizationId: 1, provider: 1 }, { unique: true });
 //# sourceMappingURL=integration-credential.schema.js.map

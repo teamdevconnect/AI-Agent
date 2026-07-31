@@ -5,7 +5,14 @@ import { SendMessageDto } from './dto/send-message.dto';
 export declare class ChatController {
     private chatService;
     constructor(chatService: ChatService);
-    listAgents(user: JwtPayload): Promise<import("./agents").ChatAgent[]>;
+    listAgents(user: JwtPayload): Promise<Omit<{
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        id: string;
+        name: string;
+        description: string;
+        avatarColor: string;
+    }, "assignedDepartments" | "assignedUserIds">[]>;
     listConversations(user: JwtPayload): Promise<{}>;
     getConversation(user: JwtPayload, id: string): Promise<{} | null>;
     sendMessage(user: JwtPayload, req: Request, dto: SendMessageDto): Promise<{

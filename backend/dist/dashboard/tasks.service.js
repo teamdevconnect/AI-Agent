@@ -22,19 +22,21 @@ const rxjs_1 = require("rxjs");
 const mongoose_2 = require("mongoose");
 const chat_service_1 = require("../chat/chat.service");
 const gamification_service_1 = require("../gamification/gamification.service");
+const timeline_service_1 = require("../timeline/timeline.service");
 const agent_scope_util_1 = require("./agent-scope.util");
 const daily_report_schema_1 = require("./schemas/daily-report.schema");
 function todayStamp() {
     return new Date().toISOString().slice(0, 10);
 }
 let TasksService = class TasksService {
-    constructor(reportModel, chatService, http, config, jwt, gamificationService) {
+    constructor(reportModel, chatService, http, config, jwt, gamificationService, timelineService) {
         this.reportModel = reportModel;
         this.chatService = chatService;
         this.http = http;
         this.config = config;
         this.jwt = jwt;
         this.gamificationService = gamificationService;
+        this.timelineService = timelineService;
         this.agentUrl = this.config.get('pythonAgentUrl') ?? 'http://localhost:8000';
     }
     async list(query, caller) {
@@ -42,7 +44,7 @@ let TasksService = class TasksService {
         const from = query.dateFrom ?? todayStamp();
         const to = query.dateTo ?? query.dateFrom ?? todayStamp();
         const reports = await this.reportModel
-            .find({ agentId: { $in: allowedAgentIds }, date: { $gte: from, $lte: to } })
+            .find({ organizationId: caller.organizationId, agentId: { $in: allowedAgentIds }, date: { $gte: from, $lte: to } })
             .lean()
             .exec();
         const tasks = reports.flatMap((r) => r.tasks
@@ -64,7 +66,7 @@ let TasksService = class TasksService {
     async calendarSummary(month, caller) {
         const allowedAgentIds = await (0, agent_scope_util_1.resolveAllowedAgentIds)(this.chatService, caller);
         const reports = await this.reportModel
-            .find({ agentId: { $in: allowedAgentIds }, date: { $regex: `^${month}` } })
+            .find({ organizationId: caller.organizationId, agentId: { $in: allowedAgentIds }, date: { $regex: `^${month}` } })
             .lean()
             .exec();
         const byDate = new Map();
@@ -97,7 +99,11 @@ let TasksService = class TasksService {
         }
         const allowedAgentIds = await (0, agent_scope_util_1.resolveAllowedAgentIds)(this.chatService, caller);
         const taskObjectId = new mongoose_2.Types.ObjectId(taskId);
-        const filter = { 'tasks._id': taskObjectId, agentId: { $in: allowedAgentIds } };
+        const filter = {
+            'tasks._id': taskObjectId,
+            organizationId: caller.organizationId,
+            agentId: { $in: allowedAgentIds },
+        };
         const report = await this.reportModel.findOne(filter).exec();
         if (!report) {
             throw new common_1.NotFoundException('Task not found');
@@ -108,8 +114,18 @@ let TasksService = class TasksService {
         await this.reportModel.updateOne(filter, { $set: { 'tasks.$.status': status } }).exec();
         let newAchievements = [];
         if (status === 'done' && !wasAlreadyDone) {
-            const result = await this.gamificationService.recordTaskCompletion(caller.sub, wasOverdue);
+            const result = await this.gamificationService.recordTaskCompletion(caller.sub, caller.organizationId, wasOverdue);
             newAchievements = result.newAchievements;
+            await this.timelineService
+                .record({
+                organizationId: caller.organizationId,
+                userId: caller.sub,
+                type: 'task_completed',
+                title: task?.title ?? 'Task completed',
+                sourceType: 'task',
+                sourceId: taskId,
+            })
+                .catch(() => undefined);
         }
         return { id: taskId, status, newAchievements };
     }
@@ -123,6 +139,7 @@ exports.TasksService = TasksService = __decorate([
         axios_1.HttpService,
         config_1.ConfigService,
         jwt_1.JwtService,
-        gamification_service_1.GamificationService])
+        gamification_service_1.GamificationService,
+        timeline_service_1.TimelineService])
 ], TasksService);
 //# sourceMappingURL=tasks.service.js.map

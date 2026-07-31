@@ -13,6 +13,16 @@ export class Notification {
   @Prop({ required: true })
   userId: string;
 
+  // Optional: userId alone already isolates this by owner (a user's id is
+  // unique across the whole deployment), so this doesn't gate access — it's
+  // here so a future org-wide view (AI Timeline, admin notification audit)
+  // doesn't have to resolve userId -> organizationId for every row. Not
+  // every creation path has an org in hand (e.g. gamification's
+  // recordTaskCompletion only has a userId), so this stays optional rather
+  // than forcing a lookup on every write.
+  @Prop()
+  organizationId?: string;
+
   @Prop({ required: true, enum: NOTIFICATION_KINDS })
   kind: NotificationKind;
 

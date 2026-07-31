@@ -9,6 +9,7 @@ import { ChatService } from '../chat/chat.service';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { Achievement } from '../gamification/achievements';
 import { GamificationService } from '../gamification/gamification.service';
+import { TimelineService } from '../timeline/timeline.service';
 import { resolveAllowedAgentIds } from './agent-scope.util';
 import { DailyReport, DailyReportDocument } from './schemas/daily-report.schema';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
@@ -51,6 +52,7 @@ export class TasksService {
     private config: ConfigService,
     private jwt: JwtService,
     private gamificationService: GamificationService,
+    private timelineService: TimelineService,
   ) {
     this.agentUrl = this.config.get<string>('pythonAgentUrl') ?? 'http://localhost:8000';
   }
@@ -61,7 +63,7 @@ export class TasksService {
     const to = query.dateTo ?? query.dateFrom ?? todayStamp();
 
     const reports = await this.reportModel
-      .find({ agentId: { $in: allowedAgentIds }, date: { $gte: from, $lte: to } })
+      .find({ organizationId: caller.organizationId, agentId: { $in: allowedAgentIds }, date: { $gte: from, $lte: to } })
       .lean()
       .exec();
 
@@ -87,7 +89,7 @@ export class TasksService {
   async calendarSummary(month: string, caller: JwtPayload) {
     const allowedAgentIds = await resolveAllowedAgentIds(this.chatService, caller);
     const reports = await this.reportModel
-      .find({ agentId: { $in: allowedAgentIds }, date: { $regex: `^${month}` } })
+      .find({ organizationId: caller.organizationId, agentId: { $in: allowedAgentIds }, date: { $regex: `^${month}` } })
       .lean()
       .exec();
 
@@ -142,7 +144,11 @@ export class TasksService {
     }
     const allowedAgentIds = await resolveAllowedAgentIds(this.chatService, caller);
     const taskObjectId = new Types.ObjectId(taskId);
-    const filter = { 'tasks._id': taskObjectId, agentId: { $in: allowedAgentIds } };
+    const filter = {
+      'tasks._id': taskObjectId,
+      organizationId: caller.organizationId,
+      agentId: { $in: allowedAgentIds },
+    };
 
     // Fetched before the update so gamification can tell a genuine
     // todo/in_progress -> done transition from a redundant "mark done again"
@@ -160,8 +166,19 @@ export class TasksService {
 
     let newAchievements: Achievement[] = [];
     if (status === 'done' && !wasAlreadyDone) {
-      const result = await this.gamificationService.recordTaskCompletion(caller.sub, wasOverdue);
+      const result = await this.gamificationService.recordTaskCompletion(caller.sub, caller.organizationId, wasOverdue);
       newAchievements = result.newAchievements;
+
+      await this.timelineService
+        .record({
+          organizationId: caller.organizationId,
+          userId: caller.sub,
+          type: 'task_completed',
+          title: task?.title ?? 'Task completed',
+          sourceType: 'task',
+          sourceId: taskId,
+        })
+        .catch(() => undefined);
     }
 
     return { id: taskId, status, newAchievements };

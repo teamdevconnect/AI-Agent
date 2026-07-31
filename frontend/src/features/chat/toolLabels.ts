@@ -12,6 +12,7 @@ export const TOOL_LABELS: Record<string, string> = {
   crm_tag: 'Checking tags…',
   crm_product: 'Checking products…',
   outlook_lookup: 'Searching Outlook…',
+  gmail_lookup: 'Searching Gmail…',
   calendar_tool: 'Checking the calendar…',
   employee_lookup: 'Looking up team members…',
   query_database: 'Querying the database…',

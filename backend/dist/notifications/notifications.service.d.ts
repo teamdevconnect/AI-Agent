@@ -6,7 +6,7 @@ export declare class NotificationsService {
     private notificationModel;
     private chatGateway;
     constructor(notificationModel: Model<NotificationDocument>, chatGateway: ChatGateway);
-    create(userId: string, dto: CreateNotificationDto): Promise<import("mongoose").Document<unknown, {}, NotificationDocument, {}, {}> & Notification & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+    create(userId: string, dto: CreateNotificationDto, organizationId?: string): Promise<import("mongoose").Document<unknown, {}, NotificationDocument, {}, {}> & Notification & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;

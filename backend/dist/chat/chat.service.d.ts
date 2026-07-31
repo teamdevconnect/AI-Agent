@@ -24,20 +24,27 @@ export declare class ChatService {
     private readonly logger;
     private readonly agentUrl;
     constructor(conversationModel: Model<ConversationDocument>, agentRoleModel: Model<AgentRoleDocument>, http: HttpService, config: ConfigService, cache: RedisCacheService, jwt: JwtService);
-    listAgents(caller?: JwtPayload): Promise<import("./agents").ChatAgent[]>;
+    listAgents(caller?: JwtPayload): Promise<Omit<{
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        id: string;
+        name: string;
+        description: string;
+        avatarColor: string;
+    }, "assignedDepartments" | "assignedUserIds">[]>;
     listConversations(userId: string): Promise<{}>;
     getConversation(userId: string, conversationId: string): Promise<{} | null>;
-    sendMessage(userId: string, userJwt: string, message: string, conversationId?: string, agentId?: string): Promise<{
+    sendMessage(userId: string, organizationId: string, userJwt: string, message: string, conversationId?: string, agentId?: string): Promise<{
         conversationId: string;
         reply: string;
         toolsUsed: string[];
     }>;
-    sendMessageStreaming(userId: string, userJwt: string, message: string, conversationId: string | undefined, onEvent: (event: StreamEvent) => void, agentId?: string, onConversationId?: (id: string) => void): Promise<{
+    sendMessageStreaming(userId: string, organizationId: string, userJwt: string, message: string, conversationId: string | undefined, onEvent: (event: StreamEvent) => void, agentId?: string, onConversationId?: (id: string) => void): Promise<{
         conversationId: string;
         reply: string;
         toolsUsed: string[];
     }>;
-    generateSystemConversation(userId: string, agentId: string, promptText: string, title: string): Promise<{
+    generateSystemConversation(userId: string, organizationId: string, agentId: string, promptText: string, title: string): Promise<{
         conversationId: string;
         reply: string;
         toolsUsed: string[];

@@ -25,27 +25,28 @@ let AgentRolesController = class AgentRolesController {
     constructor(agentRolesService) {
         this.agentRolesService = agentRolesService;
     }
-    list() {
-        return this.agentRolesService.listAll();
+    list(user) {
+        return this.agentRolesService.listAll(user.organizationId);
     }
     generate(user, req, file) {
         const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-        return this.agentRolesService.generateDraft(user.sub, bearerToken, file);
+        return this.agentRolesService.generateDraft(user.sub, user.organizationId, bearerToken, file);
     }
-    update(id, dto, req) {
+    update(user, id, dto, req) {
         const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-        return this.agentRolesService.update(id, dto, bearerToken);
+        return this.agentRolesService.update(id, dto, bearerToken, user.organizationId);
     }
-    remove(id, req) {
+    remove(user, id, req) {
         const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-        return this.agentRolesService.remove(id, bearerToken);
+        return this.agentRolesService.remove(id, bearerToken, user.organizationId);
     }
 };
 exports.AgentRolesController = AgentRolesController;
 __decorate([
     (0, common_1.Get)(),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], AgentRolesController.prototype, "list", null);
 __decorate([
@@ -64,21 +65,23 @@ __decorate([
     (0, common_1.Patch)(':id'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, common_1.Body)()),
-    __param(2, (0, common_1.Req)()),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, update_agent_role_dto_1.UpdateAgentRoleDto, Object]),
+    __metadata("design:paramtypes", [Object, String, update_agent_role_dto_1.UpdateAgentRoleDto, Object]),
     __metadata("design:returntype", void 0)
 ], AgentRolesController.prototype, "update", null);
 __decorate([
     (0, common_1.Delete)(':id'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Param)('id')),
-    __param(1, (0, common_1.Req)()),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:paramtypes", [Object, String, Object]),
     __metadata("design:returntype", void 0)
 ], AgentRolesController.prototype, "remove", null);
 exports.AgentRolesController = AgentRolesController = __decorate([

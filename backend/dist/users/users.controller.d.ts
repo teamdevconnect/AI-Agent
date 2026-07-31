@@ -9,25 +9,34 @@ export declare class UsersController {
         id: string;
         email: string;
         name: string;
+        organizationId: string;
+        storeId: string | undefined;
         roles: string[];
         assignedAgentId: string | undefined;
+        department: string | undefined;
         active: boolean;
     } | null>;
-    list(): Promise<{
+    list(caller: JwtPayload): Promise<{
         id: string;
         email: string;
         name: string;
+        organizationId: string;
+        storeId: string | undefined;
         roles: string[];
         assignedAgentId: string | undefined;
+        department: string | undefined;
         active: boolean;
     }[]>;
-    create(dto: CreateUserDto): Promise<{
+    create(caller: JwtPayload, dto: CreateUserDto): Promise<{
         user: {
             id: string;
             email: string;
             name: string;
+            organizationId: string;
+            storeId: string | undefined;
             roles: string[];
             assignedAgentId: string | undefined;
+            department: string | undefined;
             active: boolean;
         };
         tempPassword: string;
@@ -36,8 +45,11 @@ export declare class UsersController {
         id: string;
         email: string;
         name: string;
+        organizationId: string;
+        storeId: string | undefined;
         roles: string[];
         assignedAgentId: string | undefined;
+        department: string | undefined;
         active: boolean;
     }>;
     remove(caller: JwtPayload, id: string): Promise<void>;

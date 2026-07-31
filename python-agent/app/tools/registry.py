@@ -1,11 +1,8 @@
-<<<<<<< HEAD
-=======
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import best_match
 
 from app.memory.rate_limiter import allow as rate_limit_allow
 from app.observability.tracing import traced_tool_call
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 from app.tools import (
     business_search_tool,
     calendar_tool,
@@ -20,10 +17,8 @@ from app.tools import (
     document_tool,
     email_tool,
     employee_tool,
-<<<<<<< HEAD
-=======
+    gmail_tool,
     memory_tool,
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     outlook_tool,
     search_tool,
     whatsapp_tool,
@@ -38,6 +33,7 @@ _MODULES = [
     crm_product_tool,
     crm_quote_tool,
     outlook_tool,
+    gmail_tool,
     whatsapp_tool,
     calendar_tool,
     employee_tool,
@@ -46,26 +42,11 @@ _MODULES = [
     email_tool,
     document_tool,
     business_search_tool,
-<<<<<<< HEAD
-=======
     memory_tool,
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 ]
 
 TOOL_DEFINITIONS = [m.SPEC for m in _MODULES]
 _HANDLERS = {m.SPEC["name"]: m.run for m in _MODULES}
-<<<<<<< HEAD
-
-
-def execute_tool(name: str, tool_input: dict, context: dict) -> str:
-    handler = _HANDLERS.get(name)
-    if handler is None:
-        return f"Unknown tool: {name}"
-    try:
-        return handler(tool_input, context)
-    except Exception as exc:  # tool failures become context for Claude, not crashes
-        return f"Tool '{name}' failed: {exc}"
-=======
 _SPECS_BY_NAME = {m.SPEC["name"]: m.SPEC for m in _MODULES}
 
 TOOL_CALLS_PER_MINUTE = 30
@@ -112,7 +93,12 @@ def execute_tool(name: str, tool_input: dict, context: dict, allowed_tools: list
     if not rate_limit_allow(rate_limit_key, TOOL_CALLS_PER_MINUTE, 60):
         return f"Tool '{name}' rate limit exceeded — try again in a minute."
 
-    with traced_tool_call(name, user_id=context.get("user_id", "")) as outcome:
+    with traced_tool_call(
+        name,
+        user_id=context.get("user_id", ""),
+        organization_id=context.get("organization_id"),
+        conversation_id=context.get("conversation_id", ""),
+    ) as outcome:
         try:
             result = handler(tool_input, context)
         except Exception as exc:  # tool failures become context for Claude, not crashes
@@ -120,4 +106,3 @@ def execute_tool(name: str, tool_input: dict, context: dict, allowed_tools: list
             return f"Tool '{name}' failed: {exc}"
         outcome["success"] = True
         return result
->>>>>>> 6a60a8648 (Initial AI Agent source code)

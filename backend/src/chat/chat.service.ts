@@ -1,12 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-<<<<<<< HEAD
-import { InjectModel } from '@nestjs/mongoose';
-import { firstValueFrom } from 'rxjs';
-import { Model } from 'mongoose';
-import { Conversation, ConversationDocument } from './schemas/conversation.schema';
-=======
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { firstValueFrom } from 'rxjs';
@@ -16,15 +10,12 @@ import { AgentRole, AgentRoleDocument } from '../agent-roles/schemas/agent-role.
 import { CHAT_AGENTS } from './agents';
 import { Conversation, ConversationDocument } from './schemas/conversation.schema';
 import { JwtPayload } from '../auth/jwt-payload.interface';
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 interface AgentReply {
   reply: string;
   tools_used?: string[];
 }
 
-<<<<<<< HEAD
-=======
 export interface StreamEvent {
   type: 'delta' | 'progress' | 'reasoning' | 'plan' | 'agent_done' | 'reflecting';
   text?: string;
@@ -36,7 +27,16 @@ export interface StreamEvent {
 
 const CACHE_TTL_SECONDS = 45;
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
+// assignedDepartments/assignedUserIds only exist to compute visibility above
+// — not part of the @mention widget's public shape, so they're dropped on
+// the way out rather than leaking the org's assignment config to every caller.
+function stripAssignment<T extends { assignedDepartments: string[]; assignedUserIds: string[] }>(
+  agent: T,
+): Omit<T, 'assignedDepartments' | 'assignedUserIds'> {
+  const { assignedDepartments: _d, assignedUserIds: _u, ...rest } = agent;
+  return rest;
+}
+
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
@@ -44,44 +44,64 @@ export class ChatService {
 
   constructor(
     @InjectModel(Conversation.name) private conversationModel: Model<ConversationDocument>,
-<<<<<<< HEAD
-    private http: HttpService,
-    private config: ConfigService,
-=======
     @InjectModel(AgentRole.name) private agentRoleModel: Model<AgentRoleDocument>,
     private http: HttpService,
     private config: ConfigService,
     private cache: RedisCacheService,
     private jwt: JwtService,
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   ) {
     this.agentUrl = this.config.get<string>('pythonAgentUrl') ?? 'http://localhost:8000';
   }
 
-<<<<<<< HEAD
-  listConversations(userId: string) {
-    return this.conversationModel
-=======
   /** Static personas + any activated Dynamic Role Generator roles — the
    * source list for chat's @mention widget. Dynamic roles only surface once
    * 'active' (see agent-roles module's draft/active review workflow).
    * When called on behalf of an agent_user (not also admin), scoped down to
    * just their one assigned agent — RBAC boundary, not just a UI filter,
-   * since DashboardService.getOverview() also reuses this for its own scoping. */
+   * since DashboardService.getOverview() also reuses this for its own scoping.
+   * Beyond that, non-admin/owner callers only see a custom AgentRole whose
+   * assignedDepartments/assignedUserIds (Phase 6, Agent Marketplace) matches
+   * them, or that has neither set (org-wide visible, the default for every
+   * role created before this existed). Built-in CHAT_AGENTS are always
+   * visible to everyone — this filter only governs custom roles. */
   async listAgents(caller?: JwtPayload) {
-    const dynamic = await this.agentRoleModel
-      .find({ status: 'active' })
-      .select({ slug: 1, name: 1, description: 1, avatarColor: 1 })
-      .exec();
+    // No caller/org context (shouldn't happen behind JwtAuthGuard, but this
+    // is also called internally) -> no dynamic org-specific personas, only
+    // the shared static ones. Fail closed, not open.
+    const dynamic = caller?.organizationId
+      ? await this.agentRoleModel
+          .find({ status: 'active', organizationId: caller.organizationId })
+          .select({ slug: 1, name: 1, description: 1, avatarColor: 1, assignedDepartments: 1, assignedUserIds: 1 })
+          .exec()
+      : [];
     const all = [
-      ...CHAT_AGENTS,
-      ...dynamic.map((d) => ({ id: d.slug, name: d.name, description: d.description, avatarColor: d.avatarColor })),
+      ...CHAT_AGENTS.map((a) => ({ ...a, assignedDepartments: [] as string[], assignedUserIds: [] as string[] })),
+      ...dynamic.map((d) => ({
+        id: d.slug,
+        name: d.name,
+        description: d.description,
+        avatarColor: d.avatarColor,
+        assignedDepartments: d.assignedDepartments ?? [],
+        assignedUserIds: d.assignedUserIds ?? [],
+      })),
     ];
 
     if (caller?.roles?.includes('agent_user') && !caller.roles.includes('admin')) {
-      return all.filter((a) => a.id === caller.assignedAgentId);
+      return all.map(stripAssignment).filter((a) => a.id === caller.assignedAgentId);
     }
-    return all;
+
+    if (caller && !caller.roles.includes('admin') && !caller.roles.includes('owner')) {
+      return all
+        .filter(
+          (a) =>
+            (a.assignedDepartments.length === 0 && a.assignedUserIds.length === 0) ||
+            (!!caller.department && a.assignedDepartments.includes(caller.department)) ||
+            a.assignedUserIds.includes(caller.sub),
+        )
+        .map(stripAssignment);
+    }
+
+    return all.map(stripAssignment);
   }
 
   async listConversations(userId: string) {
@@ -90,17 +110,10 @@ export class ChatService {
     if (cached) return cached;
 
     const result = await this.conversationModel
->>>>>>> 6a60a8648 (Initial AI Agent source code)
       .find({ userId })
       .select({ title: 1, updatedAt: 1, createdAt: 1 })
       .sort({ updatedAt: -1 })
       .exec();
-<<<<<<< HEAD
-  }
-
-  getConversation(userId: string, conversationId: string) {
-    return this.conversationModel.findOne({ _id: conversationId, userId }).exec();
-=======
     await this.cache.set(cacheKey, result, CACHE_TTL_SECONDS);
     return result;
   }
@@ -117,33 +130,18 @@ export class ChatService {
     const result = await this.conversationModel.findOne({ _id: conversationId, userId }).exec();
     if (result) await this.cache.set(cacheKey, result, CACHE_TTL_SECONDS);
     return result;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   }
 
   async sendMessage(
     userId: string,
+    organizationId: string,
     userJwt: string,
     message: string,
     conversationId?: string,
-<<<<<<< HEAD
-  ) {
-    let conversation = conversationId
-      ? await this.conversationModel.findOne({ _id: conversationId, userId })
-      : null;
-
-    if (!conversation) {
-      conversation = await this.conversationModel.create({
-        userId,
-        title: message.slice(0, 60),
-        messages: [],
-      });
-    }
-=======
     agentId?: string,
   ) {
-    const conversation = await this.getOrCreateConversation(userId, message, conversationId, agentId);
+    const conversation = await this.getOrCreateConversation(userId, organizationId, message, conversationId, agentId);
     const resolvedAgentId = this.resolveConversationAgent(conversation, agentId);
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
     conversation.messages.push({
       role: 'user',
@@ -152,13 +150,6 @@ export class ChatService {
       createdAt: new Date(),
     });
 
-<<<<<<< HEAD
-    const agentReply = await this.callAgent(userId, userJwt, conversation._id.toString(), message);
-
-    conversation.messages.push({
-      role: 'assistant',
-      content: agentReply.reply,
-=======
     const agentReply = await this.callAgent(userId, userJwt, conversation._id.toString(), message, resolvedAgentId);
 
     return this.finishTurn(conversation, agentReply);
@@ -171,6 +162,7 @@ export class ChatService {
    * so it keeps using the non-streaming sendMessage() above unchanged. */
   async sendMessageStreaming(
     userId: string,
+    organizationId: string,
     userJwt: string,
     message: string,
     conversationId: string | undefined,
@@ -185,7 +177,7 @@ export class ChatService {
     // the real id from the terminal result, by which point it's too late.
     onConversationId?: (id: string) => void,
   ) {
-    const conversation = await this.getOrCreateConversation(userId, message, conversationId, agentId);
+    const conversation = await this.getOrCreateConversation(userId, organizationId, message, conversationId, agentId);
     onConversationId?.(conversation._id.toString());
     const resolvedAgentId = this.resolveConversationAgent(conversation, agentId);
 
@@ -213,8 +205,8 @@ export class ChatService {
    * existing-conversation lookup), always non-streaming (no socket to push
    * to for a background job). Reuses finishTurn() so the Redis cache
    * invalidation added for live chat covers this write path too. */
-  async generateSystemConversation(userId: string, agentId: string, promptText: string, title: string) {
-    const conversation = await this.conversationModel.create({ userId, title, agentId, messages: [] });
+  async generateSystemConversation(userId: string, organizationId: string, agentId: string, promptText: string, title: string) {
+    const conversation = await this.conversationModel.create({ userId, organizationId, title, agentId, messages: [] });
     conversation.messages.push({
       role: 'user',
       content: promptText,
@@ -230,6 +222,7 @@ export class ChatService {
 
   private async getOrCreateConversation(
     userId: string,
+    organizationId: string,
     message: string,
     conversationId?: string,
     agentId?: string,
@@ -241,6 +234,7 @@ export class ChatService {
 
     return this.conversationModel.create({
       userId,
+      organizationId,
       title: message.slice(0, 60),
       agentId,
       messages: [],
@@ -270,23 +264,17 @@ export class ChatService {
       // ValidationError here. Caught via a live cancellation test that hit
       // exactly this.
       content: agentReply.reply || '[No response — cancelled before any text was generated]',
->>>>>>> 6a60a8648 (Initial AI Agent source code)
       toolsUsed: agentReply.tools_used ?? [],
       createdAt: new Date(),
     });
     await conversation.save();
 
-<<<<<<< HEAD
-    return {
-      conversationId: conversation._id.toString(),
-=======
     const userId = conversation.userId;
     const conversationId = conversation._id.toString();
     await this.cache.del(`chat:conversations:${userId}`, `chat:conversation:${userId}:${conversationId}`);
 
     return {
       conversationId,
->>>>>>> 6a60a8648 (Initial AI Agent source code)
       reply: agentReply.reply,
       toolsUsed: agentReply.tools_used ?? [],
     };
@@ -297,20 +285,13 @@ export class ChatService {
     userJwt: string,
     conversationId: string,
     message: string,
-<<<<<<< HEAD
-=======
     agentId?: string,
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   ): Promise<AgentReply> {
     try {
       const response = await firstValueFrom(
         this.http.post<AgentReply>(
           `${this.agentUrl}/chat`,
-<<<<<<< HEAD
-          { user_id: userId, conversation_id: conversationId, message },
-=======
           { user_id: userId, conversation_id: conversationId, message, agent_id: agentId },
->>>>>>> 6a60a8648 (Initial AI Agent source code)
           { headers: { Authorization: `Bearer ${userJwt}` } },
         ),
       );
@@ -318,18 +299,11 @@ export class ChatService {
     } catch (err) {
       this.logger.error(`python-agent call failed: ${(err as Error).message}`);
       return {
-<<<<<<< HEAD
-        reply:
-          "I couldn't reach the AI agent service. Please try again shortly.",
-=======
         reply: "I couldn't reach the AI agent service. Please try again shortly.",
->>>>>>> 6a60a8648 (Initial AI Agent source code)
         tools_used: [],
       };
     }
   }
-<<<<<<< HEAD
-=======
 
   /** Calls python-agent's /chat/stream (Server-Sent Events) and relays each
    * delta/progress frame to onEvent as it arrives, resolving with the
@@ -419,5 +393,4 @@ export class ChatService {
       this.logger.warn(`Cancel request to python-agent failed: ${(err as Error).message}`);
     }
   }
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 }

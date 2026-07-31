@@ -25,10 +25,12 @@ SPEC = {
 _DROP_FIELDS = ("contact_details", "created_by_detail", "modified_by_detail")
 
 
-def _fetch_raw_notes(contact_id: str, deal_id: str | None = None, account_id: str | None = None) -> list[dict]:
+def _fetch_raw_notes(
+    contact_id: str, deal_id: str | None = None, account_id: str | None = None, organization_id: str | None = None
+) -> list[dict]:
     """Parsed, trimmed note list for one contact — used by run() and by the
     RAG business sync job (called once per contact, in parallel)."""
-    base_url, api_key = prospectconnect.resolve_credentials()
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id)
     if not base_url or not api_key:
         return []
 
@@ -48,7 +50,8 @@ def _fetch_raw_notes(contact_id: str, deal_id: str | None = None, account_id: st
 
 
 def run(tool_input: dict, context: dict) -> str:
-    base_url, api_key = prospectconnect.resolve_credentials()
+    organization_id = context.get("organization_id")
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id, context.get("user_id", ""))
     if not base_url or not api_key:
         return "No CRM is connected yet. Ask the user to connect one via the Integrations page."
 
@@ -57,7 +60,9 @@ def run(tool_input: dict, context: dict) -> str:
         return "crm_note requires contact_id."
 
     try:
-        notes = _fetch_raw_notes(contact_id, tool_input.get("deal_id"), tool_input.get("account_id"))
+        notes = _fetch_raw_notes(
+            contact_id, tool_input.get("deal_id"), tool_input.get("account_id"), organization_id
+        )
     except requests.RequestException as exc:
         response = getattr(exc, "response", None)
         if response is not None:

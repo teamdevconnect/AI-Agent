@@ -31,8 +31,8 @@ export class AgentRolesController {
   // personas every user interacts with, so those are admin-only, same as
   // the equally sensitive integrations/store-settings mutations.
   @Get()
-  list() {
-    return this.agentRolesService.listAll();
+  list(@CurrentUser() user: JwtPayload) {
+    return this.agentRolesService.listAll(user.organizationId);
   }
 
   @Post('generate')
@@ -45,22 +45,22 @@ export class AgentRolesController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    return this.agentRolesService.generateDraft(user.sub, bearerToken, file);
+    return this.agentRolesService.generateDraft(user.sub, user.organizationId, bearerToken, file);
   }
 
   @Patch(':id')
   @UseGuards(RolesGuard)
   @Roles('admin')
-  update(@Param('id') id: string, @Body() dto: UpdateAgentRoleDto, @Req() req: Request) {
+  update(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: UpdateAgentRoleDto, @Req() req: Request) {
     const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    return this.agentRolesService.update(id, dto, bearerToken);
+    return this.agentRolesService.update(id, dto, bearerToken, user.organizationId);
   }
 
   @Delete(':id')
   @UseGuards(RolesGuard)
   @Roles('admin')
-  remove(@Param('id') id: string, @Req() req: Request) {
+  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Req() req: Request) {
     const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    return this.agentRolesService.remove(id, bearerToken);
+    return this.agentRolesService.remove(id, bearerToken, user.organizationId);
   }
 }

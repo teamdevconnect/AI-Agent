@@ -9,14 +9,16 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpdateUserDto = void 0;
+exports.UpdateUserDto = exports.ASSIGNABLE_ROLES = void 0;
 const class_validator_1 = require("class-validator");
+exports.ASSIGNABLE_ROLES = ['admin', 'agent_user', 'user', 'manager', 'consultant'];
+const STORE_SCOPED_ROLES = new Set(['manager', 'consultant']);
 class UpdateUserDto {
 }
 exports.UpdateUserDto = UpdateUserDto;
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsIn)(['admin', 'agent_user', 'user']),
+    (0, class_validator_1.IsIn)(exports.ASSIGNABLE_ROLES),
     __metadata("design:type", String)
 ], UpdateUserDto.prototype, "role", void 0);
 __decorate([
@@ -25,8 +27,19 @@ __decorate([
     __metadata("design:type", String)
 ], UpdateUserDto.prototype, "assignedAgentId", void 0);
 __decorate([
+    (0, class_validator_1.ValidateIf)((o) => o.role !== undefined && STORE_SCOPED_ROLES.has(o.role)),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(1),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "storeId", void 0);
+__decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], UpdateUserDto.prototype, "active", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "department", void 0);
 //# sourceMappingURL=update-user.dto.js.map

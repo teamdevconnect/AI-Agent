@@ -6,6 +6,7 @@ import { ChatService } from '../chat/chat.service';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { Achievement } from '../gamification/achievements';
 import { GamificationService } from '../gamification/gamification.service';
+import { TimelineService } from '../timeline/timeline.service';
 import { DailyReportDocument } from './schemas/daily-report.schema';
 import { ListTasksQueryDto } from './dto/list-tasks-query.dto';
 export interface TaskOut {
@@ -31,8 +32,9 @@ export declare class TasksService {
     private config;
     private jwt;
     private gamificationService;
+    private timelineService;
     private readonly agentUrl;
-    constructor(reportModel: Model<DailyReportDocument>, chatService: ChatService, http: HttpService, config: ConfigService, jwt: JwtService, gamificationService: GamificationService);
+    constructor(reportModel: Model<DailyReportDocument>, chatService: ChatService, http: HttpService, config: ConfigService, jwt: JwtService, gamificationService: GamificationService, timelineService: TimelineService);
     list(query: ListTasksQueryDto, caller: JwtPayload): Promise<{
         tasks: TaskOut[];
     }>;

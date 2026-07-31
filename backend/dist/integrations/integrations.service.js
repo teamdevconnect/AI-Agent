@@ -22,21 +22,21 @@ let IntegrationsService = class IntegrationsService {
     constructor(credentialModel) {
         this.credentialModel = credentialModel;
     }
-    async connect(provider, apiKey, baseUrl) {
+    async connect(organizationId, provider, apiKey, baseUrl) {
         this.assertAllowed(provider);
-        await this.credentialModel.findOneAndUpdate({ provider }, { provider, apiKey, baseUrl }, { upsert: true });
+        await this.credentialModel.findOneAndUpdate({ organizationId, provider }, { organizationId, provider, apiKey, baseUrl }, { upsert: true });
         return { connected: true, maskedKey: this.mask(apiKey), baseUrl };
     }
-    async status(provider) {
+    async status(organizationId, provider) {
         this.assertAllowed(provider);
-        const doc = await this.credentialModel.findOne({ provider });
+        const doc = await this.credentialModel.findOne({ organizationId, provider });
         if (!doc)
             return { connected: false };
         return { connected: true, maskedKey: this.mask(doc.apiKey), baseUrl: doc.baseUrl };
     }
-    async disconnect(provider) {
+    async disconnect(organizationId, provider) {
         this.assertAllowed(provider);
-        await this.credentialModel.deleteOne({ provider });
+        await this.credentialModel.deleteOne({ organizationId, provider });
     }
     assertAllowed(provider) {
         if (!ALLOWED_PROVIDERS.includes(provider)) {

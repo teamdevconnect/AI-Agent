@@ -1,12 +1,17 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { TimelineModule } from '../timeline/timeline.module';
 import { GamificationController } from './gamification.controller';
 import { GamificationService } from './gamification.service';
 import { UserStats, UserStatsSchema } from './schemas/user-stats.schema';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: UserStats.name, schema: UserStatsSchema }]), NotificationsModule],
+  imports: [
+    MongooseModule.forFeature([{ name: UserStats.name, schema: UserStatsSchema }]),
+    NotificationsModule,
+    TimelineModule,
+  ],
   controllers: [GamificationController],
   providers: [GamificationService],
   // TasksService (dashboard module) calls recordTaskCompletion() on a

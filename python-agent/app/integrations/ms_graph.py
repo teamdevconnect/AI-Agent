@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-import requests
-
-GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-
-
-def graph_get(path: str, access_token: str, params: dict | None = None) -> dict:
-=======
 import hashlib
 
 import requests
@@ -32,7 +24,6 @@ def graph_get(path: str, access_token: str, params: dict | None = None) -> dict:
         if hit is not None:
             return hit
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     response = requests.get(
         f"{GRAPH_BASE}{path}",
         headers={"Authorization": f"Bearer {access_token}"},
@@ -40,15 +31,11 @@ def graph_get(path: str, access_token: str, params: dict | None = None) -> dict:
         timeout=15,
     )
     response.raise_for_status()
-<<<<<<< HEAD
-    return response.json()
-=======
     body = response.json()
 
     if key is not None:
         cache.set_json(key, body, settings.outlook_cache_ttl_seconds)
     return body
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 
 def graph_post(path: str, access_token: str, json_body: dict) -> dict:

@@ -4,12 +4,8 @@ export interface User {
   firstName: string;
   lastName: string;
   company?: string;
-<<<<<<< HEAD
-  role: 'owner' | 'admin' | 'member';
-=======
   roles: string[];
   assignedAgentId?: string;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   avatarUrl?: string;
   timezone?: string;
   language?: string;

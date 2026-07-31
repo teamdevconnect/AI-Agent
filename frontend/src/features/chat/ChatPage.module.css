@@ -13,16 +13,11 @@
 }
 
 .messageArea {
-<<<<<<< HEAD
-=======
   position: relative;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   flex: 1;
   min-height: 0;
 }
 
-<<<<<<< HEAD
-=======
 .agentIndicator {
   position: absolute;
   top: var(--space-3);
@@ -38,7 +33,6 @@
   pointer-events: none;
 }
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 .inputArea {
   flex-shrink: 0;
   padding: var(--space-4) var(--space-6) var(--space-6);

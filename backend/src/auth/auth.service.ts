@@ -1,11 +1,9 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { UsersService } from '../users/users.service';
-<<<<<<< HEAD
-=======
 import { UserDocument } from '../users/schemas/user.schema';
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 import { JwtPayload } from './jwt-payload.interface';
 
 const SALT_ROUNDS = 12;
@@ -14,39 +12,37 @@ const SALT_ROUNDS = 12;
 export class AuthService {
   constructor(
     private usersService: UsersService,
+    private organizationsService: OrganizationsService,
     private jwtService: JwtService,
   ) {}
 
-  async register(email: string, password: string, name: string) {
+  /** Registration always creates a brand-new organization (+ its default
+   * store) with this user as its owner — there's no "join an existing org"
+   * flow yet; adding teammates afterward goes through POST /users (admin
+   * panel), which scopes the new account to the caller's own org. */
+  async register(email: string, password: string, name: string, organizationName: string) {
     const existing = await this.usersService.findByEmail(email);
     if (existing) {
       throw new ConflictException('An account with this email already exists');
     }
+    const { organization, store } = await this.organizationsService.createOrganizationWithOwner(organizationName);
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = await this.usersService.create({ email, passwordHash, name });
-<<<<<<< HEAD
-    return this.issueToken(user._id.toString(), user.email, user.roles);
-=======
+    const user = await this.usersService.create({
+      email,
+      passwordHash,
+      name,
+      organizationId: organization._id.toString(),
+      storeId: store._id.toString(),
+      // 'admin' kept alongside 'owner' so every existing @Roles('admin')
+      // gate (store-settings, integrations, agent-roles, user management)
+      // keeps working for the org's creator without touching those decorators.
+      roles: ['owner', 'admin'],
+    });
     return this.issueToken(user);
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   }
 
   async login(email: string, password: string) {
     const user = await this.usersService.findByEmail(email);
-<<<<<<< HEAD
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-    const matches = await bcrypt.compare(password, user.passwordHash);
-    if (!matches) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-    return this.issueToken(user._id.toString(), user.email, user.roles);
-  }
-
-  private issueToken(sub: string, email: string, roles: string[]) {
-    const payload: JwtPayload = { sub, email, roles };
-=======
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       // Same generic failure for "no such user" and "wrong password" —
       // don't turn this into a user-enumeration oracle.
@@ -63,9 +59,11 @@ export class AuthService {
       sub: user._id.toString(),
       email: user.email,
       roles: user.roles,
+      organizationId: user.organizationId,
+      storeId: user.storeId,
       assignedAgentId: user.assignedAgentId,
+      department: user.department,
     };
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     return { accessToken: this.jwtService.sign(payload) };
   }
 }

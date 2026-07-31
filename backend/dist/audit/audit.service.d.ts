@@ -2,6 +2,7 @@ import { Model } from 'mongoose';
 import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 export interface AuditEntry {
     userId: string;
+    organizationId?: string;
     method: string;
     route: string;
     statusCode: number;
@@ -13,7 +14,7 @@ export declare class AuditService {
     private readonly logger;
     constructor(auditModel: Model<AuditLogDocument>);
     log(entry: AuditEntry): Promise<void>;
-    list(limit?: number): Promise<(import("mongoose").Document<unknown, {}, AuditLogDocument, {}, {}> & AuditLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+    list(organizationId: string, limit?: number): Promise<(import("mongoose").Document<unknown, {}, AuditLogDocument, {}, {}> & AuditLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;

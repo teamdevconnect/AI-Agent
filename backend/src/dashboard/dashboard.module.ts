@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { ChatModule } from '../chat/chat.module';
 import { GamificationModule } from '../gamification/gamification.module';
+import { TimelineModule } from '../timeline/timeline.module';
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
 import { TasksController } from './tasks.controller';
@@ -23,6 +24,7 @@ import { DailyReport, DailyReportSchema } from './schemas/daily-report.schema';
     AuthModule,
     ChatModule,
     GamificationModule,
+    TimelineModule,
   ],
   controllers: [DashboardController, TasksController],
   providers: [DashboardService, TasksService, TasksExportService],

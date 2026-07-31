@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiCheckCircle, FiDatabase, FiKey, FiPlus, FiSettings, FiTrash2 } from 'react-icons/fi';
 import { Card, Badge, Button, Input, Modal } from '@/components/ui';
-import { integrationsService, type OutlookAccount } from '@/services/integrationsService';
+import { integrationsService, type GmailAccount, type OutlookAccount } from '@/services/integrationsService';
 import { extractErrorMessage } from '@/utils/errors';
 import styles from './IntegrationsPage.module.css';
 
@@ -37,6 +37,10 @@ export function IntegrationsPage() {
   const [outlookStatus, setOutlookStatus] = useState<CardStatus>('loading');
   const [outlookError, setOutlookError] = useState<string | undefined>();
   const [outlookModalOpen, setOutlookModalOpen] = useState(false);
+  const [gmailAccounts, setGmailAccounts] = useState<GmailAccount[]>([]);
+  const [gmailStatus, setGmailStatus] = useState<CardStatus>('loading');
+  const [gmailError, setGmailError] = useState<string | undefined>();
+  const [gmailModalOpen, setGmailModalOpen] = useState(false);
   const [keyModalProvider, setKeyModalProvider] = useState<KeyProvider | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [baseUrlInput, setBaseUrlInput] = useState('');
@@ -52,6 +56,19 @@ export function IntegrationsPage() {
       .catch((error) => {
         setOutlookStatus('error');
         setOutlookError(extractErrorMessage(error));
+      });
+  };
+
+  const loadGmailAccounts = () => {
+    integrationsService
+      .getGmailAccounts()
+      .then((accounts) => {
+        setGmailAccounts(accounts);
+        setGmailStatus(accounts.length > 0 ? 'connected' : 'disconnected');
+      })
+      .catch((error) => {
+        setGmailStatus('error');
+        setGmailError(extractErrorMessage(error));
       });
   };
 
@@ -72,6 +89,7 @@ export function IntegrationsPage() {
       .catch((error) => setCrm({ status: 'error', detail: extractErrorMessage(error) }));
 
     loadOutlookAccounts();
+    loadGmailAccounts();
   }, []);
 
   const openKeyModal = (provider: KeyProvider) => {
@@ -159,6 +177,35 @@ export function IntegrationsPage() {
     }
   };
 
+  const handleConnectGmail = async () => {
+    try {
+      const url = await integrationsService.getGmailConnectUrl();
+      window.location.href = url;
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    }
+  };
+
+  const handleSetActiveGmailAccount = async (email: string) => {
+    try {
+      await integrationsService.setActiveGmailAccount(email);
+      toast.success(`${email} is now the active Gmail account`);
+      loadGmailAccounts();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    }
+  };
+
+  const handleDisconnectGmailAccount = async (email: string) => {
+    try {
+      await integrationsService.disconnectGmailAccount(email);
+      toast.success(`${email} disconnected`);
+      loadGmailAccounts();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    }
+  };
+
   const badgeFor = (state: CardState) => {
     if (state.status === 'loading') return <Badge variant="neutral">Checking...</Badge>;
     if (state.status === 'connected') return <Badge variant="success" dot>Connected</Badge>;
@@ -225,7 +272,7 @@ export function IntegrationsPage() {
           </div>
         </Card>
 
-        {/* Gmail — no OAuth client configured yet, kept visible as a placeholder */}
+        {/* Gmail — real Google OAuth delegated flow, mirrors Outlook below */}
         <Card className={styles.card}>
           <div className={styles.cardHeader}>
             <span className={styles.iconTile}>G</span>
@@ -233,17 +280,26 @@ export function IntegrationsPage() {
               <div className={styles.cardName}>Gmail</div>
               <div className={styles.cardCategory}>Communication</div>
             </div>
-            <Badge variant="neutral" dot>Not configured</Badge>
+            {badgeFor({ status: gmailStatus, detail: gmailError })}
           </div>
-          <p className={styles.cardDescription}>Send and read email via Gmail.</p>
+          <p className={styles.cardDescription}>Email via the Gmail API — analyzed using Claude.</p>
+          {gmailStatus === 'connected' && (
+            <div className={styles.keyPreview}>
+              {gmailAccounts.find((a) => a.isActive)?.email ?? gmailAccounts[0].email}
+              {gmailAccounts.length > 1 && ` (+${gmailAccounts.length - 1} more)`}
+            </div>
+          )}
+          {gmailStatus === 'error' && gmailError && <div className={styles.keyPreview}>{gmailError}</div>}
           <div className={styles.cardFooter}>
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => toast('Gmail needs a Google OAuth client — not configured yet.')}
-            >
-              Connect
-            </Button>
+            {gmailStatus === 'connected' ? (
+              <Button size="sm" variant="secondary" leftIcon={<FiSettings />} onClick={() => setGmailModalOpen(true)}>
+                Manage Accounts
+              </Button>
+            ) : (
+              <Button size="sm" leftIcon={<FiCheckCircle />} onClick={handleConnectGmail}>
+                Connect
+              </Button>
+            )}
           </div>
         </Card>
 
@@ -356,6 +412,53 @@ export function IntegrationsPage() {
               Close
             </Button>
             <Button leftIcon={<FiPlus />} onClick={handleConnectOutlook}>
+              Connect New Account
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {gmailModalOpen && (
+        <Modal
+          open
+          onClose={() => setGmailModalOpen(false)}
+          title="Gmail Account Management"
+          description="Manage Gmail accounts connected to your business, and connect new ones."
+        >
+          <div className={styles.accountList}>
+            {gmailAccounts.map((account) => (
+              <div key={account.email} className={styles.accountRow}>
+                <div>
+                  <div className={styles.accountEmail}>{account.email}</div>
+                  {account.isActive ? (
+                    <Badge variant="success" dot>Active</Badge>
+                  ) : (
+                    <Badge variant="neutral" dot>Connected</Badge>
+                  )}
+                </div>
+                <div className={styles.accountActions}>
+                  {!account.isActive && (
+                    <Button size="sm" variant="secondary" onClick={() => handleSetActiveGmailAccount(account.email)}>
+                      Set Active
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    leftIcon={<FiTrash2 />}
+                    onClick={() => handleDisconnectGmailAccount(account.email)}
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-5)' }}>
+            <Button variant="ghost" onClick={() => setGmailModalOpen(false)}>
+              Close
+            </Button>
+            <Button leftIcon={<FiPlus />} onClick={handleConnectGmail}>
               Connect New Account
             </Button>
           </div>

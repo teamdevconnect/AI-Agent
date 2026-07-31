@@ -60,7 +60,13 @@ def _reflect(state_input: dict, output_items: list[dict], tools_used: list[str])
         return {"messages": output_items, "tools_used": tools_used}
 
     try:
-        verdict = anthropic_client.critique_response(_last_user_text(state_input["messages"]), draft)
+        verdict = anthropic_client.critique_response(
+            _last_user_text(state_input["messages"]),
+            draft,
+            organization_id=state_input.get("organization_id"),
+            user_id=state_input.get("user_id", ""),
+            conversation_id=state_input.get("conversation_id", ""),
+        )
     except Exception:
         return {"messages": output_items, "tools_used": tools_used}
 
@@ -113,7 +119,13 @@ gathered this yourself."""
 
 
 def _run_specialist(
-    agent_key: str, task: str, base_messages: list[dict], user_id: str, conversation_id: str, cancel_event
+    agent_key: str,
+    task: str,
+    base_messages: list[dict],
+    user_id: str,
+    organization_id: str | None,
+    conversation_id: str,
+    cancel_event,
 ) -> dict:
     spec = SPECIALISTS[agent_key]
     result = get_graph().invoke(
@@ -124,6 +136,7 @@ def _run_specialist(
             "rounds": 0,
             "provider": "",
             "user_id": user_id,
+            "organization_id": organization_id,
             "conversation_id": conversation_id,
             "on_event": None,  # concurrent specialists share one SSE stream; only coarse start/done markers go out, from run() below
             "system_prompt": spec["system_prompt"],
@@ -146,7 +159,12 @@ def run(state_input: dict) -> dict:
 
     try:
         try:
-            plan = anthropic_client.classify_request(state_input["messages"])
+            plan = anthropic_client.classify_request(
+                state_input["messages"],
+                organization_id=state_input.get("organization_id"),
+                user_id=state_input.get("user_id", ""),
+                conversation_id=state_input.get("conversation_id", ""),
+            )
         except Exception:
             plan = {"mode": "simple", "assignments": [], "reasoning": ""}
 
@@ -168,6 +186,9 @@ def run(state_input: dict) -> dict:
                     on_event=on_event,
                     system_prompt=state_input.get("system_prompt"),
                     cancel_event=cancel_event,
+                    organization_id=state_input.get("organization_id"),
+                    user_id=state_input.get("user_id", ""),
+                    conversation_id=state_input.get("conversation_id", ""),
                 )
                 return {"messages": output_items, "tools_used": []}
             except Exception:
@@ -189,6 +210,7 @@ def run(state_input: dict) -> dict:
                     a["task"],
                     state_input["messages"],
                     state_input["user_id"],
+                    state_input.get("organization_id"),
                     state_input["conversation_id"],
                     cancel_event,
                 )
@@ -209,7 +231,14 @@ def run(state_input: dict) -> dict:
         ]
         system_prompt = (state_input.get("system_prompt") or SYSTEM_PROMPT) + SYNTHESIS_PROMPT_SUFFIX
         output_items = anthropic_client.call(
-            synthesis_input, on_event=on_event, system_prompt=system_prompt, tools=[], cancel_event=cancel_event
+            synthesis_input,
+            on_event=on_event,
+            system_prompt=system_prompt,
+            tools=[],
+            cancel_event=cancel_event,
+            organization_id=state_input.get("organization_id"),
+            user_id=state_input.get("user_id", ""),
+            conversation_id=state_input.get("conversation_id", ""),
         )
         tools_used = [tool for f in findings for tool in f["tools_used"]]
 

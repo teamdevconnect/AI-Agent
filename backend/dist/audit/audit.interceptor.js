@@ -30,6 +30,7 @@ let AuditInterceptor = class AuditInterceptor {
         const record = (statusCode) => {
             void this.auditService.log({
                 userId: request.user?.sub ?? 'anonymous',
+                organizationId: request.user?.organizationId,
                 method,
                 route,
                 statusCode,

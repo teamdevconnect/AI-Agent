@@ -44,7 +44,9 @@ export function DashboardPage() {
     );
   }
 
-  const agentName = (agentId: string) => data.agents.find((a) => a.id === agentId)?.name ?? agentId;
+  // Falls back to a readable placeholder, never the raw id — same
+  // convention as UsersSettings.tsx's agentName/storeName helpers.
+  const agentName = (agentId: string) => data.agents.find((a) => a.id === agentId)?.name ?? 'Unknown agent';
 
   const visibleAlerts = data.criticalAlerts.filter((t) => {
     if (activeFilter === 'urgent') return t.priority === 'urgent';

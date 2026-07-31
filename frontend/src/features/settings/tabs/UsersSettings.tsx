@@ -4,24 +4,40 @@ import { FiTrash2 } from 'react-icons/fi';
 import { Badge, Button, IconButton, Input, Modal, Switch } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { chatService } from '@/services/chatService';
+import { organizationsService, type Store } from '@/services/organizationsService';
 import { useAuthStore } from '@/stores/authStore';
 import type { ChatAgent } from '@/types';
-import { usersService, type AdminUser, type CreateUserResult } from '@/services/usersService';
+import { usersService, type AdminUser, type AssignableRole, type CreateUserResult } from '@/services/usersService';
 import { SettingsField, SettingsSection } from '../components/SettingsSection';
 import styles from './UsersSettings.module.css';
 
-const ROLE_BADGE: Record<string, 'info' | 'accent' | 'neutral'> = {
+const ROLE_BADGE: Record<string, 'info' | 'accent' | 'neutral' | 'success'> = {
   admin: 'info',
   agent_user: 'accent',
   user: 'neutral',
+  manager: 'success',
+  consultant: 'success',
 };
 
-const emptyForm = { email: '', name: '', role: 'agent_user' as const, assignedAgentId: '' };
+// Manager/Consultant dashboards (Phase 3) are store-scoped — a store
+// assignment is required for both roles, not just Manager, so rosters never
+// have an unassigned consultant (see backend's STORE_SCOPED_ROLES).
+const STORE_SCOPED_ROLES = new Set<AssignableRole>(['manager', 'consultant']);
+
+const emptyForm = {
+  email: '',
+  name: '',
+  role: 'agent_user' as AssignableRole,
+  assignedAgentId: '',
+  storeId: '',
+  department: '',
+};
 
 export function UsersSettings() {
   const currentUserId = useAuthStore((state) => state.user?.id);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [agents, setAgents] = useState<ChatAgent[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -30,9 +46,16 @@ export function UsersSettings() {
   const [createdResult, setCreatedResult] = useState<CreateUserResult | null>(null);
 
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
-  const [editForm, setEditForm] = useState<{ role: 'admin' | 'agent_user' | 'user'; assignedAgentId: string }>({
+  const [editForm, setEditForm] = useState<{
+    role: AssignableRole;
+    assignedAgentId: string;
+    storeId: string;
+    department: string;
+  }>({
     role: 'agent_user',
     assignedAgentId: '',
+    storeId: '',
+    department: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -42,9 +65,14 @@ export function UsersSettings() {
   const load = async () => {
     setLoading(true);
     try {
-      const [userList, agentList] = await Promise.all([usersService.list(), chatService.getAgents()]);
+      const [userList, agentList, storeList] = await Promise.all([
+        usersService.list(),
+        chatService.getAgents(),
+        organizationsService.listStores(),
+      ]);
       setUsers(userList);
       setAgents(agentList);
+      setStores(storeList);
     } catch (err) {
       toast.error(extractErrorMessage(err));
     } finally {
@@ -70,6 +98,8 @@ export function UsersSettings() {
         name: form.name,
         role: form.role,
         assignedAgentId: form.role === 'agent_user' ? form.assignedAgentId : undefined,
+        storeId: STORE_SCOPED_ROLES.has(form.role) ? form.storeId : undefined,
+        department: form.department || undefined,
       });
       setCreatedResult(result);
       await load();
@@ -92,8 +122,10 @@ export function UsersSettings() {
   const openEdit = (user: AdminUser) => {
     setEditingUser(user);
     setEditForm({
-      role: (user.roles[0] as 'admin' | 'agent_user' | 'user') ?? 'user',
+      role: (user.roles[0] as AssignableRole) ?? 'user',
       assignedAgentId: user.assignedAgentId ?? '',
+      storeId: user.storeId ?? '',
+      department: user.department ?? '',
     });
   };
 
@@ -104,6 +136,8 @@ export function UsersSettings() {
       const updated = await usersService.update(editingUser.id, {
         role: editForm.role,
         assignedAgentId: editForm.role === 'agent_user' ? editForm.assignedAgentId : undefined,
+        storeId: STORE_SCOPED_ROLES.has(editForm.role) ? editForm.storeId : undefined,
+        department: editForm.department || undefined,
       });
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       toast.success('User updated');
@@ -130,7 +164,10 @@ export function UsersSettings() {
     }
   };
 
-  const agentName = (agentId?: string) => agents.find((a) => a.id === agentId)?.name ?? agentId;
+  // Falls back to a readable placeholder, never the raw id — an
+  // agent/store that's since been deleted shouldn't surface its Mongo id.
+  const agentName = (agentId?: string) => agents.find((a) => a.id === agentId)?.name ?? 'Unknown agent';
+  const storeName = (storeId?: string) => stores.find((s) => s._id === storeId)?.name ?? 'Unknown store';
 
   return (
     <>
@@ -163,6 +200,7 @@ export function UsersSettings() {
                   </Badge>
                 ))}
                 {user.assignedAgentId && <Badge variant="neutral">{agentName(user.assignedAgentId)}</Badge>}
+                {user.storeId && <Badge variant="neutral">{storeName(user.storeId)}</Badge>}
                 <div className={styles.userActions}>
                   <Switch checked={user.active} onChange={() => void handleToggleActive(user)} />
                   <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(user)}>
@@ -213,8 +251,10 @@ export function UsersSettings() {
                 <select
                   className={styles.select}
                   value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value as typeof form.role })}
+                  onChange={(e) => setForm({ ...form, role: e.target.value as AssignableRole })}
                 >
+                  <option value="manager">Manager (store dashboard)</option>
+                  <option value="consultant">Consultant (personal dashboard)</option>
                   <option value="agent_user">Agent User (locked to one AI agent)</option>
                   <option value="admin">Admin (full access)</option>
                   <option value="user">User (full access, legacy)</option>
@@ -238,6 +278,30 @@ export function UsersSettings() {
                   </select>
                 </SettingsField>
               )}
+              {STORE_SCOPED_ROLES.has(form.role) && (
+                <SettingsField label="Store">
+                  <select
+                    className={styles.select}
+                    value={form.storeId}
+                    onChange={(e) => setForm({ ...form, storeId: e.target.value })}
+                  >
+                    <option value="" disabled>
+                      Select a store…
+                    </option>
+                    {stores.map((s) => (
+                      <option key={s._id} value={s._id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </SettingsField>
+              )}
+              <Input
+                label="Department (optional)"
+                placeholder="e.g. Sales"
+                value={form.department}
+                onChange={(e) => setForm({ ...form, department: e.target.value })}
+              />
             </div>
             <div className={styles.modalFooter}>
               <Button type="button" variant="ghost" onClick={closeCreateModal}>
@@ -245,7 +309,13 @@ export function UsersSettings() {
               </Button>
               <Button
                 type="button"
-                disabled={creating || !form.email || !form.name || (form.role === 'agent_user' && !form.assignedAgentId)}
+                disabled={
+                  creating ||
+                  !form.email ||
+                  !form.name ||
+                  (form.role === 'agent_user' && !form.assignedAgentId) ||
+                  (STORE_SCOPED_ROLES.has(form.role) && !form.storeId)
+                }
                 onClick={() => void handleCreate()}
               >
                 {creating ? 'Creating…' : 'Create User'}
@@ -261,8 +331,10 @@ export function UsersSettings() {
             <select
               className={styles.select}
               value={editForm.role}
-              onChange={(e) => setEditForm({ ...editForm, role: e.target.value as typeof editForm.role })}
+              onChange={(e) => setEditForm({ ...editForm, role: e.target.value as AssignableRole })}
             >
+              <option value="manager">Manager (store dashboard)</option>
+              <option value="consultant">Consultant (personal dashboard)</option>
               <option value="agent_user">Agent User (locked to one AI agent)</option>
               <option value="admin">Admin (full access)</option>
               <option value="user">User (full access, legacy)</option>
@@ -286,6 +358,30 @@ export function UsersSettings() {
               </select>
             </SettingsField>
           )}
+          {STORE_SCOPED_ROLES.has(editForm.role) && (
+            <SettingsField label="Store">
+              <select
+                className={styles.select}
+                value={editForm.storeId}
+                onChange={(e) => setEditForm({ ...editForm, storeId: e.target.value })}
+              >
+                <option value="" disabled>
+                  Select a store…
+                </option>
+                {stores.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </SettingsField>
+          )}
+          <Input
+            label="Department (optional)"
+            placeholder="e.g. Sales"
+            value={editForm.department}
+            onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+          />
         </div>
         <div className={styles.modalFooter}>
           <Button type="button" variant="ghost" onClick={() => setEditingUser(null)}>
@@ -293,7 +389,11 @@ export function UsersSettings() {
           </Button>
           <Button
             type="button"
-            disabled={saving || (editForm.role === 'agent_user' && !editForm.assignedAgentId)}
+            disabled={
+              saving ||
+              (editForm.role === 'agent_user' && !editForm.assignedAgentId) ||
+              (STORE_SCOPED_ROLES.has(editForm.role) && !editForm.storeId)
+            }
             onClick={() => void handleEditSave()}
           >
             {saving ? 'Saving…' : 'Save Changes'}

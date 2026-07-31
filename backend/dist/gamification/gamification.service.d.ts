@@ -1,5 +1,6 @@
 import { Model } from 'mongoose';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TimelineService } from '../timeline/timeline.service';
 import { Achievement } from './achievements';
 import { UserStatsDocument } from './schemas/user-stats.schema';
 export interface UserStatsOut {
@@ -16,9 +17,10 @@ export interface UserStatsOut {
 export declare class GamificationService {
     private statsModel;
     private notificationsService;
-    constructor(statsModel: Model<UserStatsDocument>, notificationsService: NotificationsService);
+    private timelineService;
+    constructor(statsModel: Model<UserStatsDocument>, notificationsService: NotificationsService, timelineService: TimelineService);
     getStats(userId: string): Promise<UserStatsOut>;
-    recordTaskCompletion(userId: string, wasOverdue: boolean): Promise<{
+    recordTaskCompletion(userId: string, organizationId: string, wasOverdue: boolean): Promise<{
         newAchievements: Achievement[];
     }>;
 }

@@ -14,16 +14,20 @@ export declare class DashboardService {
     private readonly agentUrl;
     constructor(reportModel: Model<DailyReportDocument>, http: HttpService, config: ConfigService, jwt: JwtService, chatService: ChatService);
     recordDailyReport(input: {
+        organizationId: string;
+        storeId: string;
         agentId: string;
         reportType: 'morning' | 'eod';
         date: string;
         conversationId: string;
         userId: string;
+        wasMissed?: boolean;
     }): Promise<import("mongoose").Document<unknown, {}, DailyReportDocument, {}, {}> & DailyReport & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;
     }>;
+    hasReportToday(organizationId: string, storeId: string, reportType: 'morning' | 'eod', date: string): Promise<boolean>;
     getOverview(caller?: JwtPayload, agentId?: string): Promise<{
         date: string;
         agents: {

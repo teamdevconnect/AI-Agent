@@ -26,6 +26,10 @@ const agent_role_schema_1 = require("../agent-roles/schemas/agent-role.schema");
 const agents_1 = require("./agents");
 const conversation_schema_1 = require("./schemas/conversation.schema");
 const CACHE_TTL_SECONDS = 45;
+function stripAssignment(agent) {
+    const { assignedDepartments: _d, assignedUserIds: _u, ...rest } = agent;
+    return rest;
+}
 let ChatService = ChatService_1 = class ChatService {
     constructor(conversationModel, agentRoleModel, http, config, cache, jwt) {
         this.conversationModel = conversationModel;
@@ -38,18 +42,34 @@ let ChatService = ChatService_1 = class ChatService {
         this.agentUrl = this.config.get('pythonAgentUrl') ?? 'http://localhost:8000';
     }
     async listAgents(caller) {
-        const dynamic = await this.agentRoleModel
-            .find({ status: 'active' })
-            .select({ slug: 1, name: 1, description: 1, avatarColor: 1 })
-            .exec();
+        const dynamic = caller?.organizationId
+            ? await this.agentRoleModel
+                .find({ status: 'active', organizationId: caller.organizationId })
+                .select({ slug: 1, name: 1, description: 1, avatarColor: 1, assignedDepartments: 1, assignedUserIds: 1 })
+                .exec()
+            : [];
         const all = [
-            ...agents_1.CHAT_AGENTS,
-            ...dynamic.map((d) => ({ id: d.slug, name: d.name, description: d.description, avatarColor: d.avatarColor })),
+            ...agents_1.CHAT_AGENTS.map((a) => ({ ...a, assignedDepartments: [], assignedUserIds: [] })),
+            ...dynamic.map((d) => ({
+                id: d.slug,
+                name: d.name,
+                description: d.description,
+                avatarColor: d.avatarColor,
+                assignedDepartments: d.assignedDepartments ?? [],
+                assignedUserIds: d.assignedUserIds ?? [],
+            })),
         ];
         if (caller?.roles?.includes('agent_user') && !caller.roles.includes('admin')) {
-            return all.filter((a) => a.id === caller.assignedAgentId);
+            return all.map(stripAssignment).filter((a) => a.id === caller.assignedAgentId);
         }
-        return all;
+        if (caller && !caller.roles.includes('admin') && !caller.roles.includes('owner')) {
+            return all
+                .filter((a) => (a.assignedDepartments.length === 0 && a.assignedUserIds.length === 0) ||
+                (!!caller.department && a.assignedDepartments.includes(caller.department)) ||
+                a.assignedUserIds.includes(caller.sub))
+                .map(stripAssignment);
+        }
+        return all.map(stripAssignment);
     }
     async listConversations(userId) {
         const cacheKey = `chat:conversations:${userId}`;
@@ -74,8 +94,8 @@ let ChatService = ChatService_1 = class ChatService {
             await this.cache.set(cacheKey, result, CACHE_TTL_SECONDS);
         return result;
     }
-    async sendMessage(userId, userJwt, message, conversationId, agentId) {
-        const conversation = await this.getOrCreateConversation(userId, message, conversationId, agentId);
+    async sendMessage(userId, organizationId, userJwt, message, conversationId, agentId) {
+        const conversation = await this.getOrCreateConversation(userId, organizationId, message, conversationId, agentId);
         const resolvedAgentId = this.resolveConversationAgent(conversation, agentId);
         conversation.messages.push({
             role: 'user',
@@ -86,8 +106,8 @@ let ChatService = ChatService_1 = class ChatService {
         const agentReply = await this.callAgent(userId, userJwt, conversation._id.toString(), message, resolvedAgentId);
         return this.finishTurn(conversation, agentReply);
     }
-    async sendMessageStreaming(userId, userJwt, message, conversationId, onEvent, agentId, onConversationId) {
-        const conversation = await this.getOrCreateConversation(userId, message, conversationId, agentId);
+    async sendMessageStreaming(userId, organizationId, userJwt, message, conversationId, onEvent, agentId, onConversationId) {
+        const conversation = await this.getOrCreateConversation(userId, organizationId, message, conversationId, agentId);
         onConversationId?.(conversation._id.toString());
         const resolvedAgentId = this.resolveConversationAgent(conversation, agentId);
         conversation.messages.push({
@@ -99,8 +119,8 @@ let ChatService = ChatService_1 = class ChatService {
         const agentReply = await this.callAgentStreaming(userId, userJwt, conversation._id.toString(), message, onEvent, resolvedAgentId);
         return this.finishTurn(conversation, agentReply);
     }
-    async generateSystemConversation(userId, agentId, promptText, title) {
-        const conversation = await this.conversationModel.create({ userId, title, agentId, messages: [] });
+    async generateSystemConversation(userId, organizationId, agentId, promptText, title) {
+        const conversation = await this.conversationModel.create({ userId, organizationId, title, agentId, messages: [] });
         conversation.messages.push({
             role: 'user',
             content: promptText,
@@ -111,7 +131,7 @@ let ChatService = ChatService_1 = class ChatService {
         const agentReply = await this.callAgent(userId, userJwt, conversation._id.toString(), promptText, agentId);
         return this.finishTurn(conversation, agentReply);
     }
-    async getOrCreateConversation(userId, message, conversationId, agentId) {
+    async getOrCreateConversation(userId, organizationId, message, conversationId, agentId) {
         const existing = conversationId
             ? await this.conversationModel.findOne({ _id: conversationId, userId })
             : null;
@@ -119,6 +139,7 @@ let ChatService = ChatService_1 = class ChatService {
             return existing;
         return this.conversationModel.create({
             userId,
+            organizationId,
             title: message.slice(0, 60),
             agentId,
             messages: [],

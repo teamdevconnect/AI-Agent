@@ -39,18 +39,31 @@ let DashboardService = class DashboardService {
         const userJwt = this.jwt.sign({ sub: input.userId }, { expiresIn: '5m' });
         const { data } = await (0, rxjs_1.firstValueFrom)(this.http.post(`${this.agentUrl}/reports/generate`, { report_type: input.reportType }, { headers: { Authorization: `Bearer ${userJwt}` } }));
         return this.reportModel
-            .findOneAndUpdate({ agentId: input.agentId, reportType: input.reportType, date: input.date }, {
+            .findOneAndUpdate({
+            organizationId: input.organizationId,
+            storeId: input.storeId,
+            agentId: input.agentId,
+            reportType: input.reportType,
+            date: input.date,
+        }, {
             tasks: data.tasks,
             summary: data.summary,
             sourceConversationId: input.conversationId,
             sourceUserId: input.userId,
+            wasMissed: input.wasMissed ?? false,
         }, { upsert: true, new: true })
             .exec();
+    }
+    async hasReportToday(organizationId, storeId, reportType, date) {
+        const count = await this.reportModel.countDocuments({ organizationId, storeId, reportType, date }).exec();
+        return count > 0;
     }
     async getOverview(caller, agentId) {
         const date = todayStamp();
         const [allReports, agents] = await Promise.all([
-            this.reportModel.find({ date }).sort({ updatedAt: -1 }).lean().exec(),
+            caller?.organizationId
+                ? this.reportModel.find({ organizationId: caller.organizationId, date }).sort({ updatedAt: -1 }).lean().exec()
+                : Promise.resolve([]),
             this.chatService.listAgents(caller),
         ]);
         let scopedAgentIds = new Set(agents.map((a) => a.id));
@@ -106,6 +119,9 @@ let DashboardService = class DashboardService {
         };
     }
     async getTrend(agentId, days, caller) {
+        if (!caller?.organizationId) {
+            throw new common_1.NotFoundException('Agent not found');
+        }
         const allowedAgentIds = await (0, agent_scope_util_1.resolveAllowedAgentIds)(this.chatService, caller);
         if (!allowedAgentIds.includes(agentId)) {
             throw new common_1.NotFoundException('Agent not found');
@@ -117,7 +133,11 @@ let DashboardService = class DashboardService {
             dates.push(d.toISOString().slice(0, 10));
         }
         const reports = await this.reportModel
-            .find({ agentId, date: { $gte: dates[0], $lte: dates[dates.length - 1] } })
+            .find({
+            organizationId: caller.organizationId,
+            agentId,
+            date: { $gte: dates[0], $lte: dates[dates.length - 1] },
+        })
             .lean()
             .exec();
         const byDate = new Map();

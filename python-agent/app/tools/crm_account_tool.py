@@ -25,10 +25,10 @@ SPEC = {
 _LIST_DEFAULT_FIELDS = ["name", "domain", "city", "industry", "revenue"]
 
 
-def _fetch_raw_accounts(*, offset=0, limit=25, name="", fields=None):
+def _fetch_raw_accounts(*, offset=0, limit=25, name="", fields=None, organization_id=None):
     """Parsed response from /account/fetch-account-list — used by run() and
     by the RAG business sync job."""
-    base_url, api_key = prospectconnect.resolve_credentials()
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id)
     if not base_url or not api_key:
         return {"data": []}
     payload = {
@@ -41,7 +41,8 @@ def _fetch_raw_accounts(*, offset=0, limit=25, name="", fields=None):
 
 
 def run(tool_input: dict, context: dict) -> str:
-    base_url, api_key = prospectconnect.resolve_credentials()
+    organization_id = context.get("organization_id")
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id, context.get("user_id", ""))
     if not base_url or not api_key:
         return "No CRM is connected yet. Ask the user to connect one via the Integrations page."
 
@@ -50,4 +51,5 @@ def run(tool_input: dict, context: dict) -> str:
         limit=tool_input.get("limit", 25),
         name=tool_input.get("name") or "",
         fields=tool_input.get("fields"),
+        organization_id=organization_id,
     ))

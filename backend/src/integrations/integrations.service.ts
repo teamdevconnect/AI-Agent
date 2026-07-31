@@ -19,29 +19,30 @@ export class IntegrationsService {
   ) {}
 
   async connect(
+    organizationId: string,
     provider: string,
     apiKey: string,
     baseUrl?: string,
   ): Promise<{ connected: true; maskedKey: string; baseUrl?: string }> {
     this.assertAllowed(provider);
     await this.credentialModel.findOneAndUpdate(
-      { provider },
-      { provider, apiKey, baseUrl },
+      { organizationId, provider },
+      { organizationId, provider, apiKey, baseUrl },
       { upsert: true },
     );
     return { connected: true, maskedKey: this.mask(apiKey), baseUrl };
   }
 
-  async status(provider: string): Promise<{ connected: boolean; maskedKey?: string; baseUrl?: string }> {
+  async status(organizationId: string, provider: string): Promise<{ connected: boolean; maskedKey?: string; baseUrl?: string }> {
     this.assertAllowed(provider);
-    const doc = await this.credentialModel.findOne({ provider });
+    const doc = await this.credentialModel.findOne({ organizationId, provider });
     if (!doc) return { connected: false };
     return { connected: true, maskedKey: this.mask(doc.apiKey), baseUrl: doc.baseUrl };
   }
 
-  async disconnect(provider: string): Promise<void> {
+  async disconnect(organizationId: string, provider: string): Promise<void> {
     this.assertAllowed(provider);
-    await this.credentialModel.deleteOne({ provider });
+    await this.credentialModel.deleteOne({ organizationId, provider });
   }
 
   private assertAllowed(provider: string): void {

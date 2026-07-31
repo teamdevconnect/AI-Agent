@@ -1,4 +1,7 @@
-import { IsEmail, IsIn, IsString, MinLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
+import { ASSIGNABLE_ROLES, AssignableRole } from './update-user.dto';
+
+const STORE_SCOPED_ROLES = new Set(['manager', 'consultant']);
 
 export class CreateUserDto {
   @IsEmail()
@@ -8,10 +11,21 @@ export class CreateUserDto {
   @MinLength(1)
   name: string;
 
-  @IsIn(['admin', 'agent_user', 'user'])
-  role: 'admin' | 'agent_user' | 'user';
+  @IsIn(ASSIGNABLE_ROLES)
+  role: AssignableRole;
 
   @ValidateIf((o: CreateUserDto) => o.role === 'agent_user')
   @IsString()
   assignedAgentId?: string;
+
+  // Required for manager/consultant (store-scoped dashboards) — see
+  // update-user.dto.ts's STORE_SCOPED_ROLES comment.
+  @ValidateIf((o: CreateUserDto) => STORE_SCOPED_ROLES.has(o.role))
+  @IsString()
+  @MinLength(1)
+  storeId?: string;
+
+  @IsOptional()
+  @IsString()
+  department?: string;
 }

@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IntegrationsController = void 0;
 const common_1 = require("@nestjs/common");
+const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
@@ -23,14 +24,14 @@ let IntegrationsController = class IntegrationsController {
     constructor(integrationsService) {
         this.integrationsService = integrationsService;
     }
-    connect(provider, dto) {
-        return this.integrationsService.connect(provider, dto.apiKey, dto.baseUrl);
+    connect(user, provider, dto) {
+        return this.integrationsService.connect(user.organizationId, provider, dto.apiKey, dto.baseUrl);
     }
-    status(provider) {
-        return this.integrationsService.status(provider);
+    status(user, provider) {
+        return this.integrationsService.status(user.organizationId, provider);
     }
-    disconnect(provider) {
-        return this.integrationsService.disconnect(provider);
+    disconnect(user, provider) {
+        return this.integrationsService.disconnect(user.organizationId, provider);
     }
 };
 exports.IntegrationsController = IntegrationsController;
@@ -38,26 +39,29 @@ __decorate([
     (0, common_1.Post)(':provider/connect'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Param)('provider')),
-    __param(1, (0, common_1.Body)()),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('provider')),
+    __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, connect_integration_dto_1.ConnectIntegrationDto]),
+    __metadata("design:paramtypes", [Object, String, connect_integration_dto_1.ConnectIntegrationDto]),
     __metadata("design:returntype", void 0)
 ], IntegrationsController.prototype, "connect", null);
 __decorate([
     (0, common_1.Get)(':provider/status'),
-    __param(0, (0, common_1.Param)('provider')),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('provider')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], IntegrationsController.prototype, "status", null);
 __decorate([
     (0, common_1.Delete)(':provider'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Param)('provider')),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('provider')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], IntegrationsController.prototype, "disconnect", null);
 exports.IntegrationsController = IntegrationsController = __decorate([

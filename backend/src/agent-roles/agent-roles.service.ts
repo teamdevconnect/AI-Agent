@@ -46,8 +46,8 @@ export class AgentRolesService {
     this.agentUrl = this.config.get<string>('pythonAgentUrl') ?? 'http://localhost:8000';
   }
 
-  async listAll() {
-    const dynamic = await this.roleModel.find().sort({ createdAt: -1 }).exec();
+  async listAll(organizationId: string) {
+    const dynamic = await this.roleModel.find({ organizationId }).sort({ createdAt: -1 }).exec();
     const builtin = CHAT_AGENTS.map((a) => ({
       slug: a.id,
       name: a.name,
@@ -59,7 +59,7 @@ export class AgentRolesService {
     return [...builtin, ...dynamic.map((d) => ({ ...d.toObject(), builtin: false }))];
   }
 
-  async generateDraft(userId: string, userJwt: string, file: Express.Multer.File) {
+  async generateDraft(userId: string, organizationId: string, userJwt: string, file: Express.Multer.File) {
     const form = new FormData();
     form.append('file', file.buffer, { filename: file.originalname, contentType: file.mimetype });
     form.append('user_id', userId);
@@ -72,10 +72,11 @@ export class AgentRolesService {
       }),
     );
 
-    const slug = await this.uniqueSlug(data.name);
+    const slug = await this.uniqueSlug(data.name, organizationId);
     const avatarColor = AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
 
     const created = await this.roleModel.create({
+      organizationId,
       slug,
       name: data.name,
       department: data.department,
@@ -94,8 +95,8 @@ export class AgentRolesService {
     return { ...created.toObject(), builtin: false };
   }
 
-  async update(id: string, dto: UpdateAgentRoleDto, userJwt: string) {
-    const existing = await this.roleModel.findById(id).exec();
+  async update(id: string, dto: UpdateAgentRoleDto, userJwt: string, organizationId: string) {
+    const existing = await this.roleModel.findOne({ _id: id, organizationId }).exec();
     if (!existing) throw new NotFoundException('Role not found');
 
     const activating = dto.status === 'active' && existing.status !== 'active';
@@ -127,8 +128,8 @@ export class AgentRolesService {
     return { ...existing.toObject(), builtin: false };
   }
 
-  async remove(id: string, userJwt: string) {
-    const existing = await this.roleModel.findById(id).exec();
+  async remove(id: string, userJwt: string, organizationId: string) {
+    const existing = await this.roleModel.findOne({ _id: id, organizationId }).exec();
     if (!existing) throw new NotFoundException('Role not found');
 
     // Best-effort — don't block deleting the role's metadata on Qdrant cleanup.
@@ -150,11 +151,11 @@ export class AgentRolesService {
     return { deleted: true };
   }
 
-  private async uniqueSlug(name: string): Promise<string> {
+  private async uniqueSlug(name: string, organizationId: string): Promise<string> {
     const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'role';
     const taken = new Set<string>([
       ...CHAT_AGENTS.map((a) => a.id),
-      ...(await this.roleModel.distinct('slug').exec()),
+      ...(await this.roleModel.distinct('slug', { organizationId }).exec()),
     ]);
     let candidate = base;
     let n = 2;

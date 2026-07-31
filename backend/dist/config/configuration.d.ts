@@ -19,6 +19,11 @@ declare const _default: () => {
             clientSecret: string;
             redirectUri: string;
         };
+        google: {
+            clientId: string;
+            clientSecret: string;
+            redirectUri: string;
+        };
     };
 };
 export default _default;

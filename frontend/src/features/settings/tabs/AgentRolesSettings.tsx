@@ -4,6 +4,8 @@ import { FiPlus, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
 import { Avatar, Badge, Button, IconButton, Input, Modal, Spinner } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { agentRolesService, type AgentRole, type AgentRoleKpi } from '@/services/agentRolesService';
+import { usersService, type AdminUser } from '@/services/usersService';
+import { TOOL_PICKER_OPTIONS } from '@/features/chat/toolPickerOptions';
 import { SettingsField, SettingsSection } from '../components/SettingsSection';
 import styles from './AgentRolesSettings.module.css';
 
@@ -89,8 +91,33 @@ function KpiListEditor({ kpis, onChange }: { kpis: AgentRoleKpi[]; onChange: (kp
   );
 }
 
+function CheckboxGrid({
+  options,
+  selected,
+  onChange,
+}: {
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const toggle = (value: string) => {
+    onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
+  };
+  return (
+    <div className={styles.checkboxGrid}>
+      {options.map((opt) => (
+        <label key={opt.value} className={styles.checkboxOption}>
+          <input type="checkbox" checked={selected.includes(opt.value)} onChange={() => toggle(opt.value)} />
+          {opt.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 export function AgentRolesSettings() {
   const [roles, setRoles] = useState<AgentRole[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [file, setFile] = useState<File | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -106,6 +133,16 @@ export function AgentRolesSettings() {
       toast.error(extractErrorMessage(err));
     } finally {
       setLoadingList(false);
+    }
+    // Separate, non-fatal: GET /users is admin-only, but this page (and its
+    // read-only role list) is reachable by every non-agent_user role — a
+    // 403 here must not break the page for them, only leave the "Visible To
+    // Employees" picker empty (which only admins can act on anyway, since
+    // editing/saving a role is already admin-gated server-side).
+    try {
+      setUsers(await usersService.list());
+    } catch {
+      setUsers([]);
     }
   };
 
@@ -143,6 +180,10 @@ export function AgentRolesSettings() {
         weeklyTasks: editingRole.weeklyTasks,
         kpis: editingRole.kpis,
         systemPrompt: editingRole.systemPrompt,
+        assignedDepartments: editingRole.assignedDepartments ?? [],
+        assignedUserIds: editingRole.assignedUserIds ?? [],
+        allowedTools: editingRole.allowedTools ?? [],
+        modelTier: editingRole.modelTier,
         ...(status ? { status } : {}),
       });
       toast.success(status === 'active' ? 'Role activated' : 'Role saved');
@@ -288,6 +329,41 @@ export function AgentRolesSettings() {
                 kpis={editingRole.kpis ?? []}
                 onChange={(v) => setEditingRole({ ...editingRole, kpis: v })}
               />
+              <StringListEditor
+                label="Visible To Departments (leave empty for org-wide)"
+                items={editingRole.assignedDepartments ?? []}
+                onChange={(v) => setEditingRole({ ...editingRole, assignedDepartments: v })}
+              />
+              <SettingsField label="Visible To Employees (leave unchecked for org-wide)">
+                <CheckboxGrid
+                  options={users.map((u) => ({ value: u.id, label: u.name }))}
+                  selected={editingRole.assignedUserIds ?? []}
+                  onChange={(v) => setEditingRole({ ...editingRole, assignedUserIds: v })}
+                />
+              </SettingsField>
+              <SettingsField label="Allowed Tools (leave unchecked for unrestricted)">
+                <CheckboxGrid
+                  options={TOOL_PICKER_OPTIONS.map((t) => ({ value: t.name, label: t.label }))}
+                  selected={editingRole.allowedTools ?? []}
+                  onChange={(v) => setEditingRole({ ...editingRole, allowedTools: v })}
+                />
+              </SettingsField>
+              <SettingsField label="Model Tier">
+                <select
+                  className={styles.select}
+                  value={editingRole.modelTier ?? ''}
+                  onChange={(e) =>
+                    setEditingRole({
+                      ...editingRole,
+                      modelTier: (e.target.value || null) as 'fast' | 'standard' | null,
+                    })
+                  }
+                >
+                  <option value="">Default (auto)</option>
+                  <option value="fast">Fast (cheaper, quicker)</option>
+                  <option value="standard">Standard (full model)</option>
+                </select>
+              </SettingsField>
               <SettingsField label="System Prompt">
                 <textarea
                   className={styles.textarea}

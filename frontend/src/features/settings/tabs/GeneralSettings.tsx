@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-import toast from 'react-hot-toast';
-import { FiSun, FiMoon } from 'react-icons/fi';
-import { Button, Switch } from '@/components/ui';
-import { useUiStore } from '@/stores/uiStore';
-import { SettingsSection } from '../components/SettingsSection';
-import styles from '../components/SettingsSection.module.css';
-
-=======
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiSun, FiMoon, FiClock } from 'react-icons/fi';
@@ -44,15 +35,12 @@ function listTimezones(): string[] {
 
 const TIMEZONES = listTimezones();
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 export function GeneralSettings() {
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
 
   const handleSave = () => toast.success('General settings saved');
 
-<<<<<<< HEAD
-=======
   const [openingTime, setOpeningTime] = useState('09:00');
   const [closingTime, setClosingTime] = useState('18:00');
   const [timezone, setTimezone] = useState('Asia/Kolkata');
@@ -83,7 +71,6 @@ export function GeneralSettings() {
     }
   };
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   return (
     <>
       <SettingsSection title="Theme" description="Choose how HaiVE AI looks on your device.">
@@ -95,8 +82,6 @@ export function GeneralSettings() {
         />
       </SettingsSection>
 
-<<<<<<< HEAD
-=======
       <SettingsSection
         title="Store Timing"
         description="Sets when the store opens and closes. HaiVE AI uses this to automatically post a to-do list before opening and an end-of-day report at closing, grounded in your CRM and Outlook data."
@@ -139,7 +124,6 @@ export function GeneralSettings() {
         </SettingsField>
       </SettingsSection>
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
       <div className={styles.footer} style={{ borderTop: 'none' }}>
         <Button onClick={handleSave} leftIcon={theme === 'dark' ? <FiMoon /> : <FiSun />}>
           Save Changes

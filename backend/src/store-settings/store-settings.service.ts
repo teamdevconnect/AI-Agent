@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Model } from 'mongoose';
 import { ChatService } from '../chat/chat.service';
 import { DashboardService } from '../dashboard/dashboard.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { TimelineService } from '../timeline/timeline.service';
+import { JwtPayload } from '../auth/jwt-payload.interface';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { StoreDocument } from '../organizations/schemas/store.schema';
 import { UsersService } from '../users/users.service';
-import { StoreSettings, StoreSettingsDocument } from './schemas/store-settings.schema';
 
 const MORNING_AGENT_ID = 'store_manager';
 const MORNING_PROMPT =
@@ -14,13 +16,6 @@ const MORNING_PROMPT =
 const EOD_AGENT_ID = 'store_manager';
 const EOD_PROMPT =
   'Generate an end-of-day report: summarize what was completed today, outstanding follow-ups, and anything that needs attention tomorrow.';
-
-// Schema default only applies to newly-created documents — a StoreSettings
-// doc persisted before the `timezone` field existed reads back as undefined,
-// which would silently fall back to Intl's "use the host's local zone"
-// behavior and reintroduce the original bug. Same fallback value as the
-// schema default, applied at read time so old documents are covered too.
-const DEFAULT_TIMEZONE = 'Asia/Kolkata';
 
 // Both scheduled reports are authored by Store Manager (operationally-framed
 // daily check-ins fit that role for both morning and evening) — Sales
@@ -53,77 +48,111 @@ function nowMinutesInZone(tz: string): number {
   return hour * 60 + minute;
 }
 
+// The scheduled instant (today, in `tz`, at `hhmm`) as a real Date — used as
+// TimelineEvent.occurredAt for a missed/backfilled run, so the Timeline shows
+// what should have happened when, not when the catch-up actually ran.
+function scheduledInstant(tz: string, hhmm: string): Date {
+  const [h, m] = hhmm.split(':').map(Number);
+  const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date())
+    .reduce<Record<string, string>>((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+  return new Date(`${todayParts.year}-${todayParts.month}-${todayParts.day}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
+}
+
 @Injectable()
 export class StoreSettingsService {
   private readonly logger = new Logger(StoreSettingsService.name);
 
   constructor(
-    @InjectModel(StoreSettings.name) private settingsModel: Model<StoreSettingsDocument>,
+    private organizationsService: OrganizationsService,
     private chatService: ChatService,
     private dashboardService: DashboardService,
     private usersService: UsersService,
+    private notificationsService: NotificationsService,
+    private timelineService: TimelineService,
   ) {}
 
-  getSettings() {
-    return this.getOrCreateSettings();
+  getSettings(caller: JwtPayload) {
+    return this.organizationsService.resolveStoreForUser(caller.organizationId, caller.storeId);
   }
 
-  updateSettings(patch: { openingTime?: string; closingTime?: string; timezone?: string }) {
-    return this.settingsModel.findOneAndUpdate({}, patch, { upsert: true, new: true }).exec();
+  updateSettings(caller: JwtPayload, patch: { openingTime?: string; closingTime?: string; timezone?: string }) {
+    return this.organizationsService.updateStoreSettings(caller.organizationId, caller.storeId, patch);
   }
 
   /** Bypasses the trigger window/dedupe check — the manual testing/ops hook
-   * exposed via POST /store-settings/run-now. */
-  runNow(type: 'morning' | 'eod') {
+   * exposed via POST /store-settings/run-now. Scoped to the caller's own
+   * store only, not every store in every organization. An explicit manual
+   * run is never "missed" — that flag only means "the automatic schedule
+   * slipped," which doesn't apply here. */
+  async runNow(caller: JwtPayload, type: 'morning' | 'eod') {
+    const store = await this.organizationsService.resolveStoreForUser(caller.organizationId, caller.storeId);
     const now = new Date().toLocaleDateString();
-    if (type === 'eod') return this.runForAllUsers(EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now}`);
-    return this.runForAllUsers(MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now}`);
+    if (type === 'eod') {
+      return this.runForStore(store, EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now}`, false);
+    }
+    return this.runForStore(store, MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now}`, false);
   }
 
-  // A fixed-cadence checker (re-reads current config every tick) rather
-  // than dynamically rescheduling a cron job when store hours change —
-  // mirrors business_sync.py's fixed-interval-rereads-config pattern from
-  // the python-agent side. A 30-minute trigger window absorbs this 10-minute
-  // poll cadence, so a tick landing slightly off-schedule can't skip the day.
+  // A fixed-cadence checker (re-reads current store config every tick)
+  // rather than dynamically rescheduling a cron job per store when hours
+  // change — mirrors business_sync.py's fixed-interval-rereads-config
+  // pattern from the python-agent side. Deliberately NO upper bound on the
+  // trigger condition (just "at or after the scheduled minute, not yet run
+  // today") — a fixed 30-minute window used to mean a missed tick (e.g. the
+  // process was down across the whole window) silently skipped the entire
+  // day with no way to catch up. Now the same 10-minute poll picks it up
+  // on its next tick, however late, and flags it as missed rather than
+  // pretending it ran on time. Iterates every store across every tenant —
+  // each store evaluates its own opening/closing window independently.
   @Cron(CronExpression.EVERY_10_MINUTES)
   async checkAndRunDailyJobs() {
-    const settings = await this.getOrCreateSettings();
+    const stores = await this.organizationsService.listAllStores();
     const today = todayStamp();
     const now = new Date();
-    const nowMin = nowMinutesInZone(settings.timezone || DEFAULT_TIMEZONE);
 
-    const openMin = toMinutes(settings.openingTime);
-    if (nowMin >= openMin - 30 && nowMin <= openMin && settings.lastMorningRunDate !== today) {
-      await this.runForAllUsers(MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now.toLocaleDateString()}`);
-      await this.settingsModel.updateOne({ _id: settings._id }, { lastMorningRunDate: today }).exec();
-    }
+    for (const store of stores) {
+      const nowMin = nowMinutesInZone(store.timezone);
 
-    const closeMin = toMinutes(settings.closingTime);
-    if (nowMin >= closeMin && nowMin <= closeMin + 30 && settings.lastEodRunDate !== today) {
-      await this.runForAllUsers(EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now.toLocaleDateString()}`);
-      await this.settingsModel.updateOne({ _id: settings._id }, { lastEodRunDate: today }).exec();
-    }
-  }
-
-  private async getOrCreateSettings(): Promise<StoreSettingsDocument> {
-    const existing = await this.settingsModel.findOne().exec();
-    if (existing) {
-      // Backfill for documents persisted before `timezone` existed — schema
-      // defaults only apply on create, and both the cron trigger and the
-      // Settings UI need a real value here, not undefined.
-      if (!existing.timezone) {
-        existing.timezone = DEFAULT_TIMEZONE;
-        await existing.save();
+      const openMin = toMinutes(store.openingTime);
+      if (nowMin >= openMin - 30 && store.lastMorningRunDate !== today) {
+        // Claim (atomic check-and-mark) BEFORE running — only the caller
+        // whose write actually matched proceeds, so an overlapping second
+        // evaluation (another instance, or a manual catch-up run) can never
+        // duplicate this store's morning report.
+        const claimed = await this.organizationsService.claimMorningRun(store._id.toString(), today);
+        if (claimed) {
+          const wasMissed = nowMin > openMin;
+          await this.runForStore(store, MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now.toLocaleDateString()}`, wasMissed);
+        }
       }
-      return existing;
+
+      const closeMin = toMinutes(store.closingTime);
+      if (nowMin >= closeMin - 30 && store.lastEodRunDate !== today) {
+        const claimed = await this.organizationsService.claimEodRun(store._id.toString(), today);
+        if (claimed) {
+          const wasMissed = nowMin > closeMin;
+          await this.runForStore(store, EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now.toLocaleDateString()}`, wasMissed);
+        }
+      }
     }
-    return this.settingsModel.create({});
   }
 
-  private async runForAllUsers(agentId: string, reportType: 'morning' | 'eod', promptText: string, title: string) {
-    const userIds = await this.usersService.findAllIds();
+  private async runForStore(
+    store: StoreDocument,
+    agentId: string,
+    reportType: 'morning' | 'eod',
+    promptText: string,
+    title: string,
+    wasMissed: boolean,
+  ) {
+    const organizationId = store.organizationId;
+    const storeId = store._id.toString();
+    const userIds = await this.usersService.findIdsByOrgAndStore(organizationId, storeId);
     const settled = await Promise.allSettled(
-      userIds.map((userId) => this.chatService.generateSystemConversation(userId, agentId, promptText, title)),
+      userIds.map((userId) =>
+        this.chatService.generateSystemConversation(userId, organizationId, agentId, promptText, title),
+      ),
     );
     settled.forEach((r, i) => {
       if (r.status === 'rejected') {
@@ -136,25 +165,58 @@ export class StoreSettingsService {
       .filter((x) => x.r.status === 'fulfilled')
       .map((x) => ({ value: (x.r as PromiseFulfilledResult<{ conversationId: string; reply: string }>).value, userId: x.userId }));
 
-    // Exactly one structured DailyReport per (agentId, reportType, date) —
-    // not one per user. The first successful user (earliest-created,
-    // findAllIds()'s natural order) is only the audit-trail owner
-    // (sourceConversationId/sourceUserId) here — the report's actual
-    // content comes from dashboardService's own CrewAI-backed generation
-    // (independent of any user's plain chat reply, and higher-quality for
-    // it), not from chosen.value.reply. A failure here must never break the
-    // per-user fan-out above.
+    // Exactly one structured DailyReport per (organizationId, agentId,
+    // reportType, date) — not one per user. The first successful user
+    // (earliest-created, findIdsByOrgAndStore()'s natural order) is only the
+    // audit-trail owner (sourceConversationId/sourceUserId) here — the
+    // report's actual content comes from dashboardService's own
+    // CrewAI-backed generation (independent of any user's plain chat reply,
+    // and higher-quality for it), not from chosen.value.reply. A failure
+    // here must never break the per-user fan-out above.
     if (successes.length > 0) {
       const chosen = successes[0];
+      const date = todayStamp();
       await this.dashboardService
         .recordDailyReport({
+          organizationId,
+          storeId,
           agentId,
           reportType,
-          date: todayStamp(),
+          date,
           conversationId: chosen.value.conversationId,
           userId: chosen.userId,
+          wasMissed,
         })
         .catch((err: Error) => this.logger.error(`Failed to generate ${reportType} report: ${err.message}`));
+
+      const occurredAt = wasMissed ? scheduledInstant(store.timezone, reportType === 'morning' ? store.openingTime : store.closingTime) : new Date();
+      await this.timelineService
+        .record({
+          organizationId,
+          storeId,
+          type: wasMissed ? 'daily_report_missed' : 'daily_report_generated',
+          title: wasMissed ? `${title} (generated late)` : title,
+          sourceType: 'daily_report',
+          occurredAt,
+        })
+        .catch((err: Error) => this.logger.error(`Failed to record timeline event: ${err.message}`));
+
+      if (wasMissed) {
+        await Promise.allSettled(
+          userIds.map((userId) =>
+            this.notificationsService.create(
+              userId,
+              {
+                kind: 'warning',
+                title: `${reportType === 'morning' ? 'Morning briefing' : 'EOD report'} generated late`,
+                description: `${store.name}'s scheduled ${reportType} report ran later than its usual trigger window today.`,
+                source: 'store-settings',
+              },
+              organizationId,
+            ),
+          ),
+        );
+      }
     }
 
     return { usersNotified: successes.length, totalUsers: userIds.length };

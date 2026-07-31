@@ -23,8 +23,8 @@ let NotificationsService = class NotificationsService {
         this.notificationModel = notificationModel;
         this.chatGateway = chatGateway;
     }
-    async create(userId, dto) {
-        const notification = await this.notificationModel.create({ userId, ...dto });
+    async create(userId, dto, organizationId) {
+        const notification = await this.notificationModel.create({ userId, organizationId, ...dto });
         this.chatGateway.emitToUser(userId, 'notification', notification);
         return notification;
     }

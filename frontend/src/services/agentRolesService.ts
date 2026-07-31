@@ -20,6 +20,15 @@ export interface AgentRole {
   status: 'draft' | 'active';
   avatarColor: string;
   builtin: boolean;
+  // Chat @mention visibility (Phase 6) — both empty/absent means visible
+  // org-wide, same as every role created before this existed.
+  assignedDepartments?: string[];
+  assignedUserIds?: string[];
+  // Which registered tools this persona may call — empty/absent means
+  // unrestricted (see backend/src/agent-roles/schemas/agent-role.schema.ts).
+  allowedTools?: string[];
+  // Unset (or null, while editing) = the existing message-length/round-based heuristic.
+  modelTier?: 'fast' | 'standard' | null;
 }
 
 export type UpdateAgentRolePayload = Partial<
@@ -34,8 +43,16 @@ export type UpdateAgentRolePayload = Partial<
     | 'kpis'
     | 'systemPrompt'
     | 'status'
+    | 'assignedDepartments'
+    | 'assignedUserIds'
+    | 'allowedTools'
   >
->;
+> & {
+  // null explicitly clears back to "Default (auto)" — omitting the field
+  // entirely (undefined) means "don't touch", same convention as every
+  // other optional field in this app's PATCH payloads.
+  modelTier?: 'fast' | 'standard' | null;
+};
 
 export const agentRolesService = {
   async list(): Promise<AgentRole[]> {

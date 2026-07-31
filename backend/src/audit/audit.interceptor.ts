@@ -26,6 +26,7 @@ export class AuditInterceptor implements NestInterceptor {
     const record = (statusCode: number) => {
       void this.auditService.log({
         userId: request.user?.sub ?? 'anonymous',
+        organizationId: request.user?.organizationId,
         method,
         route,
         statusCode,

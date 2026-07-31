@@ -8,6 +8,7 @@ export declare class ChatMessage {
 }
 export declare class Conversation {
     userId: string;
+    organizationId: string;
     title: string;
     agentId?: string;
     messages: ChatMessage[];

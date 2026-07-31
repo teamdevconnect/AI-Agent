@@ -10,11 +10,7 @@ from app.rag.embeddings import vector_size
 
 @lru_cache
 def get_client() -> QdrantClient:
-<<<<<<< HEAD
-    return QdrantClient(url=settings.qdrant_url)
-=======
     return QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 
 _collection_ready = False
@@ -34,12 +30,6 @@ def ensure_collection() -> None:
             ),
         )
 
-<<<<<<< HEAD
-    # Filtered search (by user_id/source_type) degrades to a full scan
-    # without a payload index on the filtered fields.
-    indexed = set(client.get_collection(settings.qdrant_collection).payload_schema)
-    for field in ("user_id", "source_type"):
-=======
     # Filtered search/update degrades to a full scan — or, for set_payload
     # and delete's points_selector filters, is outright rejected by Qdrant —
     # without a payload index on the filtered fields. document_id is filtered
@@ -47,7 +37,6 @@ def ensure_collection() -> None:
     # record_id is filtered on by delete_by_record_id (app.memory.user_memory).
     indexed = set(client.get_collection(settings.qdrant_collection).payload_schema)
     for field in ("user_id", "source_type", "document_id", "record_id"):
->>>>>>> 6a60a8648 (Initial AI Agent source code)
         if field not in indexed:
             client.create_payload_index(
                 collection_name=settings.qdrant_collection,
@@ -82,8 +71,6 @@ def upsert_chunks(document_id: str, user_id: str, filename: str, chunks: list[st
     upsert_points(points)
 
 
-<<<<<<< HEAD
-=======
 _MEMORY_POINT_NAMESPACE = uuid.NAMESPACE_URL
 
 
@@ -137,7 +124,6 @@ def delete_by_document_id(document_id: str) -> None:
     )
 
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 def search(
     vector: list[float],
     top_k: int = 5,

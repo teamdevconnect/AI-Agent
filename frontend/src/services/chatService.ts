@@ -1,17 +1,10 @@
 import { axiosClient } from '@/api/axiosClient';
 import { getSocket } from '@/api/socketClient';
-<<<<<<< HEAD
-import { useAuthStore } from '@/stores/authStore';
-import { generateId } from '@/utils/id';
-import { randomDelay } from './mock/delay';
-import type { ChatMessage, Conversation, ConversationDetails } from '@/types';
-=======
 import { planStatus } from '@/features/chat/agentLabels';
 import { useAuthStore } from '@/stores/authStore';
 import { generateId } from '@/utils/id';
-import { randomDelay } from './mock/delay';
+import { commandCenterService } from './commandCenterService';
 import type { ChatAgent, ChatMessage, Conversation, ConversationDetails } from '@/types';
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 interface BackendConversationSummary {
   _id: string;
@@ -29,10 +22,7 @@ interface BackendMessage {
 
 interface BackendConversation extends BackendConversationSummary {
   messages: BackendMessage[];
-<<<<<<< HEAD
-=======
   agentId?: string;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 }
 
 interface BackendChatResult {
@@ -74,14 +64,11 @@ export interface StreamController {
 
 export interface StreamCallbacks {
   onChunk: (accumulatedText: string) => void;
-<<<<<<< HEAD
-=======
   onProgress?: (tool: string) => void;
   /** Higher-level status text (planning/delegating to specialists/reviewing
    * — see agentLabels.ts) shown in place of the tool-level progress label
    * while it's the most recent thing that's happened. */
   onStatus?: (status: string) => void;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   onComplete: (message: ChatMessage, conversationId: string) => void;
   onError: (error: Error) => void;
 }
@@ -92,11 +79,6 @@ export const chatService = {
     return data.map(toConversation).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   },
 
-<<<<<<< HEAD
-  async getMessages(conversationId: string): Promise<ChatMessage[]> {
-    const { data } = await axiosClient.get<BackendConversation>(`/chat/conversations/${conversationId}`);
-    return (data.messages ?? []).map((m, i) => toMessage(m, conversationId, i));
-=======
   async getMessages(conversationId: string): Promise<{ messages: ChatMessage[]; agentId?: string }> {
     const { data } = await axiosClient.get<BackendConversation>(`/chat/conversations/${conversationId}`);
     return {
@@ -108,7 +90,6 @@ export const chatService = {
   async getAgents(): Promise<ChatAgent[]> {
     const { data } = await axiosClient.get<ChatAgent[]>('/chat/agents');
     return data;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   },
 
   /**
@@ -144,9 +125,6 @@ export const chatService = {
     // Pin/favorite/archive are local-only (see toConversation above).
   },
 
-<<<<<<< HEAD
-  streamReply(conversationId: string, prompt: string, callbacks: StreamCallbacks, isNewConversation: boolean): StreamController {
-=======
   streamReply(
     conversationId: string,
     prompt: string,
@@ -154,14 +132,11 @@ export const chatService = {
     isNewConversation: boolean,
     agentId?: string,
   ): StreamController {
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     const token = useAuthStore.getState().accessToken ?? '';
     const socket = getSocket(token);
     if (!socket.connected) socket.connect();
 
     let settled = false;
-<<<<<<< HEAD
-=======
     let accumulated = '';
     // For a brand-new conversation, `conversationId` (the param above) is
     // whatever placeholder chatStore is using — the server assigns the real
@@ -200,7 +175,6 @@ export const chatService = {
       if (settled) return;
       callbacks.onStatus?.('Finalizing…');
     };
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
     const onMessage = (result: BackendChatResult) => {
       if (settled) return;
@@ -229,24 +203,16 @@ export const chatService = {
     };
 
     function cleanup() {
-<<<<<<< HEAD
-=======
       socket.off('chunk', onChunk);
       socket.off('progress', onProgress);
       socket.off('reasoning', onReasoning);
       socket.off('plan', onPlan);
       socket.off('reflecting', onReflecting);
       socket.off('conversationId', onConversationId);
->>>>>>> 6a60a8648 (Initial AI Agent source code)
       socket.off('message', onMessage);
       socket.off('error', onError);
     }
 
-<<<<<<< HEAD
-    socket.on('message', onMessage);
-    socket.on('error', onError);
-    socket.emit('message', { message: prompt, conversationId: isNewConversation ? undefined : conversationId });
-=======
     socket.on('chunk', onChunk);
     socket.on('progress', onProgress);
     socket.on('reasoning', onReasoning);
@@ -260,14 +226,11 @@ export const chatService = {
       conversationId: isNewConversation ? undefined : conversationId,
       agentId,
     });
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
     return {
       stop: () => {
         if (settled) return;
         settled = true;
-<<<<<<< HEAD
-=======
         // Best-effort: asks python-agent to actually halt generation
         // server-side (see ChatGateway's 'cancel' handler) — sent before
         // cleanup so it goes out even though settled flips first.
@@ -275,7 +238,6 @@ export const chatService = {
         // brand-new conversation the server-assigned real id only became
         // known mid-stream, via the 'conversationId' event above.
         socket.emit('cancel', { conversationId: resolvedConversationId });
->>>>>>> 6a60a8648 (Initial AI Agent source code)
         cleanup();
         callbacks.onComplete(
           {
@@ -296,18 +258,19 @@ export const chatService = {
     // Not persisted server-side yet — local UI state only.
   },
 
-  // The conversation-intelligence side panel (referenced docs, knowledge
-  // sources, memory context) has no real backend — Agentic RAG citations are
-  // out of scope for this pass, so this stays mock-backed.
+  // Stats are real (Phase 5 — backed by python-agent's persisted execution
+  // history via GET /command-center/conversations/:id/stats). Referenced
+  // docs/knowledge sources/memory context stay empty — those need RAG
+  // retrieval-hit plumbing, an unrelated feature not part of Command Center.
   async getConversationDetails(conversationId: string): Promise<ConversationDetails> {
-    await randomDelay(200, 350);
+    const stats = await commandCenterService.getConversationStats(conversationId);
     return {
       conversationId,
       referencedDocuments: [],
       knowledgeSources: [],
-      connectedTools: [{ id: 'tool_default', name: 'Outlook / Microsoft Graph', status: 'idle' }],
+      connectedTools: [],
       promptVariables: {},
-      stats: { messages: 0, tokensUsed: 0, avgResponseTimeMs: 0, cost: 0 },
+      stats,
       agentStatus: 'idle',
       memoryContext: [],
     };

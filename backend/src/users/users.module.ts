@@ -1,17 +1,11 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-<<<<<<< HEAD
-=======
 import { AgentRole, AgentRoleSchema } from '../agent-roles/schemas/agent-role.schema';
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 import { User, UserSchema } from './schemas/user.schema';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
 @Module({
-<<<<<<< HEAD
-  imports: [MongooseModule.forFeature([{ name: User.name, schema: UserSchema }])],
-=======
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
@@ -22,7 +16,6 @@ import { UsersService } from './users.service';
       { name: AgentRole.name, schema: AgentRoleSchema },
     ]),
   ],
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],

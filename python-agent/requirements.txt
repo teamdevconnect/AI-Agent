@@ -9,13 +9,6 @@ langchain-text-splitters==0.3.4
 langgraph==0.2.60
 anthropic>=0.40.0
 
-<<<<<<< HEAD
-qdrant-client==1.12.1
-sentence-transformers==3.3.1
-
-pymongo==4.10.1
-apscheduler==3.10.4
-=======
 # Used only for the scheduled morning/EOD report crew (app/agent/crew_reports.py) —
 # the live chat loop above stays on langgraph/anthropic, untouched. Pinned to 0.130.0
 # deliberately: newer 1.x releases pull in mcp/textual/kubernetes extras that force an
@@ -42,7 +35,6 @@ sse-starlette==2.2.1
 pymongo==4.10.1
 apscheduler==3.10.4
 redis==8.0.1
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 pypdf==5.1.0
 python-docx==1.1.2
@@ -50,7 +42,4 @@ pandas==2.2.3
 openpyxl==3.1.5
 beautifulsoup4==4.12.3
 requests==2.32.3
-<<<<<<< HEAD
-=======
 groq==1.6.0
->>>>>>> 6a60a8648 (Initial AI Agent source code)

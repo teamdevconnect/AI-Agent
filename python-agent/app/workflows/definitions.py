@@ -107,7 +107,8 @@ def _crm_follow_up_check(context: dict) -> dict:
     result = run_autonomous_task(
         "Search the CRM for contacts or deals that haven't had a follow-up note or activity "
         "in a while, and any deals with an approaching or passed closing date but no recent "
-        "movement. List the specific ones that need attention and why."
+        "movement. List the specific ones that need attention and why.",
+        organization_id=context.get("organization_id"),
     )
     # Proactive AI: surfaces this without anyone asking, rather than only
     # answering when a user happens to think to check.
@@ -144,6 +145,7 @@ def _summarize_document(context: dict) -> dict:
         f"search_documents to read its content, write a concise summary of its key points, "
         f"and save that summary as a long-term memory so it's available in future conversations.",
         user_id=user_id,
+        organization_id=context.get("organization_id"),
     )
     notify(
         user_id,

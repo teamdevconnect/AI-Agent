@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 # Node
 node_modules/
 dist/
@@ -12,6 +10,7 @@ npm-debug.log*
 __pycache__/
 *.py[cod]
 .venv/
+python-agent/.venv/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -20,7 +19,10 @@ venv/
 # Env / secrets
 .env
 .env.local
+.env.*
 *.local
+backend/.env
+python-agent/.env
 
 # Editor / OS
 .vscode/
@@ -31,54 +33,6 @@ Thumbs.db
 # Model / vector caches
 .cache/
 models/
-=======
-node_modules
->>>>>>> 8acdff256 (Initial AI Agent source code)
-=======
-node_modules
->>>>>>> 8acdff256 (Initial AI Agent source code)
-
-# Python
-.venv/
-python-agent/.venv/
-__pycache__/
-*.pyc
 
 # MongoDB
 .mongodata/
-
-# Node
-node_modules/
-
-# Environment
-.env
-
-# Logs
-*.log
-
-.env
-.env.*
-backend/.env
-python-agent/.env
-
-# Node
-node_modules/
-
-# Python
-.venv/
-venv/
-python-agent/.venv/
-__pycache__/
-*.pyc
-
-# MongoDB
-.mongodata/
-
-# Environment
-.env
-.env.*
-backend/.env
-python-agent/.env
-
-# Logs
-*.log

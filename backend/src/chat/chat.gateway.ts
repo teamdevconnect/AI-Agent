@@ -38,13 +38,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const payload = this.jwtService.verify<JwtPayload>(token);
       client.data.user = payload;
       client.data.token = token;
-<<<<<<< HEAD
-=======
       // Per-user room (Socket.IO auto-creates it on first join) — lets
       // emitToUser() below push to every tab/device a user has open,
       // without either side tracking socket ids itself.
       client.join(payload.sub);
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     } catch {
       this.logger.warn(`Rejected unauthenticated socket ${client.id}`);
       client.emit('error', { message: 'Unauthorized' });
@@ -56,12 +53,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.debug(`Socket disconnected: ${client.id}`);
   }
 
-<<<<<<< HEAD
-  @SubscribeMessage('message')
-  async onMessage(
-    @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() body: { message: string; conversationId?: string },
-=======
   /** Pushes an event to every socket a user currently has open (their
    * per-user room, joined in handleConnection). A no-op if they're not
    * connected right now — used by NotificationsService for live push;
@@ -75,7 +66,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async onMessage(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() body: { message: string; conversationId?: string; agentId?: string },
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   ) {
     const user = client.data.user;
     const token = client.data.token;
@@ -84,17 +74,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
-<<<<<<< HEAD
-    client.emit('typing', { typing: true });
-    const result = await this.chatService.sendMessage(
-      user.sub,
-      token,
-      body.message,
-      body.conversationId,
-    );
-    client.emit('typing', { typing: false });
-    client.emit('message', result);
-=======
     // agent_user accounts only ever see one agent in the mention list anyway
     // — default new conversations to it so they don't need to @mention.
     // roles?. guards a token with no roles claim at all (e.g. one minted
@@ -122,6 +101,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const result = await this.chatService.sendMessageStreaming(
         user.sub,
+        user.organizationId,
         token,
         body.message,
         body.conversationId,
@@ -165,6 +145,5 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const token = client.data.token;
     if (!token || !body.conversationId) return;
     await this.chatService.cancelAgent(body.conversationId, token);
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   }
 }

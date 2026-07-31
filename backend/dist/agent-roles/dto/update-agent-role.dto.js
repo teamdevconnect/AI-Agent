@@ -75,4 +75,27 @@ __decorate([
     (0, class_validator_1.IsIn)(['draft', 'active']),
     __metadata("design:type", String)
 ], UpdateAgentRoleDto.prototype, "status", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], UpdateAgentRoleDto.prototype, "assignedDepartments", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], UpdateAgentRoleDto.prototype, "assignedUserIds", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], UpdateAgentRoleDto.prototype, "allowedTools", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['fast', 'standard', null]),
+    __metadata("design:type", Object)
+], UpdateAgentRoleDto.prototype, "modelTier", void 0);
 //# sourceMappingURL=update-agent-role.dto.js.map

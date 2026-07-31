@@ -31,8 +31,8 @@ let AuditService = AuditService_1 = class AuditService {
             this.logger.warn(`Failed to write audit log entry: ${err.message}`);
         }
     }
-    list(limit = 200) {
-        return this.auditModel.find().sort({ createdAt: -1 }).limit(limit).exec();
+    list(organizationId, limit = 200) {
+        return this.auditModel.find({ organizationId }).sort({ createdAt: -1 }).limit(limit).exec();
     }
 };
 exports.AuditService = AuditService;

@@ -1,21 +1,12 @@
 import json
-<<<<<<< HEAD
-from functools import lru_cache
-=======
 import time
 from functools import lru_cache
 from typing import Callable
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 import anthropic
 
 from app.config import settings
 from app.memory import integration_store
-<<<<<<< HEAD
-from app.tools.registry import TOOL_DEFINITIONS
-
-from app.agent.llm_client import SYSTEM_PROMPT
-=======
 from app.observability.tracing import traced_llm_call
 from app.tools.registry import TOOL_DEFINITIONS
 
@@ -37,7 +28,6 @@ def _is_retryable(exc: Exception) -> bool:
         return True
     body = exc.body if isinstance(exc.body, dict) else {}
     return (body.get("error") or {}).get("type") in _RETRYABLE_ERROR_TYPES
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 
 @lru_cache
@@ -94,8 +84,6 @@ def _item_to_blocks(item: dict) -> list[dict]:
     return [{"type": "text", "text": ""}]
 
 
-<<<<<<< HEAD
-=======
 def _cache_last_tool(tools_list: list[dict]) -> list[dict]:
     """Marks the last tool definition as an Anthropic prompt-cache breakpoint.
     The system prompt + full tool registry are identical on almost every
@@ -109,7 +97,6 @@ def _cache_last_tool(tools_list: list[dict]) -> list[dict]:
     return [*tools_list[:-1], {**tools_list[-1], "cache_control": {"type": "ephemeral"}}]
 
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 def _to_anthropic_messages(input_items: list[dict]) -> list[dict]:
     """Groups the OpenAI-Responses-shaped flat item list into Anthropic's
 
@@ -129,12 +116,6 @@ def _to_anthropic_messages(input_items: list[dict]) -> list[dict]:
 
 
 def _normalize_response(response: anthropic.types.Message) -> list[dict]:
-<<<<<<< HEAD
-    items: list[dict] = []
-    text_parts: list[str] = []
-    for block in response.content:
-        if block.type == "tool_use":
-=======
     """Commentary text alongside tool_use in a round that still has pending
     tool calls is deliberately dropped, not just reordered after the
     tool_use blocks (which is what this used to do). Two real bugs, found
@@ -156,7 +137,6 @@ def _normalize_response(response: anthropic.types.Message) -> list[dict]:
     for block in response.content:
         if block.type == "tool_use":
             has_tool_use = True
->>>>>>> 6a60a8648 (Initial AI Agent source code)
             items.append(
                 {
                     "type": "function_call",
@@ -168,29 +148,18 @@ def _normalize_response(response: anthropic.types.Message) -> list[dict]:
         elif block.type == "text":
             text_parts.append(block.text)
 
-<<<<<<< HEAD
-    if text_parts:
-=======
     joined_text = "\n".join(text_parts)
     if joined_text and not has_tool_use:
->>>>>>> 6a60a8648 (Initial AI Agent source code)
         items.append(
             {
                 "type": "message",
                 "role": "assistant",
-<<<<<<< HEAD
-                "content": [{"type": "output_text", "text": "\n".join(text_parts)}],
-=======
                 "content": [{"type": "output_text", "text": joined_text}],
->>>>>>> 6a60a8648 (Initial AI Agent source code)
             }
         )
     return items
 
 
-<<<<<<< HEAD
-def call(input_items: list[dict]) -> list[dict]:
-=======
 ROLE_EXTRACTION_TOOL = {
     "name": "extract_role_definition",
     "description": "Return a structured role definition extracted from the supplied business document.",
@@ -246,20 +215,10 @@ def extract_role(document_text: str) -> dict:
     common case. Retries once on any failure (missing tool_use block,
     transient API error) before surfacing a clear error to the caller.
     """
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
 
-<<<<<<< HEAD
-    response = _client(api_key).messages.create(
-        model=settings.anthropic_model,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        tools=TOOL_DEFINITIONS,
-        messages=_to_anthropic_messages(input_items),
-    )
-=======
     last_error: Exception | None = None
     for _ in range(2):
         try:
@@ -479,7 +438,13 @@ the extra cost of 'simple' answering a question it didn't strictly need tools fo
 )
 
 
-def classify_request(input_items: list[dict]) -> dict:
+def classify_request(
+    input_items: list[dict],
+    *,
+    organization_id: str | None = None,
+    user_id: str = "",
+    conversation_id: str = "",
+) -> dict:
     """One-shot forced-tool-choice routing pass, run by app.agent.orchestrator
     before every chat turn — same pattern as extract_role/extract_report_structure.
     Raises rather than guessing on failure; the caller treats any exception as
@@ -489,7 +454,14 @@ def classify_request(input_items: list[dict]) -> dict:
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
 
-    with traced_llm_call("classify", model=settings.anthropic_routing_model) as usage:
+    with traced_llm_call(
+        "classify",
+        organization_id=organization_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        provider="anthropic",
+        model=settings.anthropic_routing_model,
+    ) as usage:
         response = _client(api_key).messages.create(
             model=settings.anthropic_routing_model,
             max_tokens=1024,
@@ -532,7 +504,14 @@ reasonable interpretations of an ambiguous request. Default to complete=true unl
 nameable gap. Always call critique_response exactly once."""
 
 
-def critique_response(user_message: str, draft_reply: str) -> dict:
+def critique_response(
+    user_message: str,
+    draft_reply: str,
+    *,
+    organization_id: str | None = None,
+    user_id: str = "",
+    conversation_id: str = "",
+) -> dict:
     """One-shot forced-tool-choice reflection pass, run by app.agent.orchestrator
     after every reply. Same pattern as classify_request. Raises rather than
     guessing on failure; the caller treats any exception as complete=true and
@@ -542,7 +521,14 @@ def critique_response(user_message: str, draft_reply: str) -> dict:
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
 
-    with traced_llm_call("critique", model=settings.anthropic_routing_model) as usage:
+    with traced_llm_call(
+        "critique",
+        organization_id=organization_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        provider="anthropic",
+        model=settings.anthropic_routing_model,
+    ) as usage:
         response = _client(api_key).messages.create(
             model=settings.anthropic_routing_model,
             max_tokens=512,
@@ -565,6 +551,11 @@ def call(
     system_prompt: str | None = None,
     tools: list[dict] | None = None,
     cancel_event=None,
+    *,
+    model: str | None = None,
+    organization_id: str | None = None,
+    user_id: str = "",
+    conversation_id: str = "",
 ) -> list[dict]:
     """Runs one planner round. If on_event is given, streams two kinds of
     live events as they happen: {"type": "progress", "tool": name} the
@@ -590,14 +581,22 @@ def call(
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
 
+    resolved_model = model or settings.anthropic_model
     accumulated_text: list[str] = []
 
-    with traced_llm_call("planner", model=settings.anthropic_model) as usage:
+    with traced_llm_call(
+        "planner",
+        organization_id=organization_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        provider="anthropic",
+        model=resolved_model,
+    ) as usage:
         for attempt in range(_MAX_CALL_ATTEMPTS):
             emitted_any = False
             try:
                 with _client(api_key).messages.stream(
-                    model=settings.anthropic_model,
+                    model=resolved_model,
                     max_tokens=1024,
                     system=[
                         {
@@ -646,5 +645,4 @@ def call(
                     continue
                 raise
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     return _normalize_response(response)

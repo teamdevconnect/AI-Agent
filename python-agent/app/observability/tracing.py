@@ -10,6 +10,12 @@ this dev environment (see python-agent/.env's note about Docker Desktop
 being unavailable here). Set OTEL_EXPORTER_OTLP_ENDPOINT to route spans to a
 real collector instead, with zero code changes anywhere that calls tracer.
 
+Both context managers also persist a record to Mongo (see
+app.observability.execution_store) — the OTel span alone is console-only in
+this environment and was never queryable by the NestJS backend's Command
+Center API (Phase 5). One instrumentation point, so callers only need to
+pass a few more parameters, not learn a second API.
+
 Known limitation: tool execution (app.agent.graph's tools_node) and the
 orchestrator's specialist fan-out (app.agent.orchestrator) both run inside a
 ThreadPoolExecutor — OTel span context doesn't automatically propagate
@@ -28,6 +34,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor
 
+from app.observability import execution_store
 from app.observability.cost import estimate_cost
 
 _provider = TracerProvider(resource=Resource.create({"service.name": "python-agent"}))
@@ -45,32 +52,80 @@ tracer = trace.get_tracer("python-agent")
 
 
 @contextmanager
-def traced_llm_call(name: str, **attributes):
-    """Wraps one Anthropic API call. Usage: `with traced_llm_call("classify") as
-    usage: ... usage["input_tokens"] = response.usage.input_tokens; usage["output_tokens"] = ...`
-    — token/cost attributes are only recorded if the caller fills in `usage`;
-    an empty dict (e.g. the call raised before getting a response) just
-    records latency, never breaks the call itself.
+def traced_llm_call(
+    name: str,
+    *,
+    organization_id: str | None = None,
+    user_id: str = "",
+    conversation_id: str = "",
+    provider: str = "anthropic",
+    model: str = "",
+    **attributes,
+):
+    """Wraps one LLM API call. Usage: `with traced_llm_call("classify",
+    organization_id=..., user_id=..., conversation_id=..., provider="anthropic",
+    model=...) as usage: ... usage["input_tokens"] = response.usage.input_tokens;
+    usage["output_tokens"] = ...` — token/cost attributes are only recorded
+    if the caller fills in `usage`; an empty dict (e.g. the call raised
+    before getting a response) still records latency/success/error, never
+    breaks the call itself (the original exception always re-raises
+    unchanged).
     """
     start = time.monotonic()
     with tracer.start_as_current_span(f"llm.{name}") as span:
+        span.set_attribute("provider", provider)
+        if model:
+            span.set_attribute("model", model)
         for key, value in attributes.items():
             span.set_attribute(key, value)
         usage: dict = {}
+        success = True
+        error: str | None = None
         try:
             yield usage
+        except Exception as exc:
+            success = False
+            error = str(exc)[:500]
+            raise
         finally:
-            span.set_attribute("latency_ms", (time.monotonic() - start) * 1000)
+            latency_ms = (time.monotonic() - start) * 1000
+            span.set_attribute("latency_ms", latency_ms)
+            span.set_attribute("success", success)
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            cost_usd = estimate_cost(input_tokens, output_tokens, provider) if usage else None
             if usage:
-                input_tokens = usage.get("input_tokens", 0)
-                output_tokens = usage.get("output_tokens", 0)
                 span.set_attribute("tokens.input", input_tokens)
                 span.set_attribute("tokens.output", output_tokens)
-                span.set_attribute("cost.usd", estimate_cost(input_tokens, output_tokens))
+                if cost_usd is not None:
+                    span.set_attribute("cost.usd", cost_usd)
+            try:
+                execution_store.record_llm_execution(
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    name=name,
+                    provider=provider,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost_usd=cost_usd,
+                    latency_ms=latency_ms,
+                    success=success,
+                    error=error,
+                )
+            except Exception:
+                pass  # persistence must never break the actual LLM call
 
 
 @contextmanager
-def traced_tool_call(name: str, user_id: str = ""):
+def traced_tool_call(
+    name: str,
+    user_id: str = "",
+    *,
+    organization_id: str | None = None,
+    conversation_id: str = "",
+):
     start = time.monotonic()
     with tracer.start_as_current_span(f"tool.{name}") as span:
         span.set_attribute("tool.name", name)
@@ -79,5 +134,18 @@ def traced_tool_call(name: str, user_id: str = ""):
         try:
             yield outcome
         finally:
-            span.set_attribute("latency_ms", (time.monotonic() - start) * 1000)
-            span.set_attribute("success", outcome.get("success", True))
+            latency_ms = (time.monotonic() - start) * 1000
+            success = outcome.get("success", True)
+            span.set_attribute("latency_ms", latency_ms)
+            span.set_attribute("success", success)
+            try:
+                execution_store.record_tool_execution(
+                    organization_id=organization_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    name=name,
+                    latency_ms=latency_ms,
+                    success=success,
+                )
+            except Exception:
+                pass  # persistence must never break the actual tool call

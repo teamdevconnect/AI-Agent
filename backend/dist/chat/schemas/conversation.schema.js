@@ -41,6 +41,10 @@ __decorate([
     __metadata("design:type", String)
 ], Conversation.prototype, "userId", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], Conversation.prototype, "organizationId", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: 'New conversation' }),
     __metadata("design:type", String)
 ], Conversation.prototype, "title", void 0);

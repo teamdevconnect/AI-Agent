@@ -8,11 +8,8 @@ export class SendMessageDto {
   @IsOptional()
   @IsString()
   conversationId?: string;
-<<<<<<< HEAD
-=======
 
   @IsOptional()
   @IsString()
   agentId?: string;
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 }

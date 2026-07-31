@@ -1,30 +1,30 @@
-import { Model } from 'mongoose';
 import { ChatService } from '../chat/chat.service';
 import { DashboardService } from '../dashboard/dashboard.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { TimelineService } from '../timeline/timeline.service';
+import { JwtPayload } from '../auth/jwt-payload.interface';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { StoreDocument } from '../organizations/schemas/store.schema';
 import { UsersService } from '../users/users.service';
-import { StoreSettings, StoreSettingsDocument } from './schemas/store-settings.schema';
 export declare class StoreSettingsService {
-    private settingsModel;
+    private organizationsService;
     private chatService;
     private dashboardService;
     private usersService;
+    private notificationsService;
+    private timelineService;
     private readonly logger;
-    constructor(settingsModel: Model<StoreSettingsDocument>, chatService: ChatService, dashboardService: DashboardService, usersService: UsersService);
-    getSettings(): Promise<StoreSettingsDocument>;
-    updateSettings(patch: {
+    constructor(organizationsService: OrganizationsService, chatService: ChatService, dashboardService: DashboardService, usersService: UsersService, notificationsService: NotificationsService, timelineService: TimelineService);
+    getSettings(caller: JwtPayload): Promise<StoreDocument>;
+    updateSettings(caller: JwtPayload, patch: {
         openingTime?: string;
         closingTime?: string;
         timezone?: string;
-    }): Promise<import("mongoose").Document<unknown, {}, StoreSettingsDocument, {}, {}> & StoreSettings & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-        _id: import("mongoose").Types.ObjectId;
-    }> & {
-        __v: number;
-    }>;
-    runNow(type: 'morning' | 'eod'): Promise<{
+    }): Promise<StoreDocument>;
+    runNow(caller: JwtPayload, type: 'morning' | 'eod'): Promise<{
         usersNotified: number;
         totalUsers: number;
     }>;
     checkAndRunDailyJobs(): Promise<void>;
-    private getOrCreateSettings;
-    private runForAllUsers;
+    private runForStore;
 }

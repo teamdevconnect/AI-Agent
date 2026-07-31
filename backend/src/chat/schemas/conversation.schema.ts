@@ -23,11 +23,17 @@ export class Conversation {
   @Prop({ required: true, index: true })
   userId: string;
 
+  // Not needed for ownership checks (userId alone already isolates — a
+  // user's id is unique across the whole deployment, not just their org) but
+  // required for any future org-wide query (AI Timeline, Command Center
+  // execution history) that needs to look across conversations without
+  // enumerating every user first.
+  @Prop({ required: true, index: true })
+  organizationId: string;
+
   @Prop({ default: 'New conversation' })
   title: string;
 
-<<<<<<< HEAD
-=======
   // Which persona (see backend/src/chat/agents.ts) this conversation talks
   // to — set once (first @mention, or a scheduled report's author) and
   // sticky for the conversation's lifetime. Undefined = generic assistant,
@@ -35,7 +41,6 @@ export class Conversation {
   @Prop()
   agentId?: string;
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
   @Prop({ type: [ChatMessage], default: [] })
   messages: ChatMessage[];
 }

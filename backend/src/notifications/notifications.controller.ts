@@ -25,7 +25,7 @@ export class NotificationsController {
 
   @Post()
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateNotificationDto) {
-    return this.notificationsService.create(user.sub, dto);
+    return this.notificationsService.create(user.sub, dto, user.organizationId);
   }
 
   @Post(':id/read')

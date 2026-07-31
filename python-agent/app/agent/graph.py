@@ -4,23 +4,16 @@ from concurrent.futures import ThreadPoolExecutor
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.llm_client import call_llm
-from app.agent.router import choose_provider
+from app.agent.router import choose_model, choose_provider
 from app.agent.state import AgentState
-<<<<<<< HEAD
-from app.tools.registry import execute_tool
-=======
 from app.memory.working_memory import cached_execute_tool
 from app.tools.registry import get_tool_definitions
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 MAX_TOOL_ROUNDS = 5
 
 
 def planner_node(state: AgentState) -> dict:
     provider = state.get("provider") or choose_provider(state)
-<<<<<<< HEAD
-    output_items, used_provider = call_llm(state["messages"], provider=provider)
-=======
     allowed_tools = state.get("allowed_tools")
     output_items, used_provider = call_llm(
         state["messages"],
@@ -29,27 +22,27 @@ def planner_node(state: AgentState) -> dict:
         system_prompt=state.get("system_prompt"),
         tools=get_tool_definitions(allowed_tools) if allowed_tools else None,
         cancel_event=state.get("cancel_event"),
+        model=choose_model(state),
+        organization_id=state.get("organization_id"),
+        user_id=state["user_id"],
+        conversation_id=state["conversation_id"],
     )
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     pending_calls = [item for item in output_items if item.get("type") == "function_call"]
     return {"messages": output_items, "pending_calls": pending_calls, "provider": used_provider}
 
 
 def tools_node(state: AgentState) -> dict:
-    context = {"user_id": state["user_id"], "conversation_id": state["conversation_id"]}
+    context = {
+        "user_id": state["user_id"],
+        "organization_id": state.get("organization_id"),
+        "conversation_id": state["conversation_id"],
+    }
     pending_calls = state["pending_calls"]
-<<<<<<< HEAD
-
-    def run_call(call: dict) -> str:
-        args = json.loads(call.get("arguments") or "{}")
-        return execute_tool(call["name"], args, context)
-=======
     allowed_tools = state.get("allowed_tools")
 
     def run_call(call: dict) -> str:
         args = json.loads(call.get("arguments") or "{}")
         return cached_execute_tool(call["name"], args, context, allowed_tools=allowed_tools)
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
     # Claude often requests several independent lookups in one turn (e.g. one
     # crm_note call per contact) — those are I/O-bound HTTP calls with no
@@ -74,12 +67,9 @@ def tools_node(state: AgentState) -> dict:
 
 
 def should_continue(state: AgentState) -> str:
-<<<<<<< HEAD
-=======
     cancel_event = state.get("cancel_event")
     if cancel_event is not None and cancel_event.is_set():
         return END
->>>>>>> 6a60a8648 (Initial AI Agent source code)
     if state["pending_calls"] and state.get("rounds", 0) < MAX_TOOL_ROUNDS:
         return "tools"
     return END

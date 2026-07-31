@@ -16,6 +16,7 @@ from groq import Groq
 
 from app.config import settings
 from app.memory import integration_store
+from app.observability.tracing import traced_llm_call
 
 from app.agent.llm_client import SYSTEM_PROMPT
 
@@ -64,6 +65,10 @@ def call(
     on_event: Callable[[dict], None] | None = None,
     system_prompt: str | None = None,
     cancel_event=None,
+    *,
+    organization_id: str | None = None,
+    user_id: str = "",
+    conversation_id: str = "",
 ) -> list[dict]:
     """Raises on any failure (missing key, API error) — app.agent.orchestrator
     treats that as a signal to fall back to the unchanged Anthropic path, so
@@ -74,21 +79,44 @@ def call(
 
     messages = [{"role": "system", "content": system_prompt or SYSTEM_PROMPT}] + _to_groq_messages(input_items)
 
-    accumulated: list[str] = []
-    stream = _client(api_key).chat.completions.create(
+    with traced_llm_call(
+        "general",
+        organization_id=organization_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        provider="groq",
         model=settings.groq_model,
-        max_tokens=1024,
-        messages=messages,
-        stream=True,
-    )
-    for chunk in stream:
-        if cancel_event is not None and cancel_event.is_set():
-            break
-        delta = chunk.choices[0].delta.content
-        if delta:
-            accumulated.append(delta)
-            if on_event:
-                on_event({"type": "delta", "text": delta})
+    ) as usage:
+        accumulated: list[str] = []
+        stream = _client(api_key).chat.completions.create(
+            model=settings.groq_model,
+            max_tokens=1024,
+            messages=messages,
+            stream=True,
+            # Groq's OpenAI-wire-compatible REST API emits a final usage-only
+            # chunk (empty choices) when this is set, but the installed groq
+            # SDK (1.6.0) has no typed `stream_options` param for it yet —
+            # `extra_body` passes it straight through to the raw request body.
+            # Best-effort token capture either way; guarded below since an
+            # unexpected chunk shape must never break the actual reply.
+            extra_body={"stream_options": {"include_usage": True}},
+        )
+        for chunk in stream:
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            try:
+                if getattr(chunk, "usage", None):
+                    usage["input_tokens"] = chunk.usage.prompt_tokens
+                    usage["output_tokens"] = chunk.usage.completion_tokens
+            except Exception:
+                pass
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                accumulated.append(delta)
+                if on_event:
+                    on_event({"type": "delta", "text": delta})
 
     return [
         {

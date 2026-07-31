@@ -4,6 +4,7 @@ export declare const NOTIFICATION_KINDS: readonly ["system", "integration", "war
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export declare class Notification {
     userId: string;
+    organizationId?: string;
     kind: NotificationKind;
     title: string;
     description: string;

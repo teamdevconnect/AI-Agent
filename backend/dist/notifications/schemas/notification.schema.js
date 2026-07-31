@@ -20,6 +20,10 @@ __decorate([
     __metadata("design:type", String)
 ], Notification.prototype, "userId", void 0);
 __decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], Notification.prototype, "organizationId", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ required: true, enum: exports.NOTIFICATION_KINDS }),
     __metadata("design:type", String)
 ], Notification.prototype, "kind", void 0);

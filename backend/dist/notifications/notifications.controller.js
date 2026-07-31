@@ -26,7 +26,7 @@ let NotificationsController = class NotificationsController {
         return this.notificationsService.list(user.sub);
     }
     create(user, dto) {
-        return this.notificationsService.create(user.sub, dto);
+        return this.notificationsService.create(user.sub, dto, user.organizationId);
     }
     markRead(user, id) {
         return this.notificationsService.markRead(user.sub, id);

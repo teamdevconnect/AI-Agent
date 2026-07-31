@@ -29,24 +29,24 @@ let UsersController = class UsersController {
         const found = await this.usersService.findById(user.sub);
         return found ? this.usersService.toPublic(found) : null;
     }
-    async list() {
-        const users = await this.usersService.findAll();
+    async list(caller) {
+        const users = await this.usersService.findAll(caller.organizationId);
         return users.map((u) => this.usersService.toPublic(u));
     }
-    create(dto) {
-        return this.usersService.createByAdmin(dto);
+    create(caller, dto) {
+        return this.usersService.createByAdmin(dto, caller.organizationId);
     }
     update(caller, id, dto) {
         if (id === caller.sub && (dto.active === false || (dto.role && dto.role !== 'admin'))) {
             throw new common_1.BadRequestException("Can't demote or disable your own account");
         }
-        return this.usersService.updateByAdmin(id, dto);
+        return this.usersService.updateByAdmin(id, dto, caller.organizationId);
     }
     remove(caller, id) {
         if (id === caller.sub) {
             throw new common_1.BadRequestException("Can't delete your own account");
         }
-        return this.usersService.deleteByAdmin(id);
+        return this.usersService.deleteByAdmin(id, caller.organizationId);
     }
 };
 exports.UsersController = UsersController;
@@ -61,17 +61,19 @@ __decorate([
     (0, common_1.Get)(),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], UsersController.prototype, "list", null);
 __decorate([
     (0, common_1.Post)(),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [create_user_dto_1.CreateUserDto]),
+    __metadata("design:paramtypes", [Object, create_user_dto_1.CreateUserDto]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "create", null);
 __decorate([

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TimelineService } from '../timeline/timeline.service';
 import { Achievement, checkNewAchievements } from './achievements';
 import { coachingMessage } from './coaching';
 import { UserStats, UserStatsDocument } from './schemas/user-stats.schema';
@@ -36,6 +37,7 @@ export class GamificationService {
   constructor(
     @InjectModel(UserStats.name) private statsModel: Model<UserStatsDocument>,
     private notificationsService: NotificationsService,
+    private timelineService: TimelineService,
   ) {}
 
   async getStats(userId: string): Promise<UserStatsOut> {
@@ -60,7 +62,11 @@ export class GamificationService {
    * notification pipeline proactive AI workflows use (see app.workflows in
    * python-agent for the cross-service equivalent of this same pattern).
    */
-  async recordTaskCompletion(userId: string, wasOverdue: boolean): Promise<{ newAchievements: Achievement[] }> {
+  async recordTaskCompletion(
+    userId: string,
+    organizationId: string,
+    wasOverdue: boolean,
+  ): Promise<{ newAchievements: Achievement[] }> {
     const today = todayStamp();
     const existing = await this.statsModel.findOne({ userId }).exec();
 
@@ -103,12 +109,27 @@ export class GamificationService {
       .exec();
 
     for (const achievement of newAchievements) {
-      await this.notificationsService.create(userId, {
-        title: `Achievement unlocked: ${achievement.title}`,
-        description: achievement.description,
-        kind: 'system',
-        source: 'gamification',
-      });
+      await this.notificationsService.create(
+        userId,
+        {
+          title: `Achievement unlocked: ${achievement.title}`,
+          description: achievement.description,
+          kind: 'system',
+          source: 'gamification',
+        },
+        organizationId,
+      );
+      await this.timelineService
+        .record({
+          organizationId,
+          userId,
+          type: 'achievement_unlocked',
+          title: `Achievement unlocked: ${achievement.title}`,
+          description: achievement.description,
+          sourceType: 'achievement',
+          sourceId: achievement.id,
+        })
+        .catch(() => undefined);
     }
 
     return { newAchievements };

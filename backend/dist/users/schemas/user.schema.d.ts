@@ -4,8 +4,11 @@ export declare class User {
     email: string;
     passwordHash: string;
     name: string;
+    organizationId: string;
+    storeId?: string;
     roles: string[];
     assignedAgentId?: string;
+    department?: string;
     active: boolean;
     preferences: Record<string, unknown>;
 }

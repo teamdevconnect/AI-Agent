@@ -44,6 +44,14 @@ exports.DailyReport = DailyReport;
 __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
+], DailyReport.prototype, "organizationId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ index: true }),
+    __metadata("design:type", String)
+], DailyReport.prototype, "storeId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
 ], DailyReport.prototype, "agentId", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true, enum: ['morning', 'eod'] }),
@@ -69,9 +77,13 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], DailyReport.prototype, "sourceUserId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], DailyReport.prototype, "wasMissed", void 0);
 exports.DailyReport = DailyReport = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'daily_reports' })
 ], DailyReport);
 exports.DailyReportSchema = mongoose_1.SchemaFactory.createForClass(DailyReport);
-exports.DailyReportSchema.index({ agentId: 1, reportType: 1, date: 1 }, { unique: true });
+exports.DailyReportSchema.index({ organizationId: 1, storeId: 1, agentId: 1, reportType: 1, date: 1 }, { unique: true });
 //# sourceMappingURL=daily-report.schema.js.map

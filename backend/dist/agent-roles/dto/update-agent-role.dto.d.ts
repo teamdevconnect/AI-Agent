@@ -12,5 +12,9 @@ export declare class UpdateAgentRoleDto {
     kpis?: AgentRoleKpiDto[];
     systemPrompt?: string;
     status?: 'draft' | 'active';
+    assignedDepartments?: string[];
+    assignedUserIds?: string[];
+    allowedTools?: string[];
+    modelTier?: 'fast' | 'standard' | null;
 }
 export {};

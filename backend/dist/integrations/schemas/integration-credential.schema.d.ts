@@ -1,6 +1,7 @@
 import { Document, Types } from 'mongoose';
 export type IntegrationCredentialDocument = IntegrationCredential & Document<Types.ObjectId>;
 export declare class IntegrationCredential {
+    organizationId: string;
     provider: string;
     apiKey: string;
     baseUrl?: string;

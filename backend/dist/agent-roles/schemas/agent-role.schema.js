@@ -30,7 +30,11 @@ let AgentRole = class AgentRole {
 };
 exports.AgentRole = AgentRole;
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, unique: true, index: true }),
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], AgentRole.prototype, "organizationId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
 ], AgentRole.prototype, "slug", void 0);
 __decorate([
@@ -78,6 +82,22 @@ __decorate([
     __metadata("design:type", String)
 ], AgentRole.prototype, "status", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
+], AgentRole.prototype, "assignedDepartments", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
+], AgentRole.prototype, "assignedUserIds", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
+], AgentRole.prototype, "allowedTools", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ enum: ['fast', 'standard'] }),
+    __metadata("design:type", String)
+], AgentRole.prototype, "modelTier", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ default: '#6b7280' }),
     __metadata("design:type", String)
 ], AgentRole.prototype, "avatarColor", void 0);
@@ -89,4 +109,5 @@ exports.AgentRole = AgentRole = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'agent_roles' })
 ], AgentRole);
 exports.AgentRoleSchema = mongoose_1.SchemaFactory.createForClass(AgentRole);
+exports.AgentRoleSchema.index({ organizationId: 1, slug: 1 }, { unique: true });
 //# sourceMappingURL=agent-role.schema.js.map

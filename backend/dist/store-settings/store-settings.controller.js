@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StoreSettingsController = void 0;
 const common_1 = require("@nestjs/common");
+const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
@@ -23,39 +24,42 @@ let StoreSettingsController = class StoreSettingsController {
     constructor(storeSettingsService) {
         this.storeSettingsService = storeSettingsService;
     }
-    get() {
-        return this.storeSettingsService.getSettings();
+    get(user) {
+        return this.storeSettingsService.getSettings(user);
     }
-    update(dto) {
-        return this.storeSettingsService.updateSettings(dto);
+    update(user, dto) {
+        return this.storeSettingsService.updateSettings(user, dto);
     }
-    runNow(type) {
-        return this.storeSettingsService.runNow(type === 'eod' ? 'eod' : 'morning');
+    runNow(user, type) {
+        return this.storeSettingsService.runNow(user, type === 'eod' ? 'eod' : 'morning');
     }
 };
 exports.StoreSettingsController = StoreSettingsController;
 __decorate([
     (0, common_1.Get)(),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], StoreSettingsController.prototype, "get", null);
 __decorate([
     (0, common_1.Put)(),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [update_store_settings_dto_1.UpdateStoreSettingsDto]),
+    __metadata("design:paramtypes", [Object, update_store_settings_dto_1.UpdateStoreSettingsDto]),
     __metadata("design:returntype", void 0)
 ], StoreSettingsController.prototype, "update", null);
 __decorate([
     (0, common_1.Post)('run-now'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),
-    __param(0, (0, common_1.Query)('type')),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('type')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], StoreSettingsController.prototype, "runNow", null);
 exports.StoreSettingsController = StoreSettingsController = __decorate([

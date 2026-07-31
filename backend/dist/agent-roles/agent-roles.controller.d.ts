@@ -5,7 +5,7 @@ import { UpdateAgentRoleDto } from './dto/update-agent-role.dto';
 export declare class AgentRolesController {
     private agentRolesService;
     constructor(agentRolesService: AgentRolesService);
-    list(): Promise<({
+    list(user: JwtPayload): Promise<({
         slug: string;
         name: string;
         description: string;
@@ -14,6 +14,7 @@ export declare class AgentRolesController {
         builtin: boolean;
     } | {
         builtin: boolean;
+        organizationId: string;
         slug: string;
         name: string;
         department: string;
@@ -26,6 +27,10 @@ export declare class AgentRolesController {
         sourceDocumentName: string;
         sourceDocumentId: string;
         status: "draft" | "active";
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        allowedTools: string[];
+        modelTier?: "fast" | "standard";
         avatarColor: string;
         createdBy: string;
         _id: import("mongoose").Types.ObjectId;
@@ -43,6 +48,7 @@ export declare class AgentRolesController {
     })[]>;
     generate(user: JwtPayload, req: Request, file: Express.Multer.File): Promise<{
         builtin: boolean;
+        organizationId: string;
         slug: string;
         name: string;
         department: string;
@@ -55,6 +61,10 @@ export declare class AgentRolesController {
         sourceDocumentName: string;
         sourceDocumentId: string;
         status: "draft" | "active";
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        allowedTools: string[];
+        modelTier?: "fast" | "standard";
         avatarColor: string;
         createdBy: string;
         _id: import("mongoose").Types.ObjectId;
@@ -70,8 +80,9 @@ export declare class AgentRolesController {
         schema: import("mongoose").Schema;
         __v: number;
     }>;
-    update(id: string, dto: UpdateAgentRoleDto, req: Request): Promise<{
+    update(user: JwtPayload, id: string, dto: UpdateAgentRoleDto, req: Request): Promise<{
         builtin: boolean;
+        organizationId: string;
         slug: string;
         name: string;
         department: string;
@@ -84,6 +95,10 @@ export declare class AgentRolesController {
         sourceDocumentName: string;
         sourceDocumentId: string;
         status: "draft" | "active";
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        allowedTools: string[];
+        modelTier?: "fast" | "standard";
         avatarColor: string;
         createdBy: string;
         _id: import("mongoose").Types.ObjectId;
@@ -99,7 +114,7 @@ export declare class AgentRolesController {
         schema: import("mongoose").Schema;
         __v: number;
     }>;
-    remove(id: string, req: Request): Promise<{
+    remove(user: JwtPayload, id: string, req: Request): Promise<{
         deleted: boolean;
     }>;
 }

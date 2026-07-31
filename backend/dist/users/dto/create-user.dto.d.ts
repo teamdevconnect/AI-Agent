@@ -1,6 +1,9 @@
+import { AssignableRole } from './update-user.dto';
 export declare class CreateUserDto {
     email: string;
     name: string;
-    role: 'admin' | 'agent_user' | 'user';
+    role: AssignableRole;
     assignedAgentId?: string;
+    storeId?: string;
+    department?: string;
 }

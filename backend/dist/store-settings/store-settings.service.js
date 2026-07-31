@@ -8,25 +8,21 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 var StoreSettingsService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StoreSettingsService = void 0;
 const common_1 = require("@nestjs/common");
-const mongoose_1 = require("@nestjs/mongoose");
 const schedule_1 = require("@nestjs/schedule");
-const mongoose_2 = require("mongoose");
 const chat_service_1 = require("../chat/chat.service");
 const dashboard_service_1 = require("../dashboard/dashboard.service");
+const notifications_service_1 = require("../notifications/notifications.service");
+const timeline_service_1 = require("../timeline/timeline.service");
+const organizations_service_1 = require("../organizations/organizations.service");
 const users_service_1 = require("../users/users.service");
-const store_settings_schema_1 = require("./schemas/store-settings.schema");
 const MORNING_AGENT_ID = 'store_manager';
 const MORNING_PROMPT = "Generate today's to-do list: analyze CRM and Outlook, identify new enquiries and any that haven't received a follow-up, and list concrete priorities for today.";
 const EOD_AGENT_ID = 'store_manager';
 const EOD_PROMPT = 'Generate an end-of-day report: summarize what was completed today, outstanding follow-ups, and anything that needs attention tomorrow.';
-const DEFAULT_TIMEZONE = 'Asia/Kolkata';
 function toMinutes(hhmm) {
     const [h, m] = hhmm.split(':').map(Number);
     return h * 60 + m;
@@ -45,56 +41,66 @@ function nowMinutesInZone(tz) {
     const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
     return hour * 60 + minute;
 }
+function scheduledInstant(tz, hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+        .formatToParts(new Date())
+        .reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+    return new Date(`${todayParts.year}-${todayParts.month}-${todayParts.day}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
+}
 let StoreSettingsService = StoreSettingsService_1 = class StoreSettingsService {
-    constructor(settingsModel, chatService, dashboardService, usersService) {
-        this.settingsModel = settingsModel;
+    constructor(organizationsService, chatService, dashboardService, usersService, notificationsService, timelineService) {
+        this.organizationsService = organizationsService;
         this.chatService = chatService;
         this.dashboardService = dashboardService;
         this.usersService = usersService;
+        this.notificationsService = notificationsService;
+        this.timelineService = timelineService;
         this.logger = new common_1.Logger(StoreSettingsService_1.name);
     }
-    getSettings() {
-        return this.getOrCreateSettings();
+    getSettings(caller) {
+        return this.organizationsService.resolveStoreForUser(caller.organizationId, caller.storeId);
     }
-    updateSettings(patch) {
-        return this.settingsModel.findOneAndUpdate({}, patch, { upsert: true, new: true }).exec();
+    updateSettings(caller, patch) {
+        return this.organizationsService.updateStoreSettings(caller.organizationId, caller.storeId, patch);
     }
-    runNow(type) {
+    async runNow(caller, type) {
+        const store = await this.organizationsService.resolveStoreForUser(caller.organizationId, caller.storeId);
         const now = new Date().toLocaleDateString();
-        if (type === 'eod')
-            return this.runForAllUsers(EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now}`);
-        return this.runForAllUsers(MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now}`);
+        if (type === 'eod') {
+            return this.runForStore(store, EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now}`, false);
+        }
+        return this.runForStore(store, MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now}`, false);
     }
     async checkAndRunDailyJobs() {
-        const settings = await this.getOrCreateSettings();
+        const stores = await this.organizationsService.listAllStores();
         const today = todayStamp();
         const now = new Date();
-        const nowMin = nowMinutesInZone(settings.timezone || DEFAULT_TIMEZONE);
-        const openMin = toMinutes(settings.openingTime);
-        if (nowMin >= openMin - 30 && nowMin <= openMin && settings.lastMorningRunDate !== today) {
-            await this.runForAllUsers(MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now.toLocaleDateString()}`);
-            await this.settingsModel.updateOne({ _id: settings._id }, { lastMorningRunDate: today }).exec();
-        }
-        const closeMin = toMinutes(settings.closingTime);
-        if (nowMin >= closeMin && nowMin <= closeMin + 30 && settings.lastEodRunDate !== today) {
-            await this.runForAllUsers(EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now.toLocaleDateString()}`);
-            await this.settingsModel.updateOne({ _id: settings._id }, { lastEodRunDate: today }).exec();
-        }
-    }
-    async getOrCreateSettings() {
-        const existing = await this.settingsModel.findOne().exec();
-        if (existing) {
-            if (!existing.timezone) {
-                existing.timezone = DEFAULT_TIMEZONE;
-                await existing.save();
+        for (const store of stores) {
+            const nowMin = nowMinutesInZone(store.timezone);
+            const openMin = toMinutes(store.openingTime);
+            if (nowMin >= openMin - 30 && store.lastMorningRunDate !== today) {
+                const claimed = await this.organizationsService.claimMorningRun(store._id.toString(), today);
+                if (claimed) {
+                    const wasMissed = nowMin > openMin;
+                    await this.runForStore(store, MORNING_AGENT_ID, 'morning', MORNING_PROMPT, `Morning to-do — ${now.toLocaleDateString()}`, wasMissed);
+                }
             }
-            return existing;
+            const closeMin = toMinutes(store.closingTime);
+            if (nowMin >= closeMin - 30 && store.lastEodRunDate !== today) {
+                const claimed = await this.organizationsService.claimEodRun(store._id.toString(), today);
+                if (claimed) {
+                    const wasMissed = nowMin > closeMin;
+                    await this.runForStore(store, EOD_AGENT_ID, 'eod', EOD_PROMPT, `EOD report — ${now.toLocaleDateString()}`, wasMissed);
+                }
+            }
         }
-        return this.settingsModel.create({});
     }
-    async runForAllUsers(agentId, reportType, promptText, title) {
-        const userIds = await this.usersService.findAllIds();
-        const settled = await Promise.allSettled(userIds.map((userId) => this.chatService.generateSystemConversation(userId, agentId, promptText, title)));
+    async runForStore(store, agentId, reportType, promptText, title, wasMissed) {
+        const organizationId = store.organizationId;
+        const storeId = store._id.toString();
+        const userIds = await this.usersService.findIdsByOrgAndStore(organizationId, storeId);
+        const settled = await Promise.allSettled(userIds.map((userId) => this.chatService.generateSystemConversation(userId, organizationId, agentId, promptText, title)));
         settled.forEach((r, i) => {
             if (r.status === 'rejected') {
                 this.logger.error(`Scheduled report failed for user ${userIds[i]}: ${r.reason.message}`);
@@ -106,15 +112,38 @@ let StoreSettingsService = StoreSettingsService_1 = class StoreSettingsService {
             .map((x) => ({ value: x.r.value, userId: x.userId }));
         if (successes.length > 0) {
             const chosen = successes[0];
+            const date = todayStamp();
             await this.dashboardService
                 .recordDailyReport({
+                organizationId,
+                storeId,
                 agentId,
                 reportType,
-                date: todayStamp(),
+                date,
                 conversationId: chosen.value.conversationId,
                 userId: chosen.userId,
+                wasMissed,
             })
                 .catch((err) => this.logger.error(`Failed to generate ${reportType} report: ${err.message}`));
+            const occurredAt = wasMissed ? scheduledInstant(store.timezone, reportType === 'morning' ? store.openingTime : store.closingTime) : new Date();
+            await this.timelineService
+                .record({
+                organizationId,
+                storeId,
+                type: wasMissed ? 'daily_report_missed' : 'daily_report_generated',
+                title: wasMissed ? `${title} (generated late)` : title,
+                sourceType: 'daily_report',
+                occurredAt,
+            })
+                .catch((err) => this.logger.error(`Failed to record timeline event: ${err.message}`));
+            if (wasMissed) {
+                await Promise.allSettled(userIds.map((userId) => this.notificationsService.create(userId, {
+                    kind: 'warning',
+                    title: `${reportType === 'morning' ? 'Morning briefing' : 'EOD report'} generated late`,
+                    description: `${store.name}'s scheduled ${reportType} report ran later than its usual trigger window today.`,
+                    source: 'store-settings',
+                }, organizationId)));
+            }
         }
         return { usersNotified: successes.length, totalUsers: userIds.length };
     }
@@ -128,10 +157,11 @@ __decorate([
 ], StoreSettingsService.prototype, "checkAndRunDailyJobs", null);
 exports.StoreSettingsService = StoreSettingsService = StoreSettingsService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, mongoose_1.InjectModel)(store_settings_schema_1.StoreSettings.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model,
+    __metadata("design:paramtypes", [organizations_service_1.OrganizationsService,
         chat_service_1.ChatService,
         dashboard_service_1.DashboardService,
-        users_service_1.UsersService])
+        users_service_1.UsersService,
+        notifications_service_1.NotificationsService,
+        timeline_service_1.TimelineService])
 ], StoreSettingsService);
 //# sourceMappingURL=store-settings.service.js.map

@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const notifications_service_1 = require("../notifications/notifications.service");
+const timeline_service_1 = require("../timeline/timeline.service");
 const achievements_1 = require("./achievements");
 const coaching_1 = require("./coaching");
 const user_stats_schema_1 = require("./schemas/user-stats.schema");
@@ -31,9 +32,10 @@ function yesterdayStamp() {
     return d.toISOString().slice(0, 10);
 }
 let GamificationService = class GamificationService {
-    constructor(statsModel, notificationsService) {
+    constructor(statsModel, notificationsService, timelineService) {
         this.statsModel = statsModel;
         this.notificationsService = notificationsService;
+        this.timelineService = timelineService;
     }
     async getStats(userId) {
         const stats = await this.statsModel.findOne({ userId }).lean().exec();
@@ -48,7 +50,7 @@ let GamificationService = class GamificationService {
         };
         return { ...base, coachingMessage: (0, coaching_1.coachingMessage)(base) };
     }
-    async recordTaskCompletion(userId, wasOverdue) {
+    async recordTaskCompletion(userId, organizationId, wasOverdue) {
         const today = todayStamp();
         const existing = await this.statsModel.findOne({ userId }).exec();
         const previousStreak = existing?.currentStreak ?? 0;
@@ -89,7 +91,18 @@ let GamificationService = class GamificationService {
                 description: achievement.description,
                 kind: 'system',
                 source: 'gamification',
-            });
+            }, organizationId);
+            await this.timelineService
+                .record({
+                organizationId,
+                userId,
+                type: 'achievement_unlocked',
+                title: `Achievement unlocked: ${achievement.title}`,
+                description: achievement.description,
+                sourceType: 'achievement',
+                sourceId: achievement.id,
+            })
+                .catch(() => undefined);
         }
         return { newAchievements };
     }
@@ -99,6 +112,7 @@ exports.GamificationService = GamificationService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(user_stats_schema_1.UserStats.name)),
     __metadata("design:paramtypes", [mongoose_2.Model,
-        notifications_service_1.NotificationsService])
+        notifications_service_1.NotificationsService,
+        timeline_service_1.TimelineService])
 ], GamificationService);
 //# sourceMappingURL=gamification.service.js.map

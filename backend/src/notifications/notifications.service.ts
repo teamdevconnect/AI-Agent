@@ -12,8 +12,8 @@ export class NotificationsService {
     private chatGateway: ChatGateway,
   ) {}
 
-  async create(userId: string, dto: CreateNotificationDto) {
-    const notification = await this.notificationModel.create({ userId, ...dto });
+  async create(userId: string, dto: CreateNotificationDto, organizationId?: string) {
+    const notification = await this.notificationModel.create({ userId, organizationId, ...dto });
     // Live push if they're connected right now (ChatGateway.emitToUser) — a
     // no-op otherwise; GET /notifications below is the source of truth for
     // anyone who missed the live event.

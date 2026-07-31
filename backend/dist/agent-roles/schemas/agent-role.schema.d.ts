@@ -5,6 +5,7 @@ export declare class AgentRoleKpi {
     description: string;
 }
 export declare class AgentRole {
+    organizationId: string;
     slug: string;
     name: string;
     department: string;
@@ -17,6 +18,10 @@ export declare class AgentRole {
     sourceDocumentName: string;
     sourceDocumentId: string;
     status: 'draft' | 'active';
+    assignedDepartments: string[];
+    assignedUserIds: string[];
+    allowedTools: string[];
+    modelTier?: 'fast' | 'standard';
     avatarColor: string;
     createdBy: string;
 }

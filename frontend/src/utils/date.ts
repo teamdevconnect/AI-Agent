@@ -2,16 +2,11 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import isToday from 'dayjs/plugin/isToday';
 import isYesterday from 'dayjs/plugin/isYesterday';
-<<<<<<< HEAD
-=======
 import utc from 'dayjs/plugin/utc';
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 dayjs.extend(relativeTime);
 dayjs.extend(isToday);
 dayjs.extend(isYesterday);
-<<<<<<< HEAD
-=======
 dayjs.extend(utc);
 
 // The backend buckets daily reports/tasks by UTC date (todayStamp() in
@@ -23,7 +18,6 @@ dayjs.extend(utc);
 export function todayUtc(): string {
   return dayjs.utc().format('YYYY-MM-DD');
 }
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 
 export function formatMessageTime(iso: string): string {
   return dayjs(iso).format('h:mm A');

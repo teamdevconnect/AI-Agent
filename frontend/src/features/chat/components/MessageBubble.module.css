@@ -129,8 +129,6 @@
   color: var(--color-accent) !important;
 }
 
-<<<<<<< HEAD
-=======
 .bubbleThinking {
   display: flex;
   align-items: center;
@@ -174,7 +172,6 @@
   color: var(--color-text-secondary);
 }
 
->>>>>>> 6a60a8648 (Initial AI Agent source code)
 .cursor {
   display: inline-block;
   width: 2px;

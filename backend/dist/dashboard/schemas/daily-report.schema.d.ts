@@ -9,6 +9,8 @@ export declare class DailyReportTask {
     status: 'todo' | 'in_progress' | 'done';
 }
 export declare class DailyReport {
+    organizationId: string;
+    storeId?: string;
     agentId: string;
     reportType: 'morning' | 'eod';
     date: string;
@@ -16,6 +18,7 @@ export declare class DailyReport {
     summary: string;
     sourceConversationId: string;
     sourceUserId: string;
+    wasMissed: boolean;
     createdAt: Date;
     updatedAt: Date;
 }

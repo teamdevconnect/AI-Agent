@@ -11,6 +11,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateUserDto = void 0;
 const class_validator_1 = require("class-validator");
+const update_user_dto_1 = require("./update-user.dto");
+const STORE_SCOPED_ROLES = new Set(['manager', 'consultant']);
 class CreateUserDto {
 }
 exports.CreateUserDto = CreateUserDto;
@@ -24,7 +26,7 @@ __decorate([
     __metadata("design:type", String)
 ], CreateUserDto.prototype, "name", void 0);
 __decorate([
-    (0, class_validator_1.IsIn)(['admin', 'agent_user', 'user']),
+    (0, class_validator_1.IsIn)(update_user_dto_1.ASSIGNABLE_ROLES),
     __metadata("design:type", String)
 ], CreateUserDto.prototype, "role", void 0);
 __decorate([
@@ -32,4 +34,15 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateUserDto.prototype, "assignedAgentId", void 0);
+__decorate([
+    (0, class_validator_1.ValidateIf)((o) => STORE_SCOPED_ROLES.has(o.role)),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(1),
+    __metadata("design:type", String)
+], CreateUserDto.prototype, "storeId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateUserDto.prototype, "department", void 0);
 //# sourceMappingURL=create-user.dto.js.map

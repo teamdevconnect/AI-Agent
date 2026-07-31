@@ -57,7 +57,7 @@ let ChatGateway = ChatGateway_1 = class ChatGateway {
         let conversationId = body.conversationId;
         client.emit('typing', { typing: true });
         try {
-            const result = await this.chatService.sendMessageStreaming(user.sub, token, body.message, body.conversationId, (event) => {
+            const result = await this.chatService.sendMessageStreaming(user.sub, user.organizationId, token, body.message, body.conversationId, (event) => {
                 if (event.type === 'delta') {
                     client.emit('chunk', { conversationId, delta: event.text });
                 }

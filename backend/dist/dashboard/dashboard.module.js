@@ -13,6 +13,7 @@ const mongoose_1 = require("@nestjs/mongoose");
 const auth_module_1 = require("../auth/auth.module");
 const chat_module_1 = require("../chat/chat.module");
 const gamification_module_1 = require("../gamification/gamification.module");
+const timeline_module_1 = require("../timeline/timeline.module");
 const dashboard_controller_1 = require("./dashboard.controller");
 const dashboard_service_1 = require("./dashboard.service");
 const tasks_controller_1 = require("./tasks.controller");
@@ -30,6 +31,7 @@ exports.DashboardModule = DashboardModule = __decorate([
             auth_module_1.AuthModule,
             chat_module_1.ChatModule,
             gamification_module_1.GamificationModule,
+            timeline_module_1.TimelineModule,
         ],
         controllers: [dashboard_controller_1.DashboardController, tasks_controller_1.TasksController],
         providers: [dashboard_service_1.DashboardService, tasks_service_1.TasksService, tasks_export_service_1.TasksExportService],

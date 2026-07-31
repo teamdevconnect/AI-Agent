@@ -44,11 +44,14 @@ export class DashboardService {
    * /reports/structure call on its reply) — the crew produces its own reply
    * and structures it server-side in one request. */
   async recordDailyReport(input: {
+    organizationId: string;
+    storeId: string;
     agentId: string;
     reportType: 'morning' | 'eod';
     date: string;
     conversationId: string;
     userId: string;
+    wasMissed?: boolean;
   }) {
     const userJwt = this.jwt.sign({ sub: input.userId }, { expiresIn: '5m' });
     const { data } = await firstValueFrom(
@@ -61,16 +64,32 @@ export class DashboardService {
 
     return this.reportModel
       .findOneAndUpdate(
-        { agentId: input.agentId, reportType: input.reportType, date: input.date },
+        {
+          organizationId: input.organizationId,
+          storeId: input.storeId,
+          agentId: input.agentId,
+          reportType: input.reportType,
+          date: input.date,
+        },
         {
           tasks: data.tasks,
           summary: data.summary,
           sourceConversationId: input.conversationId,
           sourceUserId: input.userId,
+          wasMissed: input.wasMissed ?? false,
         },
         { upsert: true, new: true },
       )
       .exec();
+  }
+
+  /** Used by the Manager business dashboard's "missed EOD reports" field —
+   * a real, answerable query since EOD reports are already store-wide, not
+   * per-individual (unlike the per-person task tracking that dashboard has
+   * to placeholder). */
+  async hasReportToday(organizationId: string, storeId: string, reportType: 'morning' | 'eod', date: string) {
+    const count = await this.reportModel.countDocuments({ organizationId, storeId, reportType, date }).exec();
+    return count > 0;
   }
 
   /** agentId, when provided, restricts the response to just that one agent —
@@ -88,7 +107,11 @@ export class DashboardService {
       // drops its schema-defined fields (they live behind getters, not as
       // own enumerable properties), which broke urgentCount/overdueCount
       // below until this was added.
-      this.reportModel.find({ date }).sort({ updatedAt: -1 }).lean().exec(),
+      // organizationId is required on the schema — no caller/org means no
+      // reports, not every org's reports (fail closed).
+      caller?.organizationId
+        ? this.reportModel.find({ organizationId: caller.organizationId, date }).sort({ updatedAt: -1 }).lean().exec()
+        : Promise.resolve([]),
       this.chatService.listAgents(caller),
     ]);
 
@@ -161,6 +184,9 @@ export class DashboardService {
    * didn't submit is a meaningful zero, not a gap to skip, matching
    * getOverview's existing "pending" vs "reported" status framing. */
   async getTrend(agentId: string, days: 7 | 30, caller?: JwtPayload) {
+    if (!caller?.organizationId) {
+      throw new NotFoundException('Agent not found');
+    }
     const allowedAgentIds = await resolveAllowedAgentIds(this.chatService, caller);
     if (!allowedAgentIds.includes(agentId)) {
       throw new NotFoundException('Agent not found');
@@ -174,7 +200,11 @@ export class DashboardService {
     }
 
     const reports = await this.reportModel
-      .find({ agentId, date: { $gte: dates[0], $lte: dates[dates.length - 1] } })
+      .find({
+        organizationId: caller.organizationId,
+        agentId,
+        date: { $gte: dates[0], $lte: dates[dates.length - 1] },
+      })
       .lean()
       .exec();
 

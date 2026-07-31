@@ -10,7 +10,7 @@ export declare class AgentRolesService {
     private readonly logger;
     private readonly agentUrl;
     constructor(roleModel: Model<AgentRoleDocument>, http: HttpService, config: ConfigService);
-    listAll(): Promise<({
+    listAll(organizationId: string): Promise<({
         slug: string;
         name: string;
         description: string;
@@ -19,6 +19,7 @@ export declare class AgentRolesService {
         builtin: boolean;
     } | {
         builtin: boolean;
+        organizationId: string;
         slug: string;
         name: string;
         department: string;
@@ -31,6 +32,10 @@ export declare class AgentRolesService {
         sourceDocumentName: string;
         sourceDocumentId: string;
         status: "draft" | "active";
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        allowedTools: string[];
+        modelTier?: "fast" | "standard";
         avatarColor: string;
         createdBy: string;
         _id: import("mongoose").Types.ObjectId;
@@ -46,8 +51,9 @@ export declare class AgentRolesService {
         schema: import("mongoose").Schema;
         __v: number;
     })[]>;
-    generateDraft(userId: string, userJwt: string, file: Express.Multer.File): Promise<{
+    generateDraft(userId: string, organizationId: string, userJwt: string, file: Express.Multer.File): Promise<{
         builtin: boolean;
+        organizationId: string;
         slug: string;
         name: string;
         department: string;
@@ -60,6 +66,10 @@ export declare class AgentRolesService {
         sourceDocumentName: string;
         sourceDocumentId: string;
         status: "draft" | "active";
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        allowedTools: string[];
+        modelTier?: "fast" | "standard";
         avatarColor: string;
         createdBy: string;
         _id: import("mongoose").Types.ObjectId;
@@ -75,8 +85,9 @@ export declare class AgentRolesService {
         schema: import("mongoose").Schema;
         __v: number;
     }>;
-    update(id: string, dto: UpdateAgentRoleDto, userJwt: string): Promise<{
+    update(id: string, dto: UpdateAgentRoleDto, userJwt: string, organizationId: string): Promise<{
         builtin: boolean;
+        organizationId: string;
         slug: string;
         name: string;
         department: string;
@@ -89,6 +100,10 @@ export declare class AgentRolesService {
         sourceDocumentName: string;
         sourceDocumentId: string;
         status: "draft" | "active";
+        assignedDepartments: string[];
+        assignedUserIds: string[];
+        allowedTools: string[];
+        modelTier?: "fast" | "standard";
         avatarColor: string;
         createdBy: string;
         _id: import("mongoose").Types.ObjectId;
@@ -104,7 +119,7 @@ export declare class AgentRolesService {
         schema: import("mongoose").Schema;
         __v: number;
     }>;
-    remove(id: string, userJwt: string): Promise<{
+    remove(id: string, userJwt: string, organizationId: string): Promise<{
         deleted: boolean;
     }>;
     private uniqueSlug;

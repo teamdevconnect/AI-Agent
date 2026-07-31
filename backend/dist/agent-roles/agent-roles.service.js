@@ -11,6 +11,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 var AgentRolesService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AgentRolesService = void 0;
@@ -18,7 +21,7 @@ const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const mongoose_1 = require("@nestjs/mongoose");
-const form_data_1 = require("form-data");
+const form_data_1 = __importDefault(require("form-data"));
 const mongoose_2 = require("mongoose");
 const rxjs_1 = require("rxjs");
 const agents_1 = require("../chat/agents");
@@ -32,8 +35,8 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
         this.logger = new common_1.Logger(AgentRolesService_1.name);
         this.agentUrl = this.config.get('pythonAgentUrl') ?? 'http://localhost:8000';
     }
-    async listAll() {
-        const dynamic = await this.roleModel.find().sort({ createdAt: -1 }).exec();
+    async listAll(organizationId) {
+        const dynamic = await this.roleModel.find({ organizationId }).sort({ createdAt: -1 }).exec();
         const builtin = agents_1.CHAT_AGENTS.map((a) => ({
             slug: a.id,
             name: a.name,
@@ -44,7 +47,7 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
         }));
         return [...builtin, ...dynamic.map((d) => ({ ...d.toObject(), builtin: false }))];
     }
-    async generateDraft(userId, userJwt, file) {
+    async generateDraft(userId, organizationId, userJwt, file) {
         const form = new form_data_1.default();
         form.append('file', file.buffer, { filename: file.originalname, contentType: file.mimetype });
         form.append('user_id', userId);
@@ -53,9 +56,10 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
         }));
-        const slug = await this.uniqueSlug(data.name);
+        const slug = await this.uniqueSlug(data.name, organizationId);
         const avatarColor = AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
         const created = await this.roleModel.create({
+            organizationId,
             slug,
             name: data.name,
             department: data.department,
@@ -73,8 +77,8 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
         });
         return { ...created.toObject(), builtin: false };
     }
-    async update(id, dto, userJwt) {
-        const existing = await this.roleModel.findById(id).exec();
+    async update(id, dto, userJwt, organizationId) {
+        const existing = await this.roleModel.findOne({ _id: id, organizationId }).exec();
         if (!existing)
             throw new common_1.NotFoundException('Role not found');
         const activating = dto.status === 'active' && existing.status !== 'active';
@@ -93,8 +97,8 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
         }
         return { ...existing.toObject(), builtin: false };
     }
-    async remove(id, userJwt) {
-        const existing = await this.roleModel.findById(id).exec();
+    async remove(id, userJwt, organizationId) {
+        const existing = await this.roleModel.findOne({ _id: id, organizationId }).exec();
         if (!existing)
             throw new common_1.NotFoundException('Role not found');
         await (0, rxjs_1.firstValueFrom)(this.http
@@ -106,11 +110,11 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
         await existing.deleteOne();
         return { deleted: true };
     }
-    async uniqueSlug(name) {
+    async uniqueSlug(name, organizationId) {
         const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'role';
         const taken = new Set([
             ...agents_1.CHAT_AGENTS.map((a) => a.id),
-            ...(await this.roleModel.distinct('slug').exec()),
+            ...(await this.roleModel.distinct('slug', { organizationId }).exec()),
         ]);
         let candidate = base;
         let n = 2;

@@ -2,6 +2,7 @@ import { Document } from 'mongoose';
 export type AuditLogDocument = AuditLog & Document;
 export declare class AuditLog {
     userId: string;
+    organizationId?: string;
     method: string;
     route: string;
     statusCode: number;
