@@ -21,6 +21,12 @@ export interface Deal {
   product?: string;
   customerType?: string;
   region?: string;
+  // Phase 11 — captured when dealStatus flips to 'lost'. lostReasonSource
+  // is server-computed (never sent by the client); 'rep_reported' the
+  // moment a real lostReason is saved, reserved 'ai_inferred' for a future
+  // inference job.
+  lostReason?: string;
+  lostReasonSource?: 'rep_reported' | 'ai_inferred';
 }
 
 export const LEAD_SOURCES = ['referral', 'website', 'cold_call', 'event', 'partner', 'social_media', 'advertisement', 'other'] as const;
@@ -60,6 +66,7 @@ export interface CreateDealPayload {
   product?: string;
   customerType?: string;
   region?: string;
+  lostReason?: string;
 }
 
 export type UpdateDealPayload = Partial<CreateDealPayload>;

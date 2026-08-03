@@ -1,26 +1,30 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import { FiDownload, FiPlus } from 'react-icons/fi';
-import { Button, Dropdown, Skeleton } from '@/components/ui';
+import { FiDownload, FiPlus, FiZap } from 'react-icons/fi';
+import { Button, Dropdown, MultiSelectDropdown, Skeleton, Tabs } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { hasRole } from '@/utils/roles';
 import { extractErrorMessage } from '@/utils/errors';
 import { formatINR as money } from '@/utils/currency';
 import { dealsService, type Deal, type DealFilters } from '@/services/dealsService';
 import { dealPerformanceService, type DealPerformancePreset } from '@/services/dealPerformanceService';
+import { customerActivityService } from '@/services/customerActivityService';
 import { usersService } from '@/services/usersService';
 import { organizationsService } from '@/services/organizationsService';
 import { StatTile } from '@/features/dashboard/components/StatTile';
 import { DealFilterBar } from './components/DealFilterBar';
-import { MultiSelectDropdown } from './components/MultiSelectDropdown';
 import { SavedViewsBar } from './components/SavedViewsBar';
 import { WonLostTrendChart } from './components/WonLostTrendChart';
 import { RevenueProgressChart } from './components/RevenueProgressChart';
 import { PipelineByStageChart } from './components/PipelineByStageChart';
 import { CustomerAcquisitionTrendChart } from './components/CustomerAcquisitionTrendChart';
 import { RankedBreakdownList } from './components/RankedBreakdownList';
+import { CustomerActivityTable } from './components/CustomerActivityTable';
+import { UnactionedList, LostReasonList, CorrelatedEmailList } from './components/CustomerActivityDigest';
+import { CustomerActivitySummaryPanel } from './components/CustomerActivitySummaryPanel';
 import { DealListView } from './components/DealListView';
 import { DealFormModal } from './components/DealFormModal';
 import { formatStageLabel } from '@/utils/stageLabel';
@@ -51,6 +55,19 @@ const WIDGET_OPTIONS = [
   { value: 'customerAcquisitionTrend', label: 'Customer Acquisition Trend' },
 ];
 
+// Grouped into tabs so only ~2-3 widgets render at once instead of 11
+// sections stacked in one long scroll — the "crowded / repeated things"
+// complaint was largely this page showing everything at once, including
+// two visually-similar stage-based bar charts (Pipeline, Funnel) back to
+// back with nothing to tell them apart at a glance.
+const TAB_ITEMS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'pipeline', label: 'Pipeline & Funnel' },
+  { id: 'performance', label: 'Team & Sources' },
+  { id: 'trends', label: 'Trends' },
+  { id: 'customer-activity', label: 'Customer Activity' },
+];
+
 interface DrillDown {
   title: string;
   filters: DealFilters;
@@ -60,13 +77,31 @@ interface DrillDown {
 // Phase 9a plan notes) — those are fixed-layout "at a glance" views; this is
 // a 10-filter/10-widget analytics surface with exports and saved views.
 // Consultants are excluded — they already have their own personal view.
+const TAB_IDS = TAB_ITEMS.map((t) => t.id);
+
 export function DealPerformancePage() {
   const user = useAuthStore((s) => s.user);
   const canSeeStoreFilter = hasRole(user, 'owner') || hasRole(user, 'admin');
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [filters, setFilters] = useState<DealFilters>({});
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>([]);
+  // Deep-linkable so the dashboards' "View full Customer Activity →" link
+  // (and any other future link) can land directly on a specific tab, e.g.
+  // /deal-performance?tab=customer-activity — falls back to 'overview' for
+  // a bare visit or an unrecognized tab id.
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(initialTab && TAB_IDS.includes(initialTab) ? initialTab : 'overview');
+
+  const changeTab = (tab: string) => {
+    setActiveTab(tab);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tab);
+      return next;
+    });
+  };
   const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
   const [formModal, setFormModal] = useState<{ open: boolean; deal?: Deal }>({ open: false });
   const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
@@ -99,6 +134,23 @@ export function DealPerformancePage() {
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
+
+  // Separate query, own cache key — this tab's deterministic half is cheap
+  // and safe to poll like the rest of the page, but it's a wholly different
+  // endpoint (not date/store-filter-driven the same way) so it doesn't share
+  // the deal-performance-overview query.
+  const { data: activityData, isFetching: activityFetching } = useQuery({
+    queryKey: ['customer-activity-overview'],
+    queryFn: () => customerActivityService.getOverview(),
+    enabled: activeTab === 'customer-activity',
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
+  });
+
+  const handleGenerateSummary = async (regenerate: boolean) => {
+    const result = await customerActivityService.generateSummary(regenerate);
+    queryClient.setQueryData(['customer-activity-overview'], result);
+  };
 
   const isVisible = (key: string) => !hiddenWidgets.includes(key);
 
@@ -150,11 +202,7 @@ export function DealPerformancePage() {
       <div className={styles.headerRow}>
         <div>
           <div className={styles.pageTitle}>Deal Performance & AI Analytics</div>
-          <div className={styles.pageSubtitle}>
-            {data
-              ? `${data.summary.totalDeals} deal(s) in view · achievement period ${data.achievement.period} · use the filters below to narrow this down`
-              : 'Loading…'}
-          </div>
+          <div className={styles.pageSubtitle}>{data ? `${data.summary.totalDeals} deal(s) in view` : 'Loading…'}</div>
         </div>
         <div className={styles.headerActions}>
           <MultiSelectDropdown label="Hidden Widgets" options={WIDGET_OPTIONS} selected={hiddenWidgets} onChange={setHiddenWidgets} />
@@ -193,157 +241,228 @@ export function DealPerformancePage() {
           <Skeleton height={160} />
         </>
       ) : (
-        <div className={clsx(isFetching && styles.fetching)}>
-          {isVisible('summary') && (
-            <div className={styles.section}>
-              <span className={styles.sectionTitle}>Summary</span>
-              <div className={styles.statsGrid}>
-                <StatTile value={data.summary.totalDeals} label="Total Deals" onClick={() => setDrillDown({ title: 'All Deals', filters })} />
-                <StatTile
-                  value={`${data.summary.wonCount} (${money(data.summary.wonValue)})`}
-                  label="Won"
-                  onClick={() => setDrillDown({ title: 'Won Deals', filters: { ...filters, dealStatus: ['won'] } })}
-                />
-                <StatTile
-                  value={`${data.summary.lostCount} (${money(data.summary.lostValue)})`}
-                  label="Lost"
-                  onClick={() => setDrillDown({ title: 'Lost Deals', filters: { ...filters, dealStatus: ['lost'] } })}
-                />
-                <StatTile
-                  value={`${data.summary.openCount} (${money(data.summary.openValue)})`}
-                  label="Open Pipeline"
-                  onClick={() => setDrillDown({ title: 'Open Deals', filters: { ...filters, dealStatus: ['open'] } })}
-                />
-                <StatTile value={data.summary.conversionRate === null ? '—' : `${data.summary.conversionRate}%`} label="Conversion Rate" />
-                <StatTile value={data.summary.winRate === null ? '—' : `${data.summary.winRate}%`} label="Win Rate" />
-                <StatTile value={data.summary.avgWonDealSize === null ? '—' : money(data.summary.avgWonDealSize)} label="Avg. Won Deal Size" />
-              </div>
-            </div>
-          )}
+        <>
+          <div className={styles.aiInsightCard}>
+            <span className={styles.aiInsightLabel}>
+              <FiZap size={14} /> AI Insight
+            </span>
+            <span className={styles.aiInsightText}>{data.aiInsight}</span>
+          </div>
 
-          {isVisible('wonLostTrend') && (
-            <div className={styles.section}>
-              <span className={styles.sectionTitle}>Won vs Lost Trend</span>
-              <span className={styles.fadeCaption}>Click a bar to see that month's deals.</span>
-              <WonLostTrendChart
-                points={data.wonLostTrend}
-                onSelect={(period, status) => {
-                  const range = periodToDateRange(period);
-                  setDrillDown({
-                    title: `${status === 'won' ? 'Won' : 'Lost'} Deals — ${period}`,
-                    filters: { ...filters, ...range, dealStatus: [status] },
-                  });
-                }}
-              />
-            </div>
-          )}
+          <div className={styles.tabBar}>
+            <Tabs items={TAB_ITEMS} activeId={activeTab} onChange={changeTab} />
+          </div>
 
-          <div className={styles.twoColumn}>
-            {isVisible('achievement') && (
-              <div className={styles.section}>
-                <span className={styles.sectionTitle}>Target vs Achievement — {data.achievement.period}</span>
-                <div className={styles.statsGrid}>
-                  <StatTile value={money(data.achievement.achieved)} label="Achieved" />
-                  <StatTile value={data.achievement.targetAmount === null ? '—' : money(data.achievement.targetAmount)} label="Target" />
-                  <StatTile value={data.achievement.achievementPct === null ? '—' : `${data.achievement.achievementPct}%`} label="Achievement" />
-                  <StatTile value={money(data.achievement.remaining)} label="Remaining" />
+          <div className={clsx(isFetching && styles.fetching)}>
+            {activeTab === 'overview' && (
+              <>
+                {isVisible('summary') && (
+                  <div className={styles.section}>
+                    <span className={styles.sectionTitle}>Summary</span>
+                    <div className={styles.statsGrid}>
+                      <StatTile value={data.summary.totalDeals} label="Total Deals" onClick={() => setDrillDown({ title: 'All Deals', filters })} />
+                      <StatTile
+                        value={`${data.summary.wonCount} (${money(data.summary.wonValue)})`}
+                        label="Won"
+                        onClick={() => setDrillDown({ title: 'Won Deals', filters: { ...filters, dealStatus: ['won'] } })}
+                      />
+                      <StatTile
+                        value={`${data.summary.lostCount} (${money(data.summary.lostValue)})`}
+                        label="Lost"
+                        onClick={() => setDrillDown({ title: 'Lost Deals', filters: { ...filters, dealStatus: ['lost'] } })}
+                      />
+                      <StatTile
+                        value={`${data.summary.openCount} (${money(data.summary.openValue)})`}
+                        label="Open Pipeline"
+                        onClick={() => setDrillDown({ title: 'Open Deals', filters: { ...filters, dealStatus: ['open'] } })}
+                      />
+                      <StatTile value={data.summary.conversionRate === null ? '—' : `${data.summary.conversionRate}%`} label="Conversion Rate" />
+                      <StatTile value={data.summary.winRate === null ? '—' : `${data.summary.winRate}%`} label="Win Rate" />
+                      <StatTile value={data.summary.avgWonDealSize === null ? '—' : money(data.summary.avgWonDealSize)} label="Avg. Won Deal Size" />
+                    </div>
+                  </div>
+                )}
+
+                {isVisible('wonLostTrend') && (
+                  <div className={styles.section}>
+                    <span className={styles.sectionTitle}>Won vs Lost Trend</span>
+                    <span className={styles.fadeCaption}>Click a bar to see that month's deals.</span>
+                    <WonLostTrendChart
+                      points={data.wonLostTrend}
+                      onSelect={(period, status) => {
+                        const range = periodToDateRange(period);
+                        setDrillDown({
+                          title: `${status === 'won' ? 'Won' : 'Lost'} Deals — ${period}`,
+                          filters: { ...filters, ...range, dealStatus: [status] },
+                        });
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'pipeline' && (
+              <>
+                <div className={styles.twoColumn}>
+                  {isVisible('achievement') && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>Target vs Achievement — {data.achievement.period}</span>
+                      <div className={styles.statsGrid}>
+                        <StatTile value={money(data.achievement.achieved)} label="Achieved" />
+                        <StatTile value={data.achievement.targetAmount === null ? '—' : money(data.achievement.targetAmount)} label="Target" />
+                        <StatTile value={data.achievement.achievementPct === null ? '—' : `${data.achievement.achievementPct}%`} label="Achievement" />
+                        <StatTile value={money(data.achievement.remaining)} label="Remaining" />
+                      </div>
+                    </div>
+                  )}
+                  {isVisible('pipelineByStage') && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>Pipeline by Stage — Open Deals</span>
+                      <PipelineByStageChart
+                        data={data.pipelineByStage.map((s) => ({ stageId: s.stageId, value: s.value }))}
+                        valueLabel="Value"
+                        caption={data.untaggedStageCount > 0 ? `${data.untaggedStageCount} open deal(s) have no stage set.` : undefined}
+                        onSelect={(stageId) =>
+                          setDrillDown({
+                            title: `Open Deals — ${formatStageLabel(stageId)}`,
+                            filters: { ...withoutDateRange(filters), stageId: [stageId], dealStatus: ['open'] },
+                          })
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
-              </div>
+
+                {isVisible('conversionFunnel') && (
+                  <div className={styles.section}>
+                    <span className={styles.sectionTitle}>Conversion Funnel — All Deals, by Stage</span>
+                    <PipelineByStageChart
+                      data={data.conversionFunnel.map((s) => ({ stageId: s.stageId, value: s.count }))}
+                      valueLabel="Deals"
+                      caption={data.conversionFunnelNote}
+                      onSelect={(stageId) => setDrillDown({ title: `Deals — ${formatStageLabel(stageId)}`, filters: { ...filters, stageId: [stageId] } })}
+                    />
+                  </div>
+                )}
+              </>
             )}
-            {isVisible('pipelineByStage') && (
-              <div className={styles.section}>
-                <span className={styles.sectionTitle}>Pipeline by Stage</span>
-                <PipelineByStageChart
-                  data={data.pipelineByStage.map((s) => ({ stageId: s.stageId, value: s.value }))}
-                  valueLabel="Value"
-                  caption={data.untaggedStageCount > 0 ? `${data.untaggedStageCount} open deal(s) have no stage set.` : undefined}
-                  onSelect={(stageId) =>
-                    setDrillDown({
-                      title: `Open Deals — ${formatStageLabel(stageId)}`,
-                      filters: { ...withoutDateRange(filters), stageId: [stageId], dealStatus: ['open'] },
-                    })
-                  }
-                />
+
+            {activeTab === 'performance' && (
+              <>
+                {isVisible('consultantPerformance') && (
+                  <div className={styles.section}>
+                    <span className={styles.sectionTitle}>Consultant Performance</span>
+                    <RankedBreakdownList
+                      items={data.consultantPerformance.map((c) => ({ key: c.userId, label: c.userName, value: c.wonValue, valueFormatted: money(c.wonValue) }))}
+                      emptyMessage="No employees in scope."
+                      onSelect={(userId) => {
+                        const c = data.consultantPerformance.find((x) => x.userId === userId);
+                        setDrillDown({ title: `${c?.userName ?? 'Consultant'}'s Deals`, filters: { ...filters, ownerId: [userId] } });
+                      }}
+                    />
+                  </div>
+                )}
+
+                <div className={styles.threeColumn}>
+                  {isVisible('leadSourcePerformance') && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>Lead Source Performance</span>
+                      <RankedBreakdownList
+                        items={data.leadSourcePerformance.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
+                        emptyMessage="No deals tagged with a lead source yet."
+                        coverageNote={`${data.leadSourcePerformance.taggedCount} of ${data.leadSourcePerformance.totalCount} deals tagged (${data.leadSourcePerformance.coveragePct}%)`}
+                        onSelect={(key) => setDrillDown({ title: `Lead Source: ${key}`, filters: { ...filters, leadSource: [key] } })}
+                      />
+                    </div>
+                  )}
+                  {isVisible('productPerformance') && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>Product Performance</span>
+                      <RankedBreakdownList
+                        items={data.productPerformance.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
+                        emptyMessage="No deals tagged with a product yet."
+                        coverageNote={`${data.productPerformance.taggedCount} of ${data.productPerformance.totalCount} deals tagged (${data.productPerformance.coveragePct}%)`}
+                        onSelect={(key) => (key === 'Other' ? undefined : setDrillDown({ title: `Product: ${key}`, filters: { ...filters, product: [key] } }))}
+                      />
+                    </div>
+                  )}
+                  {isVisible('geographicDistribution') && (
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>Geographic Distribution</span>
+                      <RankedBreakdownList
+                        items={data.geographicDistribution.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
+                        emptyMessage="No deals tagged with a region yet."
+                        coverageNote={`${data.geographicDistribution.taggedCount} of ${data.geographicDistribution.totalCount} deals tagged (${data.geographicDistribution.coveragePct}%)`}
+                        onSelect={(key) => setDrillDown({ title: `Region: ${key}`, filters: { ...filters, region: [key] } })}
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {activeTab === 'trends' && (
+              <>
+                {isVisible('revenueProgress') && (
+                  <div className={styles.section}>
+                    <span className={styles.sectionTitle}>Monthly Revenue Progress</span>
+                    <RevenueProgressChart points={data.revenueProgress} />
+                  </div>
+                )}
+                {isVisible('customerAcquisitionTrend') && (
+                  <div className={styles.section}>
+                    <span className={styles.sectionTitle}>Customer Acquisition Trend</span>
+                    <CustomerAcquisitionTrendChart points={data.customerAcquisitionTrend} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'customer-activity' && (
+              <div className={clsx(styles.section, activityFetching && styles.fetching)}>
+                {!activityData ? (
+                  <Skeleton height={160} />
+                ) : (
+                  <>
+                    <CustomerActivitySummaryPanel summary={activityData.summary} onGenerate={handleGenerateSummary} />
+
+                    <div className={styles.statsGrid}>
+                      <StatTile value={activityData.totalActionedToday} label="Total Actioned Clients Today" />
+                      <StatTile value={activityData.actionedTodayCounts.existing} label="Existing" />
+                      <StatTile value={activityData.actionedTodayCounts.new} label="New" />
+                      <StatTile value={activityData.actionedTodayCounts.followUp} label="Follow-ups" />
+                    </div>
+
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>Every Customer — Business Name &amp; Quote Number</span>
+                      <CustomerActivityTable rows={activityData.businessTable} />
+                    </div>
+
+                    <div className={styles.twoColumn}>
+                      <div className={styles.section}>
+                        <span className={styles.sectionTitle}>Left Unactioned</span>
+                        <UnactionedList items={activityData.unactionedItems} />
+                      </div>
+                      <div className={styles.section}>
+                        <span className={styles.sectionTitle}>Lost Deals — Reason</span>
+                        <LostReasonList items={activityData.lostWithReason} />
+                      </div>
+                    </div>
+
+                    <div className={styles.section}>
+                      <span className={styles.sectionTitle}>
+                        Emails Correlated to Customers Today ({activityData.correlatedEmails.length})
+                      </span>
+                      <span className={styles.coverageNote}>{activityData.emailCorrelationCoverage.note}</span>
+                      <CorrelatedEmailList items={activityData.correlatedEmails} />
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
-
-          {isVisible('revenueProgress') && (
-            <div className={styles.section}>
-              <span className={styles.sectionTitle}>Monthly Revenue Progress</span>
-              <RevenueProgressChart points={data.revenueProgress} />
-            </div>
-          )}
-
-          {isVisible('conversionFunnel') && (
-            <div className={styles.section}>
-              <span className={styles.sectionTitle}>Conversion Funnel (by Stage)</span>
-              <PipelineByStageChart
-                data={data.conversionFunnel.map((s) => ({ stageId: s.stageId, value: s.count }))}
-                valueLabel="Deals"
-                caption={data.conversionFunnelNote}
-                onSelect={(stageId) => setDrillDown({ title: `Deals — ${formatStageLabel(stageId)}`, filters: { ...filters, stageId: [stageId] } })}
-              />
-            </div>
-          )}
-
-          {isVisible('consultantPerformance') && (
-            <div className={styles.section}>
-              <span className={styles.sectionTitle}>Consultant Performance</span>
-              <RankedBreakdownList
-                items={data.consultantPerformance.map((c) => ({ key: c.userId, label: c.userName, value: c.wonValue, valueFormatted: money(c.wonValue) }))}
-                emptyMessage="No employees in scope."
-                onSelect={(userId) => {
-                  const c = data.consultantPerformance.find((x) => x.userId === userId);
-                  setDrillDown({ title: `${c?.userName ?? 'Consultant'}'s Deals`, filters: { ...filters, ownerId: [userId] } });
-                }}
-              />
-            </div>
-          )}
-
-          <div className={styles.threeColumn}>
-            {isVisible('leadSourcePerformance') && (
-              <div className={styles.section}>
-                <span className={styles.sectionTitle}>Lead Source Performance</span>
-                <RankedBreakdownList
-                  items={data.leadSourcePerformance.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
-                  emptyMessage="No deals tagged with a lead source yet."
-                  coverageNote={`${data.leadSourcePerformance.taggedCount} of ${data.leadSourcePerformance.totalCount} deals tagged (${data.leadSourcePerformance.coveragePct}%)`}
-                  onSelect={(key) => setDrillDown({ title: `Lead Source: ${key}`, filters: { ...filters, leadSource: [key] } })}
-                />
-              </div>
-            )}
-            {isVisible('productPerformance') && (
-              <div className={styles.section}>
-                <span className={styles.sectionTitle}>Product Performance</span>
-                <RankedBreakdownList
-                  items={data.productPerformance.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
-                  emptyMessage="No deals tagged with a product yet."
-                  coverageNote={`${data.productPerformance.taggedCount} of ${data.productPerformance.totalCount} deals tagged (${data.productPerformance.coveragePct}%)`}
-                  onSelect={(key) => (key === 'Other' ? undefined : setDrillDown({ title: `Product: ${key}`, filters: { ...filters, product: [key] } }))}
-                />
-              </div>
-            )}
-            {isVisible('geographicDistribution') && (
-              <div className={styles.section}>
-                <span className={styles.sectionTitle}>Geographic Distribution</span>
-                <RankedBreakdownList
-                  items={data.geographicDistribution.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
-                  emptyMessage="No deals tagged with a region yet."
-                  coverageNote={`${data.geographicDistribution.taggedCount} of ${data.geographicDistribution.totalCount} deals tagged (${data.geographicDistribution.coveragePct}%)`}
-                  onSelect={(key) => setDrillDown({ title: `Region: ${key}`, filters: { ...filters, region: [key] } })}
-                />
-              </div>
-            )}
-          </div>
-
-          {isVisible('customerAcquisitionTrend') && (
-            <div className={styles.section}>
-              <span className={styles.sectionTitle}>Customer Acquisition Trend</span>
-              <CustomerAcquisitionTrendChart points={data.customerAcquisitionTrend} />
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       <DealFormModal

@@ -8,6 +8,8 @@ export const ROUTES = {
   timeline: '/timeline',
   commandCenter: '/command-center',
   dealPerformance: '/deal-performance',
+  myCustomerActivity: '/my-customer-activity',
+  finance: '/finance',
   todoEod: '/todo-eod',
   chat: '/chat',
   chatConversation: (id: string) => `/chat/${id}`,

@@ -11,3 +11,5 @@ export * from './Tooltip';
 export * from './Modal';
 export * from './Dropdown';
 export * from './Tabs';
+export * from './MultiSelectDropdown';
+export * from './DateRangeControl';

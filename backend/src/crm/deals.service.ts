@@ -36,7 +36,11 @@ export class DealsService {
 
   async update(id: string, organizationId: string, dto: UpdateDealDto, storeConstraint?: string) {
     const filter = { _id: id, organizationId, ...(storeConstraint ? { storeId: storeConstraint } : {}) };
-    const updated = await this.dealModel.findOneAndUpdate(filter, { $set: dto }, { new: true }).exec();
+    // lostReasonSource is never client-settable (see UpdateDealDto's
+    // comment) — server-stamped 'rep_reported' the moment a real reason
+    // arrives, reserving 'ai_inferred' for a future inference job only.
+    const update = dto.lostReason?.trim() ? { ...dto, lostReasonSource: 'rep_reported' as const } : dto;
+    const updated = await this.dealModel.findOneAndUpdate(filter, { $set: update }, { new: true }).exec();
     if (!updated) throw new NotFoundException('Deal not found');
     return updated;
   }

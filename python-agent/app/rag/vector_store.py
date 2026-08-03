@@ -35,8 +35,12 @@ def ensure_collection() -> None:
     # without a payload index on the filtered fields. document_id is filtered
     # on by reassign_owner/delete_by_document_id (role activation/deletion).
     # record_id is filtered on by delete_by_record_id (app.memory.user_memory).
+    # organization_id backs Finance's real per-tenant scoping (app.rag.retriever's
+    # _finance_document_filter) — harmless for older points that lack it; a
+    # keyword index simply never matches them on that field, which is
+    # correct, since they were never org-scoped to begin with.
     indexed = set(client.get_collection(settings.qdrant_collection).payload_schema)
-    for field in ("user_id", "source_type", "document_id", "record_id"):
+    for field in ("user_id", "source_type", "document_id", "record_id", "organization_id"):
         if field not in indexed:
             client.create_payload_index(
                 collection_name=settings.qdrant_collection,
@@ -52,18 +56,34 @@ def upsert_points(points: list[qmodels.PointStruct]) -> None:
     get_client().upsert(collection_name=settings.qdrant_collection, points=points)
 
 
-def upsert_chunks(document_id: str, user_id: str, filename: str, chunks: list[str], vectors: list[list[float]]) -> None:
+def upsert_chunks(
+    document_id: str,
+    user_id: str,
+    filename: str,
+    chunks: list[str],
+    vectors: list[list[float]],
+    *,
+    source_type: str = "document",
+    organization_id: str | None = None,
+) -> None:
+    # source_type/organization_id both default to today's exact behavior —
+    # every existing caller (roles.py, documents.py) is byte-for-byte
+    # unaffected. Finance is the first caller to pass organization_id, since
+    # unlike generic personal uploads (private, user_id-only) or CRM's
+    # deployment-wide "*" bucket, finance documents need real per-tenant
+    # scoping (see app.rag.retriever's _finance_document_filter).
     points = [
         qmodels.PointStruct(
             id=str(uuid.uuid4()),
             vector=vector,
             payload={
-                "source_type": "document",
+                "source_type": source_type,
                 "document_id": document_id,
                 "user_id": user_id,
                 "filename": filename,
                 "chunk_index": i,
                 "text": chunk,
+                **({"organization_id": organization_id} if organization_id else {}),
             },
         )
         for i, (chunk, vector) in enumerate(zip(chunks, vectors))

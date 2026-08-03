@@ -25,6 +25,15 @@ export interface DealFormModalProps {
 
 const EMPTY: CreateDealPayload = { name: '', dealStatus: 'open', monetaryValue: 0 };
 
+const COMMON_LOST_REASONS = [
+  'Price',
+  'Timing / not ready to purchase',
+  'Chose a competitor',
+  'No response',
+  'Budget constraints',
+  'Product mismatch',
+];
+
 // First real use of the previously-unused Modal.tsx component in this app —
 // deliberately scoped to this small transient CRUD form only; drill-down
 // elsewhere in this feature stays the state-swap pattern (DealListView.tsx),
@@ -49,10 +58,16 @@ export function DealFormModal({ open, onClose, deal, employees, stores, productS
             product: deal.product,
             customerType: deal.customerType,
             region: deal.region,
+            lostReason: deal.lostReason,
           }
         : EMPTY,
     );
   }, [open, deal]);
+
+  // Only force a reason on a fresh transition INTO 'lost' — an
+  // already-lost deal being edited for an unrelated reason (e.g.
+  // reassigning its owner) shouldn't suddenly be blocked from saving.
+  const enteringLost = deal?.dealStatus !== 'lost' && form.dealStatus === 'lost';
 
   const set = <K extends keyof CreateDealPayload>(key: K, value: CreateDealPayload[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -61,6 +76,10 @@ export function DealFormModal({ open, onClose, deal, employees, stores, productS
     e.preventDefault();
     if (!form.name.trim()) {
       toast.error('Deal name is required');
+      return;
+    }
+    if (enteringLost && !form.lostReason?.trim()) {
+      toast.error('A reason is required when marking a deal as lost');
       return;
     }
     setSaving(true);
@@ -118,6 +137,23 @@ export function DealFormModal({ open, onClose, deal, employees, stores, productS
             </select>
           </label>
         </div>
+
+        {form.dealStatus === 'lost' && (
+          <label className={styles.label}>
+            Lost Reason{enteringLost ? ' (required)' : ''}
+            <Input
+              list="deal-lost-reason-suggestions"
+              value={form.lostReason ?? ''}
+              onChange={(e) => set('lostReason', e.target.value || undefined)}
+              placeholder="Why was this deal lost?"
+            />
+            <datalist id="deal-lost-reason-suggestions">
+              {COMMON_LOST_REASONS.map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          </label>
+        )}
 
         <div className={styles.row}>
           <label className={styles.label}>

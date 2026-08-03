@@ -5,9 +5,10 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.integrations.crm_mongo_sync import sync_all_orgs as sync_crm_deals_to_mongo
+from app.integrations.crm_mongo_sync import sync_all_quote_orgs as sync_crm_quotes_to_mongo
 from app.mcp_server import app as mcp_app
 from app.rag.business_sync import sync_all
-from app.routes import chat, documents, health, outlook as outlook_routes, prompts as prompt_routes, reports, roles, sync, tasks, workflows as workflow_routes
+from app.routes import chat, customer_activity as customer_activity_routes, documents, finance as finance_routes, health, outlook as outlook_routes, prompts as prompt_routes, reports, roles, sync, tasks, workflows as workflow_routes
 from app.workflows import definitions as _workflow_definitions  # noqa: F401 - import triggers workflow registration
 
 # Windows' console defaults to a legacy codepage (cp1252) that can't encode
@@ -32,6 +33,8 @@ app.include_router(tasks.router)
 app.include_router(workflow_routes.router)
 app.include_router(prompt_routes.router)
 app.include_router(outlook_routes.router)
+app.include_router(finance_routes.router)
+app.include_router(customer_activity_routes.router)
 app.mount("/mcp", mcp_app)
 
 # Keeps CRM/Outlook data indexed for search_business_context without anyone
@@ -50,6 +53,12 @@ def _start_scheduler():
         "interval",
         minutes=settings.crm_mongo_sync_interval_minutes,
         id="crm_mongo_sync",
+    )
+    scheduler.add_job(
+        sync_crm_quotes_to_mongo,
+        "interval",
+        minutes=settings.crm_mongo_sync_interval_minutes,
+        id="crm_quote_mongo_sync",
     )
     scheduler.start()
 

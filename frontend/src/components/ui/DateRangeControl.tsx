@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import dayjs from 'dayjs';
-import { Tabs } from '@/components/ui';
+import { Tabs } from './Tabs';
 import styles from './DateRangeControl.module.css';
 
 export interface DateRange {
@@ -27,9 +27,11 @@ function presetToRange(id: string): DateRange {
 }
 
 // Canned ranges follow Tabs.tsx's existing precedent (used elsewhere for
-// 7/30-day windows); "Custom" reveals two plain date inputs. Filters by
-// expectedClosingDate — this app has no separate close-date timestamp yet
-// (see DealFilterBar's help text).
+// 7/30-day windows); "Custom" reveals two plain date inputs. Consumers
+// decide which date field this filters against (e.g. Deal.expectedClosingDate,
+// FinanceDocument.invoiceDate) — this component is deliberately unaware of
+// that. Promoted from features/deal-performance to components/ui in
+// Phase 10a once Finance became its second consumer.
 export function DateRangeControl({ value, onChange }: { value: DateRange; onChange: (range: DateRange) => void }) {
   const [activeId, setActiveId] = useState<string>(value.dateFrom || value.dateTo ? 'custom' : 'all');
 

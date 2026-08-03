@@ -97,6 +97,7 @@ export interface DealPerformanceOverview {
   productPerformance: Breakdown;
   geographicDistribution: Breakdown;
   customerAcquisitionTrend: CustomerAcquisitionPoint[];
+  aiInsight: string;
 }
 
 export interface DealPerformancePreset {

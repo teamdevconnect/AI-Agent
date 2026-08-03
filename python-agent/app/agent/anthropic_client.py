@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from functools import lru_cache
@@ -237,6 +238,126 @@ def extract_role(document_text: str) -> dict:
         except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
             last_error = exc
     raise RuntimeError(f"Role extraction failed after retry: {last_error}")
+
+
+FINANCE_EXTRACTION_TOOL = {
+    "name": "extract_finance_document",
+    "description": "Return structured vendor-payment data extracted from the supplied financial document.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "vendorName": {"type": ["string", "null"]},
+            "vendorId": {"type": ["string", "null"]},
+            "invoiceNumber": {"type": ["string", "null"]},
+            "poNumber": {"type": ["string", "null"]},
+            "invoiceDate": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+            "dueDate": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+            "paymentDate": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+            "paymentAmount": {"type": ["number", "null"]},
+            "currency": {"type": ["string", "null"], "description": "ISO 4217 code, e.g. INR/USD/EUR"},
+            "taxAmount": {"type": ["number", "null"]},
+            "taxDetails": {
+                "type": ["object", "null"],
+                "properties": {
+                    "gstAmount": {"type": ["number", "null"]},
+                    "vatAmount": {"type": ["number", "null"]},
+                    "taxRatePct": {"type": ["number", "null"]},
+                    "taxType": {"type": ["string", "null"]},
+                },
+            },
+            "deliveryCharges": {"type": ["number", "null"]},
+            "isSubscriptionPayment": {"type": "boolean"},
+            "subscriptionProvider": {"type": ["string", "null"], "description": "e.g. Microsoft 365, Azure, AWS"},
+            "subscriptionCharges": {"type": ["number", "null"]},
+            "paymentMethod": {"type": ["string", "null"]},
+            "bankDetails": {
+                "type": ["object", "null"],
+                "properties": {
+                    "bankName": {"type": ["string", "null"]},
+                    "accountNumber": {"type": ["string", "null"]},
+                    "ifscOrSwift": {"type": ["string", "null"]},
+                    "accountHolderName": {"type": ["string", "null"]},
+                },
+            },
+            "department": {"type": ["string", "null"]},
+            "costCenter": {"type": ["string", "null"]},
+            "paymentStatus": {"type": "string", "enum": ["paid", "pending", "overdue", "partially_paid", "cancelled"]},
+            "expenseCategory": {"type": "string", "description": "AI-classified, e.g. Software, Travel, Utilities, Office Supplies"},
+            "otherFinancialInfo": {"type": "object", "description": "Any other financial detail found that doesn't map to a field above."},
+            "summary": {"type": "string"},
+            "missingFields": {"type": "array", "items": {"type": "string"}},
+            "inconsistencyNotes": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["paymentStatus", "expenseCategory", "summary", "missingFields", "inconsistencyNotes"],
+    },
+}
+
+# Deliberately the OPPOSITE instruction from ROLE_EXTRACTION_SYSTEM_PROMPT's
+# "never leave a field empty, infer reasonable values" — for finance, a
+# plausible-looking fabricated figure is far worse than an honest gap.
+FINANCE_EXTRACTION_SYSTEM_PROMPT = """You are extracting structured vendor-payment data from a \
+financial document (invoice, receipt, payment confirmation, bank statement, or purchase order). \
+Unlike a role/persona document, accuracy matters far more than completeness here: extract only \
+what the document actually states or what is unambiguously computable from it (e.g. a total that \
+is clearly the sum of listed line items). Never invent or guess a financial figure, date, vendor \
+identifier, or bank detail. If a field is not present or not confidently determinable, leave it \
+null and add its name to missingFields — do not fabricate a plausible-looking value. Flag any \
+internal contradiction (e.g. due date before invoice date, tax that doesn't reconcile with the \
+stated rate, a total that doesn't match its line items) in inconsistencyNotes. Classify \
+expenseCategory using a short, human-readable label (e.g. "Software", "Travel", "Utilities", \
+"Office Supplies", "Professional Services") — invent a new label if nothing existing fits; do not \
+force-fit into a closed list. Always call extract_finance_document exactly once."""
+
+
+def _run_finance_extraction(user_content: list[dict]) -> dict:
+    """Shared forced-tool-choice call for both extraction paths below — same
+    retry-once-then-raise shape as extract_role, but accepts content blocks
+    (not just a string) since the native vision/PDF path needs them."""
+    api_key = _resolve_api_key()
+    if not api_key:
+        raise RuntimeError("No Anthropic API key configured")
+
+    last_error: Exception | None = None
+    for _ in range(2):
+        try:
+            response = _client(api_key).messages.create(
+                model=settings.anthropic_model,
+                max_tokens=8192,
+                system=FINANCE_EXTRACTION_SYSTEM_PROMPT,
+                tools=[FINANCE_EXTRACTION_TOOL],
+                tool_choice={"type": "tool", "name": "extract_finance_document"},
+                messages=[{"role": "user", "content": user_content}],
+            )
+            block = next((b for b in response.content if b.type == "tool_use"), None)
+            if block is None:
+                raise ValueError("Model did not return a tool_use block")
+            return block.input
+        except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
+            last_error = exc
+    raise RuntimeError(f"Finance document extraction failed after retry: {last_error}")
+
+
+def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+    """PDF/image-native path — sends the raw file as a document/image content
+    block instead of pre-extracted text, so scanned/image documents work
+    through the same code path as text-layer PDFs (no OCR library added)."""
+    block_type = "image" if mime_type.startswith("image/") else "document"
+    content = [
+        {
+            "type": block_type,
+            "source": {"type": "base64", "media_type": mime_type, "data": base64.standard_b64encode(file_bytes).decode()},
+        },
+        {"type": "text", "text": f"Extract every financial field you can find from '{filename}' using the extract_finance_document tool."},
+    ]
+    return _run_finance_extraction(content)
+
+
+def extract_finance_document_from_text(document_text: str, filename: str) -> dict:
+    """Text path for spreadsheet/already-text formats (xlsx/xls/csv/docx) —
+    spreadsheets aren't a vision problem, and app.rag.loader.load_text
+    already gives pandas-clean structured text for them at zero extra cost."""
+    content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
+    return _run_finance_extraction(content)
 
 
 REPORT_EXTRACTION_TOOL = {
@@ -644,5 +765,181 @@ def call(
                     time.sleep(0.5 * (2**attempt))
                     continue
                 raise
+
+
+CUSTOMER_ACTIVITY_TOOL = {
+    "name": "analyze_customer_activity",
+    "description": "Judge today's CRM/email activity: what should have been prioritized, and which important emails were missed.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "prioritization": {
+                "type": "array",
+                "description": "3-5 businesses/deals that most deserved attention today, most important first.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "businessName": {"type": "string"},
+                        "rationale": {"type": "string", "description": "One sentence: why this, why today."},
+                    },
+                    "required": ["businessName", "rationale"],
+                },
+            },
+            "missedImportantEmails": {
+                "type": "array",
+                "description": "Emails that appear important and unaddressed today. Only include exact-confidence CRM matches as definite; hedge fuzzy matches explicitly in the note.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "emailId": {"type": "string"},
+                        "subject": {"type": "string"},
+                        "note": {"type": "string"},
+                    },
+                    "required": ["emailId", "subject", "note"],
+                },
+            },
+            "aiSummary": {"type": "string", "description": "3-5 sentence plain-language summary of today's customer activity."},
+        },
+        "required": ["prioritization", "missedImportantEmails", "aiSummary"],
+    },
+}
+
+CUSTOMER_ACTIVITY_SYSTEM_PROMPT = """You are triaging one business's CRM and email activity for today \
+against data that has already been deterministically gathered — do not invent facts not present in \
+the input. The input's correlatedEmails carry a matchConfidence field ('exact', 'domain', 'fuzzy'): \
+treat 'exact' matches as fact, and explicitly hedge ('possibly related to...') anything described only \
+as 'fuzzy'. Prioritize businesses with unactioned open deals/quotes, especially ones flagged isFollowUp \
+or nearing/past their expected close date, over ones already actionedToday. Flag an email as \
+missed-important only if it is unread, marked high importance, or correlated (any confidence) to a \
+business with an open/follow-up deal and no matching CRM update today — never flag routine/automated \
+mail. If there is no real activity to report, say so plainly rather than inventing filler. Always call \
+analyze_customer_activity exactly once."""
+
+
+def analyze_customer_activity(payload: dict) -> dict:
+    """One-shot forced-tool-choice triage pass — same pattern as
+    extract_report_structure/recommend_next_actions, operating on today's
+    deterministically-gathered CRM+email activity (see
+    backend/src/crm/customer-activity.service.ts). Retries once before
+    surfacing an error.
+    """
+    api_key = _resolve_api_key()
+    if not api_key:
+        raise RuntimeError("No Anthropic API key configured")
+
+    last_error: Exception | None = None
+    for _ in range(2):
+        try:
+            response = _client(api_key).messages.create(
+                model=settings.anthropic_model,
+                max_tokens=2048,
+                system=CUSTOMER_ACTIVITY_SYSTEM_PROMPT,
+                tools=[CUSTOMER_ACTIVITY_TOOL],
+                tool_choice={"type": "tool", "name": "analyze_customer_activity"},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Today's customer activity data:\n\n{json.dumps(payload, default=str)[:40000]}",
+                    }
+                ],
+            )
+            block = next((b for b in response.content if b.type == "tool_use"), None)
+            if block is None:
+                raise ValueError("Model did not return a tool_use block")
+            return block.input
+        except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
+            last_error = exc
+    raise RuntimeError(f"Customer activity analysis failed after retry: {last_error}")
+
+
+FINANCE_ACTIVITY_TOOL = {
+    "name": "analyze_finance_activity",
+    "description": "Judge today's vendor payment activity: what should be prioritized, and any anomalies worth flagging.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "prioritizedPayments": {
+                "type": "array",
+                "description": "3-5 vendor payments most deserving attention right now (overdue, due soon, or otherwise flagged), most urgent first.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "vendorName": {"type": "string"},
+                        "documentId": {"type": "string"},
+                        "amount": {"type": "number"},
+                        "rationale": {"type": "string", "description": "One sentence: why this, why now."},
+                    },
+                    "required": ["vendorName", "documentId", "rationale"],
+                },
+            },
+            "flaggedAnomalies": {
+                "type": "array",
+                "description": "Anomalies worth a human look, using only what's present in the input — possible duplicate payments, subscription cost spikes, missing/inconsistent fields.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "documentId": {"type": "string"},
+                        "vendorName": {"type": "string"},
+                        "anomalyType": {"type": "string"},
+                        "note": {"type": "string"},
+                    },
+                    "required": ["vendorName", "anomalyType", "note"],
+                },
+            },
+            "aiSummary": {"type": "string", "description": "3-5 sentence plain-language summary of today's vendor payment posture."},
+        },
+        "required": ["prioritizedPayments", "flaggedAnomalies", "aiSummary"],
+    },
+}
+
+FINANCE_ACTIVITY_SYSTEM_PROMPT = """You are triaging one business's vendor payment activity for today \
+against data that has already been deterministically gathered — do not invent facts not present in \
+the input. The input's overdueAndUpcomingPayments and possibleDuplicates arrays are the ONLY sources \
+that carry a real documentId — prioritizedPayments and flaggedAnomalies must be built exclusively from \
+those two arrays, never from vendorSpending/categorySpending/microsoftSubscriptionCosts (those are \
+aggregate breakdowns with no per-document id, and a payment already fully paid with no due-soon/overdue \
+flag is not something to prioritize regardless of its amount). If overdueAndUpcomingPayments is empty, \
+prioritizedPayments must be an empty array — do not backfill it with an already-settled payment or a \
+placeholder id. Likewise, if possibleDuplicates is empty, flaggedAnomalies must be empty unless a real \
+subscription cost spike is evident in microsoftSubscriptionCosts (describe it without a documentId in \
+that case). Never invent a vendor, amount, or anomaly not present in the input. If there is nothing \
+notable to report, say so plainly in aiSummary rather than inventing filler. Always call \
+analyze_finance_activity exactly once."""
+
+
+def analyze_finance_activity(payload: dict) -> dict:
+    """One-shot forced-tool-choice triage pass — same pattern as
+    analyze_customer_activity, operating on today's deterministically-
+    gathered vendor payment activity (see
+    backend/src/finance/finance-summary.service.ts). Retries once before
+    surfacing an error.
+    """
+    api_key = _resolve_api_key()
+    if not api_key:
+        raise RuntimeError("No Anthropic API key configured")
+
+    last_error: Exception | None = None
+    for _ in range(2):
+        try:
+            response = _client(api_key).messages.create(
+                model=settings.anthropic_model,
+                max_tokens=2048,
+                system=FINANCE_ACTIVITY_SYSTEM_PROMPT,
+                tools=[FINANCE_ACTIVITY_TOOL],
+                tool_choice={"type": "tool", "name": "analyze_finance_activity"},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Today's vendor payment activity data:\n\n{json.dumps(payload, default=str)[:40000]}",
+                    }
+                ],
+            )
+            block = next((b for b in response.content if b.type == "tool_use"), None)
+            if block is None:
+                raise ValueError("Model did not return a tool_use block")
+            return block.input
+        except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
+            last_error = exc
+    raise RuntimeError(f"Finance activity analysis failed after retry: {last_error}")
 
     return _normalize_response(response)

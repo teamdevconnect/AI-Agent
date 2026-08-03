@@ -149,7 +149,32 @@ export class DealPerformanceDashboardService {
       productPerformance,
       geographicDistribution,
       customerAcquisitionTrend,
+      aiInsight: this.buildDealInsight(
+        achievement.achievementPct,
+        wonCount + lostCount > 0 ? round1((wonCount / (wonCount + lostCount)) * 100) : null,
+        openCount,
+        wonCount,
+        lostCount,
+      ),
     };
+  }
+
+  // Deterministic, rule-based text from numbers already computed — not an
+  // LLM call on a dashboard endpoint that may poll every 60s, same
+  // convention as business-dashboard.service.ts's buildOwnerInsight and
+  // finance/finance-dashboard.service.ts's buildFinanceInsight. This
+  // dashboard never had one until a user-reported gap surfaced it.
+  private buildDealInsight(achievementPct: number | null, winRate: number | null, openCount: number, wonCount: number, lostCount: number): string {
+    if (achievementPct !== null && achievementPct < 50) {
+      return `Only ${achievementPct}% of target achieved this period — review the open pipeline for deals that can be accelerated.`;
+    }
+    if (winRate !== null && winRate < 30 && wonCount + lostCount >= 5) {
+      return `Win rate is ${winRate}% over ${wonCount + lostCount} closed deals — review recently lost deals for common patterns.`;
+    }
+    if (openCount > 0) {
+      return `${openCount} deal(s) are currently open — keep an eye on the ones nearing their expected close date.`;
+    }
+    return 'Performance is on track — no urgent items flagged for this period.';
   }
 
   private async getWonLostTrend(matchNoDate: Record<string, unknown>, months: number) {

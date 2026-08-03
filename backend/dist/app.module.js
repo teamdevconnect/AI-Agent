@@ -35,6 +35,7 @@ const notifications_module_1 = require("./notifications/notifications.module");
 const timeline_module_1 = require("./timeline/timeline.module");
 const command_center_module_1 = require("./command-center/command-center.module");
 const workflows_module_1 = require("./workflows/workflows.module");
+const finance_module_1 = require("./finance/finance.module");
 const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
@@ -69,6 +70,7 @@ exports.AppModule = AppModule = __decorate([
             timeline_module_1.TimelineModule,
             command_center_module_1.CommandCenterModule,
             workflows_module_1.WorkflowsModule,
+            finance_module_1.FinanceModule,
             audit_module_1.AuditModule,
         ],
         controllers: [health_controller_1.HealthController],

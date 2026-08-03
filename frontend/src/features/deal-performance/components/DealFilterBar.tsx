@@ -1,7 +1,7 @@
+import { useState } from 'react';
+import { FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import { CUSTOMER_TYPES, LEAD_SOURCES, REGIONS, type DealFilters } from '@/services/dealsService';
-import { Input } from '@/components/ui';
-import { DateRangeControl } from './DateRangeControl';
-import { MultiSelectDropdown, type MultiSelectOption } from './MultiSelectDropdown';
+import { Button, DateRangeControl, Input, MultiSelectDropdown, type MultiSelectOption } from '@/components/ui';
 import styles from '../deal-performance.module.css';
 
 const STATUS_OPTIONS: MultiSelectOption[] = [
@@ -29,41 +29,29 @@ function parseCsvInput(value: string): string[] | undefined {
     .filter(Boolean);
 }
 
-// One filter row above every widget (not per-widget filters) — enterprise
-// filter set: Date Range, Sales Consultant, Store, Deal Status, Deal Stage,
-// Lead Source, Product, Customer Type, Deal Value Range, Region. Grouped
-// into two visual rows (date/value range, then category multi-selects) so
-// it reads as an organized toolbar rather than one long wrapped strip.
+function countAdvancedActive(filters: DealFilters): number {
+  return [filters.valueMin, filters.valueMax, filters.leadSource, filters.customerType, filters.region, filters.stageId, filters.product].filter(
+    (v) => v !== undefined,
+  ).length;
+}
+
+// Primary row (Date, Store, Consultant, Status) is always visible — the
+// filters most likely to be reached for first. Everything else collapses
+// behind "More filters" by default: Lead Source/Customer Type/Region are
+// manual-entry-only dimensions most orgs start with little/no data tagged
+// against (see deal.schema.ts's Phase 9a comment), and Stage/Product/Value
+// range are narrower, less load-bearing narrowing tools. Collapsing is
+// purely visual — no filter capability is removed, and an already-selected
+// Advanced value stays applied while collapsed.
 export function DealFilterBar({ filters, onChange, storeOptions, ownerOptions, showStoreFilter }: DealFilterBarProps) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const set = <K extends keyof DealFilters>(key: K, value: DealFilters[K]) => onChange({ ...filters, [key]: value });
+  const advancedCount = countAdvancedActive(filters);
 
   return (
     <div className={styles.filterBar}>
       <div className={styles.filterRow}>
         <DateRangeControl value={{ dateFrom: filters.dateFrom, dateTo: filters.dateTo }} onChange={(r) => onChange({ ...filters, ...r })} />
-        <div className={styles.valueField}>
-          <Input
-            label="Min Value (₹)"
-            type="number"
-            min={0}
-            placeholder="0"
-            value={filters.valueMin ?? ''}
-            onChange={(e) => set('valueMin', e.target.value ? Number(e.target.value) : undefined)}
-          />
-        </div>
-        <div className={styles.valueField}>
-          <Input
-            label="Max Value (₹)"
-            type="number"
-            min={0}
-            placeholder="Any"
-            value={filters.valueMax ?? ''}
-            onChange={(e) => set('valueMax', e.target.value ? Number(e.target.value) : undefined)}
-          />
-        </div>
-      </div>
-
-      <div className={styles.filterRow}>
         {showStoreFilter && (
           <MultiSelectDropdown label="Store" options={storeOptions} selected={filters.storeId ?? []} onChange={(v) => set('storeId', v.length ? v : undefined)} />
         )}
@@ -74,33 +62,69 @@ export function DealFilterBar({ filters, onChange, storeOptions, ownerOptions, s
           selected={filters.dealStatus ?? []}
           onChange={(v) => set('dealStatus', v.length ? (v as DealFilters['dealStatus']) : undefined)}
         />
-        <MultiSelectDropdown label="Lead Source" options={LEAD_SOURCE_OPTIONS} selected={filters.leadSource ?? []} onChange={(v) => set('leadSource', v.length ? v : undefined)} />
-        <MultiSelectDropdown label="Customer Type" options={CUSTOMER_TYPE_OPTIONS} selected={filters.customerType ?? []} onChange={(v) => set('customerType', v.length ? v : undefined)} />
-        <MultiSelectDropdown label="Region" options={REGION_OPTIONS} selected={filters.region ?? []} onChange={(v) => set('region', v.length ? v : undefined)} />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          rightIcon={showAdvanced ? <FiChevronUp /> : <FiChevronDown />}
+          onClick={() => setShowAdvanced((v) => !v)}
+        >
+          {showAdvanced ? 'Fewer filters' : `More filters${advancedCount ? ` (${advancedCount})` : ''}`}
+        </Button>
       </div>
 
-      <div className={styles.filterRow}>
-        <div className={styles.valueField} style={{ width: 220 }}>
-          <Input
-            label="Stage"
-            placeholder="e.g. proposal, negotiation"
-            value={(filters.stageId ?? []).join(', ')}
-            onChange={(e) => set('stageId', parseCsvInput(e.target.value))}
-          />
-        </div>
-        <div className={styles.valueField} style={{ width: 220 }}>
-          <Input
-            label="Product"
-            placeholder="e.g. CRM Suite"
-            value={(filters.product ?? []).join(', ')}
-            onChange={(e) => set('product', parseCsvInput(e.target.value))}
-          />
-        </div>
-        <span className={styles.filterHelp}>
-          Stage/Product accept comma-separated values. Date filters match a deal's expected/closing date — this CRM has no separate close
-          timestamp yet.
-        </span>
-      </div>
+      {showAdvanced && (
+        <>
+          <div className={styles.filterRow}>
+            <div className={styles.valueField}>
+              <Input
+                label="Min Value (₹)"
+                type="number"
+                min={0}
+                placeholder="0"
+                value={filters.valueMin ?? ''}
+                onChange={(e) => set('valueMin', e.target.value ? Number(e.target.value) : undefined)}
+              />
+            </div>
+            <div className={styles.valueField}>
+              <Input
+                label="Max Value (₹)"
+                type="number"
+                min={0}
+                placeholder="Any"
+                value={filters.valueMax ?? ''}
+                onChange={(e) => set('valueMax', e.target.value ? Number(e.target.value) : undefined)}
+              />
+            </div>
+            <MultiSelectDropdown label="Lead Source" options={LEAD_SOURCE_OPTIONS} selected={filters.leadSource ?? []} onChange={(v) => set('leadSource', v.length ? v : undefined)} />
+            <MultiSelectDropdown label="Customer Type" options={CUSTOMER_TYPE_OPTIONS} selected={filters.customerType ?? []} onChange={(v) => set('customerType', v.length ? v : undefined)} />
+            <MultiSelectDropdown label="Region" options={REGION_OPTIONS} selected={filters.region ?? []} onChange={(v) => set('region', v.length ? v : undefined)} />
+          </div>
+
+          <div className={styles.filterRow}>
+            <div className={styles.valueField} style={{ width: 220 }}>
+              <Input
+                label="Stage"
+                placeholder="e.g. proposal, negotiation"
+                value={(filters.stageId ?? []).join(', ')}
+                onChange={(e) => set('stageId', parseCsvInput(e.target.value))}
+              />
+            </div>
+            <div className={styles.valueField} style={{ width: 220 }}>
+              <Input
+                label="Product"
+                placeholder="e.g. CRM Suite"
+                value={(filters.product ?? []).join(', ')}
+                onChange={(e) => set('product', parseCsvInput(e.target.value))}
+              />
+            </div>
+            <span className={styles.filterHelp}>
+              Stage/Product accept comma-separated values. Date filters match a deal's expected/closing date — this CRM has no separate close
+              timestamp yet.
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

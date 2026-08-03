@@ -2,10 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Button, Skeleton } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
+import { customerActivityService } from '@/services/customerActivityService';
 import { StatTile } from '@/features/dashboard/components/StatTile';
 import { ROUTES } from '@/constants/routes';
 import { formatINR as money } from '@/utils/currency';
 import { RevenueTrendChart } from './components/RevenueTrendChart';
+import { CustomerActivitySection } from './components/CustomerActivitySection';
 import styles from './business-dashboard.module.css';
 
 export function OwnerDashboardView() {
@@ -13,6 +15,11 @@ export function OwnerDashboardView() {
   const { data, isLoading } = useQuery({
     queryKey: ['owner-dashboard-overview'],
     queryFn: () => businessDashboardService.getOwnerOverview(),
+    refetchInterval: 60_000,
+  });
+  const { data: activity } = useQuery({
+    queryKey: ['customer-activity-overview'],
+    queryFn: () => customerActivityService.getOverview(),
     refetchInterval: 60_000,
   });
 
@@ -54,6 +61,24 @@ export function OwnerDashboardView() {
         <span className={styles.sectionTitle}>AI Insight</span>
         <div className={styles.insightCard}>{data.aiInsight}</div>
       </div>
+
+      {activity && (
+        <CustomerActivitySection
+          data={activity}
+          topItemsTitle="Highest-Value Lost Deals"
+          topItems={[...activity.lostWithReason]
+            .sort((a, b) => b.monetaryValue - a.monetaryValue)
+            .slice(0, 3)
+            .map((d) => ({
+              key: d.dealId,
+              title: d.businessName,
+              meta: d.lostReason ?? 'No reason recorded',
+              valueLabel: money(d.monetaryValue),
+            }))}
+          viewFullLabel="View full Customer Activity →"
+          onViewFull={() => navigate(`${ROUTES.dealPerformance}?tab=customer-activity`)}
+        />
+      )}
 
       <div className={styles.section}>
         <span className={styles.sectionTitle}>Revenue Trend — Last 6 Months</span>

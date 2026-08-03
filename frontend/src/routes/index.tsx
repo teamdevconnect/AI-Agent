@@ -27,6 +27,10 @@ const CommandCenterPage = lazy(() =>
 const DealPerformancePage = lazy(() =>
   import('@/features/deal-performance/DealPerformancePage').then((m) => ({ default: m.DealPerformancePage })),
 );
+const MyCustomerActivityPage = lazy(() =>
+  import('@/features/deal-performance/MyCustomerActivityPage').then((m) => ({ default: m.MyCustomerActivityPage })),
+);
+const FinancePage = lazy(() => import('@/features/finance/FinancePage').then((m) => ({ default: m.FinancePage })));
 const TodoEodPage = lazy(() => import('@/features/todo-eod/TodoEodPage').then((m) => ({ default: m.TodoEodPage })));
 const ChatPage = lazy(() => import('@/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
 const IntegrationsPage = lazy(() =>
@@ -115,6 +119,12 @@ export function AppRoutes() {
             </Route>
             <Route element={<RequireRole role={['owner', 'admin', 'manager']} />}>
               <Route path={ROUTES.dealPerformance} element={<DealPerformancePage />} />
+            </Route>
+            <Route element={<RequireRole role="consultant" />}>
+              <Route path={ROUTES.myCustomerActivity} element={<MyCustomerActivityPage />} />
+            </Route>
+            <Route element={<RequireRole role={['owner', 'admin']} />}>
+              <Route path={ROUTES.finance} element={<FinancePage />} />
             </Route>
             <Route path={ROUTES.todoEod} element={<TodoEodPage />} />
             <Route path={ROUTES.chat} element={<ChatPage />} />

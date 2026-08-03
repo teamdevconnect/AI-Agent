@@ -19,7 +19,9 @@ export interface MultiSelectDropdownProps {
 
 // No multi-select checklist variant existed anywhere in this app before
 // Phase 9a — extends Dropdown.tsx's click-outside + framer-motion open/close
-// conventions rather than inventing a new interaction pattern.
+// conventions rather than inventing a new interaction pattern. Promoted from
+// features/deal-performance to components/ui in Phase 10a once Finance
+// became its second consumer.
 export function MultiSelectDropdown({ label, options, selected, onChange }: MultiSelectDropdownProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);

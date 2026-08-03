@@ -23,6 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { CommandCenterModule } from './command-center/command-center.module';
 import { WorkflowsModule } from './workflows/workflows.module';
+import { FinanceModule } from './finance/finance.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -57,6 +58,7 @@ import { HealthController } from './health/health.controller';
     TimelineModule,
     CommandCenterModule,
     WorkflowsModule,
+    FinanceModule,
     // Registers a global audit-logging interceptor (see AuditModule) in
     // addition to its own admin-only GET /audit-logs viewer.
     AuditModule,

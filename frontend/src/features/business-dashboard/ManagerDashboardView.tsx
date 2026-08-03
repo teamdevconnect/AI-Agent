@@ -1,9 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Badge, Skeleton } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
+import { customerActivityService } from '@/services/customerActivityService';
 import { StatTile } from '@/features/dashboard/components/StatTile';
+import { ROUTES } from '@/constants/routes';
 import { formatINR as money } from '@/utils/currency';
 import { dayjs } from '@/utils/date';
+import { CustomerActivitySection } from './components/CustomerActivitySection';
 import styles from './business-dashboard.module.css';
 
 function eventTime(start: string): string {
@@ -11,11 +15,21 @@ function eventTime(start: string): string {
 }
 
 export function ManagerDashboardView() {
+  const navigate = useNavigate();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['manager-dashboard-overview'],
     queryFn: () => businessDashboardService.getManagerOverview(),
     refetchInterval: 60_000,
     retry: false,
+  });
+  // Same endpoint Deal Performance's Customer Activity tab uses — the
+  // backend already forces a manager's storeConstraint from their own JWT,
+  // so this compact section and "View full →" always show the same store's
+  // data as this dashboard itself.
+  const { data: activity } = useQuery({
+    queryKey: ['customer-activity-overview'],
+    queryFn: () => customerActivityService.getOverview(),
+    refetchInterval: 60_000,
   });
 
   if (isError) {
@@ -56,6 +70,23 @@ export function ManagerDashboardView() {
         <span className={styles.sectionTitle}>AI Recommendation</span>
         <div className={styles.insightCard}>{data.aiRecommendation}</div>
       </div>
+
+      {activity && (
+        <CustomerActivitySection
+          data={activity}
+          topItemsTitle="Staleist Unactioned Items"
+          topItems={[...activity.unactionedItems]
+            .sort((a, b) => b.daysSinceLastUpdate - a.daysSinceLastUpdate)
+            .slice(0, 3)
+            .map((item) => ({
+              key: `${item.type}-${item.id}`,
+              title: item.businessName,
+              meta: `${item.type === 'deal' ? 'Deal' : 'Quote'}: ${item.name} — ${item.daysSinceLastUpdate}d since last update`,
+            }))}
+          viewFullLabel="View full Customer Activity →"
+          onViewFull={() => navigate(`${ROUTES.dealPerformance}?tab=customer-activity`)}
+        />
+      )}
 
       <div className={styles.section}>
         <span className={styles.sectionTitle}>

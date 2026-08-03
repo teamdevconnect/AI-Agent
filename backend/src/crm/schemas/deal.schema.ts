@@ -79,6 +79,25 @@ export class Deal {
 
   @Prop({ enum: ['rep_reported', 'ai_inferred'] })
   lostReasonSource?: 'rep_reported' | 'ai_inferred';
+
+  // Set only by crm_mongo_sync.py, only when a genuine field value actually
+  // changed (or the deal is newly synced) — NOT bumped on every unchanged
+  // re-poll, since that sync writes via raw pymongo and never touches
+  // Mongoose's own `updatedAt`. customer-activity.service.ts reads
+  // `lastActivityAt ?? updatedAt` as its "when was this really touched"
+  // signal: natively-created/edited deals (never synced) correctly fall
+  // back to real Mongoose updatedAt; synced deals get accurate change-based
+  // tracking instead of a blanket "always looks fresh" or "always looks
+  // stale" false signal.
+  @Prop()
+  lastActivityAt?: Date;
+
+  // Managed automatically by { timestamps: true } above — declared (not
+  // @Prop()'d) purely so TypeScript knows these exist, same convention
+  // DailyReport already uses. Phase 11's customer-activity.service.ts reads
+  // these directly to determine "actioned today" / "new business".
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export const DealSchema = SchemaFactory.createForClass(Deal);

@@ -19,7 +19,7 @@ def load_text(filename: str, content: bytes) -> str:
     if ext in (".xlsx", ".xls"):
         return _load_excel(content)
     if ext == ".csv":
-        return pd.read_csv(io.BytesIO(content)).to_string(index=False)
+        return _load_csv(content)
     if ext in (".html", ".htm"):
         return _load_html(content)
     # Plain text / markdown / anything else: decode as UTF-8 best-effort.
@@ -34,6 +34,20 @@ def _load_pdf(content: bytes) -> str:
 def _load_docx(content: bytes) -> str:
     doc = DocxDocument(io.BytesIO(content))
     return "\n".join(p.text for p in doc.paragraphs)
+
+
+def _load_csv(content: bytes) -> str:
+    """pd.read_csv assumes one consistent-width table for the whole file —
+    real exported documents (e.g. an invoice with a 2-column header block
+    followed by a wider line-items table) are often ragged/multi-section and
+    make it raise ParserError. Falls back to a plain UTF-8 decode (same
+    fallback the "unknown extension" branch already uses) rather than ever
+    failing the caller outright — a well-formed single-table CSV still gets
+    the nicer to_string() tabulation unchanged."""
+    try:
+        return pd.read_csv(io.BytesIO(content)).to_string(index=False)
+    except pd.errors.ParserError:
+        return content.decode("utf-8", errors="ignore")
 
 
 def _load_excel(content: bytes) -> str:

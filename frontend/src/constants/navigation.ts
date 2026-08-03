@@ -1,4 +1,4 @@
-import { FiActivity, FiBarChart2, FiCheckSquare, FiClock, FiLink2, FiSettings, FiTerminal, FiTrendingUp } from 'react-icons/fi';
+import { FiActivity, FiBarChart2, FiCheckSquare, FiClock, FiDollarSign, FiLink2, FiSettings, FiTerminal, FiTrendingUp } from 'react-icons/fi';
 import { ROUTES } from './routes';
 import type { NavItem } from '@/types';
 
@@ -23,6 +23,17 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     // Admin-only surface (cost/token data across the whole org) — hidden
     // for every role except owner/admin, mirroring the org creator's
     // ['owner','admin'] roles from Phase 1.
+    hideForRoles: ['agent_user', 'user', 'manager', 'consultant'],
+  },
+  {
+    id: 'finance',
+    label: 'Finance AI',
+    path: ROUTES.finance,
+    icon: FiDollarSign,
+    // Owner/admin only — vendor bank details and payment amounts are more
+    // sensitive than deal pipeline data, and Finance is org-wide with no
+    // store scoping, so managers have no narrower fallback view the way
+    // they do everywhere else (see Phase 10a plan notes).
     hideForRoles: ['agent_user', 'user', 'manager', 'consultant'],
   },
   { id: 'todo-eod', label: 'To-Do / EOD', path: ROUTES.todoEod, icon: FiCheckSquare },
