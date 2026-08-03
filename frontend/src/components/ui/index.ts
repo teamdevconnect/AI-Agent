@@ -3,6 +3,7 @@ export * from './IconButton';
 export * from './Avatar';
 export * from './Badge';
 export * from './Card';
+export * from './SectionCard';
 export * from './Input';
 export * from './Switch';
 export * from './Skeleton';

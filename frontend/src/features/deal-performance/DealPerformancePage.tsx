@@ -3,8 +3,25 @@ import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import { FiDownload, FiPlus, FiZap } from 'react-icons/fi';
-import { Button, Dropdown, MultiSelectDropdown, Skeleton, Tabs } from '@/components/ui';
+import {
+  FiBarChart2,
+  FiClock,
+  FiCompass,
+  FiDownload,
+  FiFilter,
+  FiGlobe,
+  FiLayers,
+  FiMail,
+  FiPackage,
+  FiPlus,
+  FiTarget,
+  FiTrendingUp,
+  FiUserPlus,
+  FiUsers,
+  FiXCircle,
+  FiZap,
+} from 'react-icons/fi';
+import { Button, Dropdown, MultiSelectDropdown, SectionCard, Skeleton, Tabs } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { hasRole } from '@/utils/roles';
 import { extractErrorMessage } from '@/utils/errors';
@@ -253,12 +270,11 @@ export function DealPerformancePage() {
             <Tabs items={TAB_ITEMS} activeId={activeTab} onChange={changeTab} />
           </div>
 
-          <div className={clsx(isFetching && styles.fetching)}>
+          <div className={clsx(styles.tabContent, isFetching && styles.fetching)}>
             {activeTab === 'overview' && (
               <>
                 {isVisible('summary') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Summary</span>
+                  <SectionCard title="Summary" icon={FiBarChart2}>
                     <div className={styles.statsGrid}>
                       <StatTile value={data.summary.totalDeals} label="Total Deals" onClick={() => setDrillDown({ title: 'All Deals', filters })} />
                       <StatTile
@@ -280,12 +296,11 @@ export function DealPerformancePage() {
                       <StatTile value={data.summary.winRate === null ? '—' : `${data.summary.winRate}%`} label="Win Rate" />
                       <StatTile value={data.summary.avgWonDealSize === null ? '—' : money(data.summary.avgWonDealSize)} label="Avg. Won Deal Size" />
                     </div>
-                  </div>
+                  </SectionCard>
                 )}
 
                 {isVisible('wonLostTrend') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Won vs Lost Trend</span>
+                  <SectionCard title="Won vs Lost Trend" icon={FiTrendingUp}>
                     <span className={styles.fadeCaption}>Click a bar to see that month's deals.</span>
                     <WonLostTrendChart
                       points={data.wonLostTrend}
@@ -297,7 +312,7 @@ export function DealPerformancePage() {
                         });
                       }}
                     />
-                  </div>
+                  </SectionCard>
                 )}
               </>
             )}
@@ -306,19 +321,17 @@ export function DealPerformancePage() {
               <>
                 <div className={styles.twoColumn}>
                   {isVisible('achievement') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Target vs Achievement — {data.achievement.period}</span>
+                    <SectionCard title={`Target vs Achievement — ${data.achievement.period}`} icon={FiTarget}>
                       <div className={styles.statsGrid}>
                         <StatTile value={money(data.achievement.achieved)} label="Achieved" />
                         <StatTile value={data.achievement.targetAmount === null ? '—' : money(data.achievement.targetAmount)} label="Target" />
                         <StatTile value={data.achievement.achievementPct === null ? '—' : `${data.achievement.achievementPct}%`} label="Achievement" />
                         <StatTile value={money(data.achievement.remaining)} label="Remaining" />
                       </div>
-                    </div>
+                    </SectionCard>
                   )}
                   {isVisible('pipelineByStage') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Pipeline by Stage — Open Deals</span>
+                    <SectionCard title="Pipeline by Stage — Open Deals" icon={FiLayers}>
                       <PipelineByStageChart
                         data={data.pipelineByStage.map((s) => ({ stageId: s.stageId, value: s.value }))}
                         valueLabel="Value"
@@ -330,20 +343,19 @@ export function DealPerformancePage() {
                           })
                         }
                       />
-                    </div>
+                    </SectionCard>
                   )}
                 </div>
 
                 {isVisible('conversionFunnel') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Conversion Funnel — All Deals, by Stage</span>
+                  <SectionCard title="Conversion Funnel — All Deals, by Stage" icon={FiFilter}>
                     <PipelineByStageChart
                       data={data.conversionFunnel.map((s) => ({ stageId: s.stageId, value: s.count }))}
                       valueLabel="Deals"
                       caption={data.conversionFunnelNote}
                       onSelect={(stageId) => setDrillDown({ title: `Deals — ${formatStageLabel(stageId)}`, filters: { ...filters, stageId: [stageId] } })}
                     />
-                  </div>
+                  </SectionCard>
                 )}
               </>
             )}
@@ -351,8 +363,7 @@ export function DealPerformancePage() {
             {activeTab === 'performance' && (
               <>
                 {isVisible('consultantPerformance') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Consultant Performance</span>
+                  <SectionCard title="Consultant Performance" icon={FiUsers}>
                     <RankedBreakdownList
                       items={data.consultantPerformance.map((c) => ({ key: c.userId, label: c.userName, value: c.wonValue, valueFormatted: money(c.wonValue) }))}
                       emptyMessage="No employees in scope."
@@ -361,42 +372,39 @@ export function DealPerformancePage() {
                         setDrillDown({ title: `${c?.userName ?? 'Consultant'}'s Deals`, filters: { ...filters, ownerId: [userId] } });
                       }}
                     />
-                  </div>
+                  </SectionCard>
                 )}
 
                 <div className={styles.threeColumn}>
                   {isVisible('leadSourcePerformance') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Lead Source Performance</span>
+                    <SectionCard title="Lead Source Performance" icon={FiCompass}>
                       <RankedBreakdownList
                         items={data.leadSourcePerformance.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
                         emptyMessage="No deals tagged with a lead source yet."
                         coverageNote={`${data.leadSourcePerformance.taggedCount} of ${data.leadSourcePerformance.totalCount} deals tagged (${data.leadSourcePerformance.coveragePct}%)`}
                         onSelect={(key) => setDrillDown({ title: `Lead Source: ${key}`, filters: { ...filters, leadSource: [key] } })}
                       />
-                    </div>
+                    </SectionCard>
                   )}
                   {isVisible('productPerformance') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Product Performance</span>
+                    <SectionCard title="Product Performance" icon={FiPackage}>
                       <RankedBreakdownList
                         items={data.productPerformance.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
                         emptyMessage="No deals tagged with a product yet."
                         coverageNote={`${data.productPerformance.taggedCount} of ${data.productPerformance.totalCount} deals tagged (${data.productPerformance.coveragePct}%)`}
                         onSelect={(key) => (key === 'Other' ? undefined : setDrillDown({ title: `Product: ${key}`, filters: { ...filters, product: [key] } }))}
                       />
-                    </div>
+                    </SectionCard>
                   )}
                   {isVisible('geographicDistribution') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Geographic Distribution</span>
+                    <SectionCard title="Geographic Distribution" icon={FiGlobe}>
                       <RankedBreakdownList
                         items={data.geographicDistribution.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.count }))}
                         emptyMessage="No deals tagged with a region yet."
                         coverageNote={`${data.geographicDistribution.taggedCount} of ${data.geographicDistribution.totalCount} deals tagged (${data.geographicDistribution.coveragePct}%)`}
                         onSelect={(key) => setDrillDown({ title: `Region: ${key}`, filters: { ...filters, region: [key] } })}
                       />
-                    </div>
+                    </SectionCard>
                   )}
                 </div>
               </>
@@ -405,58 +413,52 @@ export function DealPerformancePage() {
             {activeTab === 'trends' && (
               <>
                 {isVisible('revenueProgress') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Monthly Revenue Progress</span>
+                  <SectionCard title="Monthly Revenue Progress" icon={FiTrendingUp}>
                     <RevenueProgressChart points={data.revenueProgress} />
-                  </div>
+                  </SectionCard>
                 )}
                 {isVisible('customerAcquisitionTrend') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Customer Acquisition Trend</span>
+                  <SectionCard title="Customer Acquisition Trend" icon={FiUserPlus}>
                     <CustomerAcquisitionTrendChart points={data.customerAcquisitionTrend} />
-                  </div>
+                  </SectionCard>
                 )}
               </>
             )}
 
             {activeTab === 'customer-activity' && (
-              <div className={clsx(styles.section, activityFetching && styles.fetching)}>
+              <div className={clsx(styles.tabContent, activityFetching && styles.fetching)}>
                 {!activityData ? (
                   <Skeleton height={160} />
                 ) : (
                   <>
                     <CustomerActivitySummaryPanel summary={activityData.summary} onGenerate={handleGenerateSummary} />
 
-                    <div className={styles.statsGrid}>
-                      <StatTile value={activityData.totalActionedToday} label="Total Actioned Clients Today" />
-                      <StatTile value={activityData.actionedTodayCounts.existing} label="Existing" />
-                      <StatTile value={activityData.actionedTodayCounts.new} label="New" />
-                      <StatTile value={activityData.actionedTodayCounts.followUp} label="Follow-ups" />
-                    </div>
+                    <SectionCard title="Today's Snapshot" icon={FiBarChart2}>
+                      <div className={styles.statsGrid}>
+                        <StatTile value={activityData.totalActionedToday} label="Total Actioned Clients Today" />
+                        <StatTile value={activityData.actionedTodayCounts.existing} label="Existing" />
+                        <StatTile value={activityData.actionedTodayCounts.new} label="New" />
+                        <StatTile value={activityData.actionedTodayCounts.followUp} label="Follow-ups" />
+                      </div>
+                    </SectionCard>
 
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Every Customer — Business Name &amp; Quote Number</span>
+                    <SectionCard title="Every Customer — Business Name & Quote Number" icon={FiUsers}>
                       <CustomerActivityTable rows={activityData.businessTable} />
-                    </div>
+                    </SectionCard>
 
                     <div className={styles.twoColumn}>
-                      <div className={styles.section}>
-                        <span className={styles.sectionTitle}>Left Unactioned</span>
+                      <SectionCard title="Left Unactioned" icon={FiClock}>
                         <UnactionedList items={activityData.unactionedItems} />
-                      </div>
-                      <div className={styles.section}>
-                        <span className={styles.sectionTitle}>Lost Deals — Reason</span>
+                      </SectionCard>
+                      <SectionCard title="Lost Deals — Reason" icon={FiXCircle}>
                         <LostReasonList items={activityData.lostWithReason} />
-                      </div>
+                      </SectionCard>
                     </div>
 
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>
-                        Emails Correlated to Customers Today ({activityData.correlatedEmails.length})
-                      </span>
+                    <SectionCard title={`Emails Correlated to Customers Today (${activityData.correlatedEmails.length})`} icon={FiMail}>
                       <span className={styles.coverageNote}>{activityData.emailCorrelationCoverage.note}</span>
                       <CorrelatedEmailList items={activityData.correlatedEmails} />
-                    </div>
+                    </SectionCard>
                   </>
                 )}
               </div>

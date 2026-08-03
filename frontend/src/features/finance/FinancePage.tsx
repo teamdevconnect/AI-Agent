@@ -2,8 +2,21 @@ import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import { FiDownload, FiZap } from 'react-icons/fi';
-import { Button, Dropdown, MultiSelectDropdown, Skeleton, Tabs } from '@/components/ui';
+import {
+  FiBarChart2,
+  FiCloud,
+  FiCreditCard,
+  FiDownload,
+  FiFileText,
+  FiPercent,
+  FiTag,
+  FiTrendingUp,
+  FiTruck,
+  FiUpload,
+  FiUsers,
+  FiZap,
+} from 'react-icons/fi';
+import { Button, Dropdown, MultiSelectDropdown, SectionCard, Skeleton, Tabs } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { getSocket } from '@/api/socketClient';
 import { extractErrorMessage } from '@/utils/errors';
@@ -186,15 +199,14 @@ export function FinancePage() {
         onSaveNew={(name) => void handleSavePreset(name)}
       />
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Upload Vendor Payment Documents</span>
+      <SectionCard title="Upload Vendor Payment Documents" icon={FiUpload}>
         <FinanceDocumentUpload
           onDocumentReady={(doc) => {
             refreshOverview();
             setReviewDoc(doc);
           }}
         />
-      </div>
+      </SectionCard>
 
       <FinanceFilterBar filters={filters} onChange={setFilters} />
 
@@ -217,14 +229,13 @@ export function FinancePage() {
             <Tabs items={TAB_ITEMS} activeId={activeTab} onChange={setActiveTab} />
           </div>
 
-          <div className={clsx(isFetching && styles.fetching)}>
+          <div className={clsx(styles.tabContent, isFetching && styles.fetching)}>
             {activeTab === 'overview' && (
               <>
                 <FinanceSummaryPanel summary={data.aiGeneratedSummary} onGenerate={handleGenerateSummary} />
 
                 {isVisible('summary') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Summary</span>
+                  <SectionCard title="Summary" icon={FiBarChart2}>
                     <div className={styles.statsGrid}>
                       <StatTile
                         value={`${data.summary.totalVendorPayments.count} (${money(data.summary.totalVendorPayments.value)})`}
@@ -247,14 +258,13 @@ export function FinancePage() {
                         label="Upcoming Due"
                       />
                     </div>
-                  </div>
+                  </SectionCard>
                 )}
 
                 {isVisible('monthlyExpenseTrend') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Monthly Expense Trend</span>
+                  <SectionCard title="Monthly Expense Trend" icon={FiTrendingUp}>
                     <MonthlyExpenseTrendChart points={data.monthlyExpenseTrend} />
-                  </div>
+                  </SectionCard>
                 )}
               </>
             )}
@@ -263,73 +273,66 @@ export function FinancePage() {
               <>
                 <div className={styles.twoColumn}>
                   {isVisible('vendorSpending') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Vendor-wise Spending (Top Vendors)</span>
+                    <SectionCard title="Vendor-wise Spending (Top Vendors)" icon={FiUsers}>
                       <RankedBreakdownList
                         items={data.vendorSpending.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.value, valueFormatted: money(b.value) }))}
                         emptyMessage="No documents tagged with a vendor yet."
                         coverageNote={`${data.vendorSpending.taggedCount} of ${data.vendorSpending.totalCount} documents tagged (${data.vendorSpending.coveragePct}%)`}
                         onSelect={(key) => setDrillDown({ title: `Vendor: ${key}`, filters: { ...filters, vendorName: [key] } })}
                       />
-                    </div>
+                    </SectionCard>
                   )}
                   {isVisible('categorySpending') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Category-wise Spending</span>
+                    <SectionCard title="Category-wise Spending" icon={FiTag}>
                       <RankedBreakdownList
                         items={data.categorySpending.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.value, valueFormatted: money(b.value) }))}
                         emptyMessage="No documents tagged with a category yet."
                         coverageNote={`${data.categorySpending.taggedCount} of ${data.categorySpending.totalCount} documents tagged (${data.categorySpending.coveragePct}%)`}
                         onSelect={(key) => setDrillDown({ title: `Category: ${key}`, filters: { ...filters, expenseCategory: [key] } })}
                       />
-                    </div>
+                    </SectionCard>
                   )}
                 </div>
 
                 <div className={styles.threeColumn}>
                   {isVisible('microsoftSubscriptionCosts') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Microsoft Subscription Costs</span>
+                    <SectionCard title="Microsoft Subscription Costs" icon={FiCloud}>
                       <div className={styles.statsGrid}>
                         <StatTile value={money(data.microsoftSubscriptionCosts.microsoftAmount)} label="Microsoft (Azure/365)" />
                         <StatTile value={money(data.microsoftSubscriptionCosts.totalAmount)} label="All Subscriptions" />
                       </div>
-                    </div>
+                    </SectionCard>
                   )}
                   {isVisible('deliveryShippingCosts') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Delivery & Shipping Costs</span>
+                    <SectionCard title="Delivery & Shipping Costs" icon={FiTruck}>
                       <StatTile value={money(data.deliveryShippingCosts.value)} label={`${data.deliveryShippingCosts.count} document(s)`} />
-                    </div>
+                    </SectionCard>
                   )}
                   {isVisible('taxBreakdown') && (
-                    <div className={styles.section}>
-                      <span className={styles.sectionTitle}>Tax Breakdown</span>
+                    <SectionCard title="Tax Breakdown" icon={FiPercent}>
                       <RankedBreakdownList
                         items={data.taxBreakdown.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.value, valueFormatted: money(b.value) }))}
                         emptyMessage="No tax data captured yet."
                       />
-                    </div>
+                    </SectionCard>
                   )}
                 </div>
 
                 {isVisible('paymentMethodBreakdown') && (
-                  <div className={styles.section}>
-                    <span className={styles.sectionTitle}>Payment Method Breakdown</span>
+                  <SectionCard title="Payment Method Breakdown" icon={FiCreditCard}>
                     <RankedBreakdownList
                       items={data.paymentMethodBreakdown.breakdown.map((b) => ({ key: b.key, label: b.key, value: b.value, valueFormatted: money(b.value) }))}
                       emptyMessage="No documents tagged with a payment method yet."
                       coverageNote={`${data.paymentMethodBreakdown.taggedCount} of ${data.paymentMethodBreakdown.totalCount} documents tagged (${data.paymentMethodBreakdown.coveragePct}%)`}
                       onSelect={(key) => setDrillDown({ title: `Payment Method: ${key}`, filters: { ...filters, paymentMethod: [key] } })}
                     />
-                  </div>
+                  </SectionCard>
                 )}
               </>
             )}
 
             {activeTab === 'documents' && isVisible('recentDocuments') && (
-              <div className={styles.section}>
-                <span className={styles.sectionTitle}>Recent Uploaded Documents</span>
+              <SectionCard title="Recent Uploaded Documents" icon={FiFileText}>
                 {data.recentDocuments.length === 0 ? (
                   <div className={styles.emptyState}>No documents uploaded yet.</div>
                 ) : (
@@ -343,7 +346,7 @@ export function FinancePage() {
                     </div>
                   ))
                 )}
-              </div>
+              </SectionCard>
             )}
           </div>
         </>

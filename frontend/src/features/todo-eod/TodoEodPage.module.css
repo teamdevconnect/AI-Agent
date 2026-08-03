@@ -48,19 +48,13 @@
 }
 
 .calendarPanel {
+  /* Card chrome now comes from the SectionCard wrapping MonthCalendar. */
   flex: 0 0 320px;
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
 }
 
 .selectedDateTasks {
   flex: 1;
   min-width: 280px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }
 
 .taskRow {
@@ -81,10 +75,16 @@
   padding: var(--space-4);
 }
 
+/* A real LLM-generated recommendation (todoEodService.getRecommendations(),
+   the forced-tool-choice recommend_next_actions call) — brought up to the
+   same "AI callout" accent-border + glow treatment used everywhere else in
+   the app for genuine AI-generated content. */
 .recommendCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  border-left: 3px solid var(--brand-accent-primary);
+  box-shadow: var(--shadow-glow);
 }
 
 .recommendHeader {

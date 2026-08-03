@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { FiArrowLeft } from 'react-icons/fi';
-import { Avatar, Badge, Button, Skeleton, Tabs } from '@/components/ui';
+import { FiActivity, FiArrowLeft, FiBarChart2, FiFileText, FiTrendingUp } from 'react-icons/fi';
+import { Avatar, Badge, Button, SectionCard, Skeleton, Tabs } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { dashboardService } from '@/services/dashboardService';
 import { PRIORITY_VARIANT } from '../priorityVariant';
@@ -60,8 +60,7 @@ export function AgentFocusedView({ agentId, onBack }: { agentId: string; onBack?
         )}
       </div>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Today's Overview</span>
+      <SectionCard title="Today's Overview" icon={FiBarChart2}>
         <div className={styles.statsGrid}>
           <StatTile value={data.stats.totalTasks} label="Total Tasks" />
           <StatTile value={data.stats.urgentCount} label="Urgent" />
@@ -72,18 +71,17 @@ export function AgentFocusedView({ agentId, onBack }: { agentId: string; onBack?
             label="Follow-up Health"
           />
         </div>
-      </div>
+      </SectionCard>
 
-      <div className={styles.section}>
-        <div className={styles.sectionTitleRow}>
-          <span className={styles.sectionTitle}>Trend</span>
-          <Tabs items={RANGE_TABS} activeId={String(range)} onChange={(id) => setRange(Number(id) as 7 | 30)} />
-        </div>
-        <div className={styles.chartCard}>{trend ? <TaskTrendChart points={trend.points} /> : <Skeleton height={200} />}</div>
-      </div>
+      <SectionCard
+        title="Trend"
+        icon={FiTrendingUp}
+        action={<Tabs items={RANGE_TABS} activeId={String(range)} onChange={(id) => setRange(Number(id) as 7 | 30)} />}
+      >
+        {trend ? <TaskTrendChart points={trend.points} /> : <Skeleton height={200} />}
+      </SectionCard>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Critical Alerts</span>
+      <SectionCard title="Critical Alerts" icon={FiActivity}>
         {data.criticalAlerts.length === 0 ? (
           <div className={styles.emptyState}>No urgent or overdue items today.</div>
         ) : (
@@ -96,10 +94,9 @@ export function AgentFocusedView({ agentId, onBack }: { agentId: string; onBack?
             </div>
           ))
         )}
-      </div>
+      </SectionCard>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Recent Reports</span>
+      <SectionCard title="Recent Reports" icon={FiFileText}>
         {data.recentReports.length === 0 ? (
           <div className={styles.emptyState}>No reports generated yet today.</div>
         ) : (
@@ -115,7 +112,7 @@ export function AgentFocusedView({ agentId, onBack }: { agentId: string; onBack?
             </Link>
           ))
         )}
-      </div>
+      </SectionCard>
     </div>
   );
 }

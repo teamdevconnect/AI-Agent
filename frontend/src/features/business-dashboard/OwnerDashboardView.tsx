@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Button, Skeleton } from '@/components/ui';
+import { FiAlertTriangle, FiAward, FiBarChart2, FiTrendingUp, FiZap } from 'react-icons/fi';
+import { Button, SectionCard, Skeleton } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
 import { customerActivityService } from '@/services/customerActivityService';
 import { StatTile } from '@/features/dashboard/components/StatTile';
@@ -45,8 +46,7 @@ export function OwnerDashboardView() {
         </Button>
       </div>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>This Period</span>
+      <SectionCard title="This Period" icon={FiBarChart2}>
         <div className={styles.statsGrid}>
           <StatTile value={money(data.totalRevenue)} label="Total Revenue" />
           <StatTile value={money(data.monthlyTarget)} label="Monthly Target" />
@@ -55,11 +55,13 @@ export function OwnerDashboardView() {
           <StatTile value={money(data.forecast.predictedMonthEnd)} label="Predicted Month-End" />
           <StatTile value={data.businessHealthScore} label="Business Health Score" />
         </div>
-      </div>
+      </SectionCard>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>AI Insight</span>
-        <div className={styles.insightCard}>{data.aiInsight}</div>
+      <div className={styles.insightCard}>
+        <span className={styles.insightLabel}>
+          <FiZap size={14} /> AI Insight
+        </span>
+        <span className={styles.insightText}>{data.aiInsight}</span>
       </div>
 
       {activity && (
@@ -80,14 +82,12 @@ export function OwnerDashboardView() {
         />
       )}
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Revenue Trend — Last 6 Months</span>
+      <SectionCard title="Revenue Trend — Last 6 Months" icon={FiTrendingUp}>
         <RevenueTrendChart points={data.revenueTrend} />
-      </div>
+      </SectionCard>
 
       <div className={styles.twoColumn}>
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Store Rankings</span>
+        <SectionCard title="Store Rankings" icon={FiAward}>
           {data.storeRankings.length === 0 ? (
             <div className={styles.emptyState}>No store revenue recorded yet this period.</div>
           ) : (
@@ -99,10 +99,9 @@ export function OwnerDashboardView() {
               </div>
             ))
           )}
-        </div>
+        </SectionCard>
 
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Employee Leaderboard</span>
+        <SectionCard title="Employee Leaderboard" icon={FiAward}>
           {data.employeeLeaderboard.length === 0 ? (
             <div className={styles.emptyState}>No won deals recorded yet this period.</div>
           ) : (
@@ -114,11 +113,10 @@ export function OwnerDashboardView() {
               </div>
             ))
           )}
-        </div>
+        </SectionCard>
       </div>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Risk Alerts — Deals Past Expected Close</span>
+      <SectionCard title="Risk Alerts — Deals Past Expected Close" icon={FiAlertTriangle}>
         {data.riskAlerts.length === 0 ? (
           <div className={styles.emptyState}>No open deals are past their expected close date.</div>
         ) : (
@@ -132,7 +130,7 @@ export function OwnerDashboardView() {
             </div>
           ))
         )}
-      </div>
+      </SectionCard>
     </div>
   );
 }

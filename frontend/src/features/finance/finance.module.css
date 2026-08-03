@@ -171,6 +171,15 @@
   border: 1px solid var(--color-border);
 }
 
+/* The active tab's SectionCards render as direct children of this div —
+   without an explicit gap here, the now-bordered/shadowed cards stack flush
+   against each other with no visual separation. */
+.tabContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
 .fetching {
   opacity: 0.6;
   transition: opacity 0.15s ease;
@@ -191,6 +200,9 @@
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
   border-left: 3px solid var(--brand-accent-primary);
+  /* First real consumer of this token — reserved for the app's most
+     "AI-forward" moments rather than sprinkled everywhere. */
+  box-shadow: var(--shadow-glow);
 }
 
 .aiInsightLabel {
@@ -223,6 +235,7 @@
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
   border-left: 3px solid var(--brand-accent-primary);
+  box-shadow: var(--shadow-glow);
 }
 
 .aiSummaryHeader {

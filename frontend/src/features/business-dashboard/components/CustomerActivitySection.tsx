@@ -1,4 +1,5 @@
-import { Button } from '@/components/ui';
+import { FiUsers } from 'react-icons/fi';
+import { Button, SectionCard } from '@/components/ui';
 import { StatTile } from '@/features/dashboard/components/StatTile';
 import type { CustomerActivityOverview } from '@/services/customerActivityService';
 import styles from '../business-dashboard.module.css';
@@ -28,8 +29,15 @@ export function CustomerActivitySection({
   onViewFull: () => void;
 }) {
   return (
-    <div className={styles.section}>
-      <span className={styles.sectionTitle}>Customer Activity Today</span>
+    <SectionCard
+      title="Customer Activity Today"
+      icon={FiUsers}
+      action={
+        <Button type="button" variant="ghost" size="sm" onClick={onViewFull}>
+          {viewFullLabel}
+        </Button>
+      }
+    >
       <div className={styles.statsGrid}>
         <StatTile value={data.totalActionedToday} label="Actioned Today" />
         <StatTile value={data.actionedTodayCounts.existing} label="Existing" />
@@ -51,10 +59,6 @@ export function CustomerActivitySection({
           ))}
         </>
       )}
-
-      <Button type="button" variant="ghost" size="sm" onClick={onViewFull}>
-        {viewFullLabel}
-      </Button>
-    </div>
+    </SectionCard>
   );
 }

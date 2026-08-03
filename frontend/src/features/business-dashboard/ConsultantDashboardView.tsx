@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Skeleton } from '@/components/ui';
+import { FiBarChart2, FiCalendar, FiCheckSquare, FiClock, FiTarget, FiZap } from 'react-icons/fi';
+import { SectionCard, Skeleton } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
 import { customerActivityService } from '@/services/customerActivityService';
 import { StatTile } from '@/features/dashboard/components/StatTile';
@@ -44,19 +45,20 @@ export function ConsultantDashboardView() {
         <div className={styles.pageSubtitle}>{data.period}</div>
       </div>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>This Period</span>
+      <SectionCard title="This Period" icon={FiBarChart2}>
         <div className={styles.statsGrid}>
           <StatTile value={money(data.personalTarget)} label="Personal Target" />
           <StatTile value={money(data.currentSales)} label="Current Sales" />
           <StatTile value={data.achievementPct === null ? '—' : `${data.achievementPct}%`} label="Achievement" />
           <StatTile value={money(data.remainingTarget)} label="Remaining Target" />
         </div>
-      </div>
+      </SectionCard>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>AI Coaching</span>
-        <div className={styles.insightCard}>{data.aiCoaching}</div>
+      <div className={styles.insightCard}>
+        <span className={styles.insightLabel}>
+          <FiZap size={14} /> AI Coaching
+        </span>
+        <span className={styles.insightText}>{data.aiCoaching}</span>
       </div>
 
       {activity && (
@@ -76,8 +78,7 @@ export function ConsultantDashboardView() {
         />
       )}
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Follow-ups — Next 7 Days</span>
+      <SectionCard title="Follow-ups — Next 7 Days" icon={FiClock}>
         {data.followUps.length === 0 ? (
           <div className={styles.emptyState}>No deals need follow-up in the next 7 days.</div>
         ) : (
@@ -90,10 +91,9 @@ export function ConsultantDashboardView() {
             </div>
           ))
         )}
-      </div>
+      </SectionCard>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>Customer Pipeline</span>
+      <SectionCard title="Customer Pipeline" icon={FiTarget}>
         {data.customerPipeline.length === 0 ? (
           <div className={styles.emptyState}>Your pipeline is empty.</div>
         ) : (
@@ -107,11 +107,10 @@ export function ConsultantDashboardView() {
             </div>
           ))
         )}
-      </div>
+      </SectionCard>
 
       <div className={styles.twoColumn}>
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Today's Meetings</span>
+        <SectionCard title="Today's Meetings" icon={FiCalendar}>
           {!data.todaysMeetings.available ? (
             <div className={styles.emptyState}>{data.todaysMeetings.message}</div>
           ) : data.todaysMeetings.events.length === 0 ? (
@@ -126,11 +125,10 @@ export function ConsultantDashboardView() {
               </div>
             ))
           )}
-        </div>
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Today's Tasks</span>
+        </SectionCard>
+        <SectionCard title="Today's Tasks" icon={FiCheckSquare}>
           <div className={styles.emptyState}>{data.todaysTasks.message}</div>
-        </div>
+        </SectionCard>
       </div>
     </div>
   );

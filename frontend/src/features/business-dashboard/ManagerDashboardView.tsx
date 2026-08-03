@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Skeleton } from '@/components/ui';
+import { FiBarChart2, FiCalendar, FiCheckSquare, FiClipboard, FiClock, FiUsers, FiZap } from 'react-icons/fi';
+import { Badge, SectionCard, Skeleton } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
 import { customerActivityService } from '@/services/customerActivityService';
 import { StatTile } from '@/features/dashboard/components/StatTile';
@@ -56,19 +57,20 @@ export function ManagerDashboardView() {
         <div className={styles.pageSubtitle}>{data.period}</div>
       </div>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>This Period</span>
+      <SectionCard title="This Period" icon={FiBarChart2}>
         <div className={styles.statsGrid}>
           <StatTile value={money(data.storeTarget)} label="Store Target" />
           <StatTile value={data.storeAchievement === null ? '—' : `${data.storeAchievement}%`} label="Store Achievement" />
           <StatTile value={money(data.revenue)} label="Revenue" />
           <StatTile value={data.conversionRate === null ? '—' : `${data.conversionRate}%`} label="Conversion Rate" />
         </div>
-      </div>
+      </SectionCard>
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>AI Recommendation</span>
-        <div className={styles.insightCard}>{data.aiRecommendation}</div>
+      <div className={styles.insightCard}>
+        <span className={styles.insightLabel}>
+          <FiZap size={14} /> AI Recommendation
+        </span>
+        <span className={styles.insightText}>{data.aiRecommendation}</span>
       </div>
 
       {activity && (
@@ -88,18 +90,22 @@ export function ManagerDashboardView() {
         />
       )}
 
-      <div className={styles.section}>
-        <span className={styles.sectionTitle}>
-          Today's EOD Report{' '}
+      <SectionCard
+        title="Today's EOD Report"
+        icon={FiClipboard}
+        action={
           <Badge variant={data.missedEodReportToday ? 'warning' : 'success'} dot>
             {data.missedEodReportToday ? 'Missed' : 'Submitted'}
           </Badge>
-        </span>
-      </div>
+        }
+      >
+        <div className={styles.emptyState}>
+          {data.missedEodReportToday ? "Today's EOD report hasn't been submitted yet." : "Today's EOD report is in."}
+        </div>
+      </SectionCard>
 
       <div className={styles.twoColumn}>
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Team Performance</span>
+        <SectionCard title="Team Performance" icon={FiUsers}>
           {data.teamPerformance.length === 0 ? (
             <div className={styles.emptyState}>No won deals recorded yet this period.</div>
           ) : (
@@ -111,10 +117,9 @@ export function ManagerDashboardView() {
               </div>
             ))
           )}
-        </div>
+        </SectionCard>
 
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Follow-ups — Next 7 Days</span>
+        <SectionCard title="Follow-ups — Next 7 Days" icon={FiClock}>
           {data.followUps.length === 0 ? (
             <div className={styles.emptyState}>No deals need follow-up in the next 7 days.</div>
           ) : (
@@ -128,12 +133,11 @@ export function ManagerDashboardView() {
               </div>
             ))
           )}
-        </div>
+        </SectionCard>
       </div>
 
       <div className={styles.twoColumn}>
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Team Calendar — Today</span>
+        <SectionCard title="Team Calendar — Today" icon={FiCalendar}>
           {!data.teamCalendar.available ? (
             <div className={styles.emptyState}>{data.teamCalendar.message}</div>
           ) : data.teamCalendar.events.length === 0 ? (
@@ -150,11 +154,10 @@ export function ManagerDashboardView() {
               </div>
             ))
           )}
-        </div>
-        <div className={styles.section}>
-          <span className={styles.sectionTitle}>Pending Tasks</span>
+        </SectionCard>
+        <SectionCard title="Pending Tasks" icon={FiCheckSquare}>
           <div className={styles.emptyState}>{data.pendingTasks.message}</div>
-        </div>
+        </SectionCard>
       </div>
     </div>
   );

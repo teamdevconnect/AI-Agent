@@ -1,25 +1,36 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { FiChevronLeft, FiChevronRight, FiDownload, FiZap } from 'react-icons/fi';
-import { Badge, Button, Card, Dropdown, IconButton, Tabs } from '@/components/ui';
+import { FiCalendar, FiCheckSquare, FiChevronLeft, FiChevronRight, FiDownload, FiZap } from 'react-icons/fi';
+import { Badge, Button, Card, Dropdown, IconButton, SectionCard, Skeleton, Tabs } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { dayjs, todayUtc } from '@/utils/date';
 import { todoEodService } from '@/services/todoEodService';
 import { Board } from './components/Board';
 import { MonthCalendar } from './components/MonthCalendar';
 import { PRIORITY_VARIANT } from './components/TaskCard';
+import type { TaskSource } from './utils/taskSource';
 import styles from './TodoEodPage.module.css';
 
 // Recommendations only mean something for today's open tasks — a past
 // board date's tasks are historical, not something to "focus on next".
+//
+// While loading, this used to return null and then pop in fully-formed
+// once the query resolved — since Board loads independently (its own
+// query, its own skeleton), whichever finished first would already be
+// settled on screen when the other popped in above/below it, visibly
+// shifting the board (reported as "the board suddenly changes to
+// Recommended Focus"). Reserving the space with a skeleton from the first
+// render fixes this — nothing pops in after the user is already looking
+// at settled content.
 function RecommendedFocus() {
   const { data, isLoading } = useQuery({
     queryKey: ['tasks-recommendations'],
     queryFn: () => todoEodService.getRecommendations(),
   });
 
-  if (isLoading || !data || data.recommendations.length === 0) return null;
+  if (isLoading) return <Skeleton height={120} />;
+  if (!data || data.recommendations.length === 0) return null;
 
   return (
     <Card className={styles.recommendCard}>
@@ -49,8 +60,19 @@ const VIEW_TABS = [
   { id: 'calendar', label: 'Calendar' },
 ];
 
+// category is freeform AI-extracted text (see utils/taskSource.ts), so this
+// filter is a best-effort keyword split, not a guaranteed-accurate source
+// field — "All" stays the default so nothing is ever hidden by a misclassification.
+const SOURCE_TABS: { id: TaskSource | 'all'; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'crm', label: 'CRM' },
+  { id: 'mail', label: 'Mail' },
+  { id: 'other', label: 'Other' },
+];
+
 export function TodoEodPage() {
   const [view, setView] = useState<'board' | 'calendar'>('board');
+  const [sourceFilter, setSourceFilter] = useState<TaskSource | 'all'>('all');
   const [month, setMonth] = useState(todayUtc().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   // The board is scoped to a single day (tasks are grouped per DailyReport,
@@ -126,32 +148,37 @@ export function TodoEodPage() {
             )}
           </div>
           {boardDate === todayUtc() && <RecommendedFocus />}
-          <Board params={{ dateFrom: boardDate, dateTo: boardDate }} />
+          <Tabs items={SOURCE_TABS} activeId={sourceFilter} onChange={(id) => setSourceFilter(id as TaskSource | 'all')} />
+          <Board params={{ dateFrom: boardDate, dateTo: boardDate }} sourceFilter={sourceFilter} />
         </>
       ) : (
         <div className={styles.calendarLayout}>
           <div className={styles.calendarPanel}>
-            <MonthCalendar
-              month={month}
-              days={calendarData?.days ?? []}
-              selectedDate={selectedDate}
-              onSelectDate={setSelectedDate}
-              onMonthChange={setMonth}
-            />
+            <SectionCard title="Calendar" icon={FiCalendar}>
+              <MonthCalendar
+                month={month}
+                days={calendarData?.days ?? []}
+                selectedDate={selectedDate}
+                onSelectDate={setSelectedDate}
+                onMonthChange={setMonth}
+              />
+            </SectionCard>
           </div>
           <div className={styles.selectedDateTasks}>
-            {!selectedDate ? (
-              <div className={styles.emptyState}>Select a date to see its tasks.</div>
-            ) : !dateTasks || dateTasks.length === 0 ? (
-              <div className={styles.emptyState}>No tasks for {selectedDate}.</div>
-            ) : (
-              dateTasks.map((task) => (
-                <div key={task.id} className={styles.taskRow}>
-                  <span>{task.title}</span>
-                  <Badge variant={PRIORITY_VARIANT[task.priority]}>{task.priority}</Badge>
-                </div>
-              ))
-            )}
+            <SectionCard title={selectedDate ? `Tasks — ${selectedDate}` : 'Tasks'} icon={FiCheckSquare}>
+              {!selectedDate ? (
+                <div className={styles.emptyState}>Select a date to see its tasks.</div>
+              ) : !dateTasks || dateTasks.length === 0 ? (
+                <div className={styles.emptyState}>No tasks for {selectedDate}.</div>
+              ) : (
+                dateTasks.map((task) => (
+                  <div key={task.id} className={styles.taskRow}>
+                    <span>{task.title}</span>
+                    <Badge variant={PRIORITY_VARIANT[task.priority]}>{task.priority}</Badge>
+                  </div>
+                ))
+              )}
+            </SectionCard>
           </div>
         </div>
       )}
