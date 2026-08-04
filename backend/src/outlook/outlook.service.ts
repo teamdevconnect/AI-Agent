@@ -19,7 +19,13 @@ export interface OutlookAccountSummary {
   connectedAt: Date;
 }
 
-const GRAPH_SCOPES = 'offline_access User.Read Mail.Read Calendars.Read Contacts.Read';
+// Mail.Send added for Phase 14d's real reply-sending — widening an
+// already-issued OAuth grant is not possible; every previously-connected
+// account (including real production ones) must disconnect and reconnect
+// through Microsoft's consent screen once to pick up this scope. A stale
+// token issued under the old scope will fail an actual send attempt with a
+// real Graph error rather than silently succeeding or no-op'ing.
+const GRAPH_SCOPES = 'offline_access User.Read Mail.Read Mail.Send Calendars.Read Contacts.Read';
 
 /**
  * Per-user delegated Microsoft Graph auth. A user can connect several

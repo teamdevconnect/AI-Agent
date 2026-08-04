@@ -86,6 +86,7 @@ exports.CrmModule = CrmModule = __decorate([
             deal_performance_preset_service_1.DealPerformancePresetService,
             customer_activity_service_1.CustomerActivityService,
         ],
+        exports: [customer_activity_service_1.CustomerActivityService],
     })
 ], CrmModule);
 //# sourceMappingURL=crm.module.js.map

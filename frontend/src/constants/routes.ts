@@ -9,6 +9,8 @@ export const ROUTES = {
   commandCenter: '/command-center',
   dealPerformance: '/deal-performance',
   myCustomerActivity: '/my-customer-activity',
+  businessKnowledge: '/business-knowledge',
+  emailIntelligence: '/ai-email-inbox',
   finance: '/finance',
   todoEod: '/todo-eod',
   chat: '/chat',

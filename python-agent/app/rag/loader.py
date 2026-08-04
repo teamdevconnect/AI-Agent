@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from docx import Document as DocxDocument
 from pypdf import PdfReader
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".html", ".htm", ".txt", ".md"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".csv", ".html", ".htm", ".txt", ".md"}
 
 
 def load_text(filename: str, content: bytes) -> str:
@@ -16,6 +16,8 @@ def load_text(filename: str, content: bytes) -> str:
         return _load_pdf(content)
     if ext == ".docx":
         return _load_docx(content)
+    if ext == ".pptx":
+        return _load_pptx(content)
     if ext in (".xlsx", ".xls"):
         return _load_excel(content)
     if ext == ".csv":
@@ -34,6 +36,23 @@ def _load_pdf(content: bytes) -> str:
 def _load_docx(content: bytes) -> str:
     doc = DocxDocument(io.BytesIO(content))
     return "\n".join(p.text for p in doc.paragraphs)
+
+
+def _load_pptx(content: bytes) -> str:
+    """Sales decks/marketing materials (Phase 14a) are most often authored as
+    .pptx — added specifically so those named asset types can be ingested in
+    their native format, not just as a PDF export."""
+    from pptx import Presentation
+
+    prs = Presentation(io.BytesIO(content))
+    lines: list[str] = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text = shape.text_frame.text
+                if text:
+                    lines.append(text)
+    return "\n".join(lines)
 
 
 def _load_csv(content: bytes) -> str:

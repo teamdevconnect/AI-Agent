@@ -14,7 +14,15 @@ function sourceHint(source: BusinessTableRow['businessNameSource']): string | un
   return 'Derived from deal name';
 }
 
-export function CustomerActivityTable({ rows }: { rows: BusinessTableRow[] }) {
+export function CustomerActivityTable({
+  rows,
+  onSelectRow,
+}: {
+  rows: BusinessTableRow[];
+  // Optional — only the Relationships tab (Phase 14a) passes this; every
+  // other existing call site is unaffected and rows stay non-interactive.
+  onSelectRow?: (row: BusinessTableRow) => void;
+}) {
   if (rows.length === 0) {
     return <div className={styles.emptyState}>No customer/business data in scope yet.</div>;
   }
@@ -32,7 +40,7 @@ export function CustomerActivityTable({ rows }: { rows: BusinessTableRow[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key}>
+            <tr key={row.key} onClick={onSelectRow ? () => onSelectRow(row) : undefined} style={onSelectRow ? { cursor: 'pointer' } : undefined}>
               <td>
                 <div className={styles.listItemMain}>
                   <span className={styles.listItemTitle}>{row.businessName}</span>

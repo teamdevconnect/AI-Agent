@@ -2,6 +2,7 @@ import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
+import { GridFsService } from '../common/gridfs/gridfs.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TimelineModule } from '../timeline/timeline.module';
 import { UsersModule } from '../users/users.module';
@@ -43,6 +44,7 @@ import { FinanceSummaryService } from './finance-summary.service';
   controllers: [FinanceDocumentsController, FinanceDashboardController, FinancePresetController],
   providers: [
     FinanceDocumentsService,
+    GridFsService,
     FinanceGridFsService,
     FinanceExportService,
     FinanceDashboardService,

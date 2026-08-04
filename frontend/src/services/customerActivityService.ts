@@ -1,4 +1,5 @@
 import { axiosClient } from '@/api/axiosClient';
+import type { EmailIntelligenceItem } from './emailIntelligenceService';
 
 export interface BusinessTableRow {
   key: string;
@@ -71,6 +72,68 @@ export interface CustomerActivityOverview {
   cached?: boolean;
 }
 
+export interface RelationshipViewAccount {
+  name: string;
+  domain?: string;
+  city?: string;
+  industry?: string;
+  revenue?: number;
+}
+
+export interface RelationshipViewQuote {
+  id: string;
+  quoteNumber: string | null;
+  quoteName: string | null;
+  quoteStatus: string;
+  quoteAmount: number;
+  currency: string;
+  clientDetails: { companyName?: string; contactName?: string; email?: string; phone?: string } | null;
+  dealId: string | null;
+  // Additive (Phase 14c) — used by the Customer Timeline merge.
+  createdAt: string | null;
+}
+
+export interface RelationshipViewDeal {
+  id: string;
+  name: string;
+  dealStatus: string;
+  monetaryValue: number;
+  expectedClosingDate: string | null;
+  stageId: string | null;
+  // Additive (Phase 14c) — same reasoning as RelationshipViewQuote.createdAt.
+  createdAt: string | null;
+}
+
+export interface RelationshipView {
+  key: string;
+  businessName: string;
+  businessNameSource: 'account' | 'quote_client_details' | 'deal_name_heuristic';
+  account: RelationshipViewAccount | null;
+  quotes: RelationshipViewQuote[];
+  deals: RelationshipViewDeal[];
+  // Deliberately today-only — see backend plan notes (Phase 14a).
+  correlatedEmails: CorrelatedEmail[];
+}
+
+export interface CustomerTimelineEntry {
+  type: 'deal_created' | 'quote_created' | 'email';
+  date: string;
+  title: string;
+  description: string;
+}
+
+// Strict superset of RelationshipView — the Customer Timeline endpoint
+// (Phase 14c) wraps the same relationship data and adds real historical
+// email context (not just today's), a deterministic risk score, and
+// lifetime value.
+export interface CustomerTimeline extends RelationshipView {
+  emailHistory: EmailIntelligenceItem[];
+  lifetimeValue: number;
+  riskScore: number;
+  riskLabel: 'Healthy' | 'Needs Attention' | 'At Risk';
+  timeline: CustomerTimelineEntry[];
+}
+
 export const customerActivityService = {
   async getOverview(): Promise<CustomerActivityOverview> {
     const { data } = await axiosClient.get<CustomerActivityOverview>('/crm/customer-activity/overview');
@@ -91,6 +154,37 @@ export const customerActivityService = {
 
   async generatePersonalSummary(regenerate = false): Promise<CustomerActivityOverview> {
     const { data } = await axiosClient.post<CustomerActivityOverview>('/crm/customer-activity/generate-personal-summary', { regenerate });
+    return data;
+  },
+
+  // businessKey can contain arbitrary characters (spaces, "@", ":") since
+  // it's a normalized heuristic/email-derived string when no real Account
+  // is linked — always encodeURIComponent before it reaches the URL.
+  async getRelationshipView(businessKey: string): Promise<RelationshipView> {
+    const { data } = await axiosClient.get<RelationshipView>(`/crm/customer-activity/relationships/${encodeURIComponent(businessKey)}`);
+    return data;
+  },
+
+  async getPersonalRelationshipView(businessKey: string): Promise<RelationshipView> {
+    const { data } = await axiosClient.get<RelationshipView>(
+      `/crm/customer-activity/personal-relationships/${encodeURIComponent(businessKey)}`,
+    );
+    return data;
+  },
+
+  // Phase 14c — a strict superset of getRelationshipView (real historical
+  // email context, risk score, lifetime value). Route lives under the same
+  // '/crm/customer-activity' prefix even though it's served by a different
+  // backend module (EmailIntelligenceModule) — see backend plan notes.
+  async getCustomerTimeline(businessKey: string): Promise<CustomerTimeline> {
+    const { data } = await axiosClient.get<CustomerTimeline>(`/crm/customer-activity/timeline/${encodeURIComponent(businessKey)}`);
+    return data;
+  },
+
+  async getPersonalCustomerTimeline(businessKey: string): Promise<CustomerTimeline> {
+    const { data } = await axiosClient.get<CustomerTimeline>(
+      `/crm/customer-activity/personal-timeline/${encodeURIComponent(businessKey)}`,
+    );
     return data;
   },
 };

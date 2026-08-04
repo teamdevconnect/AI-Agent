@@ -30,6 +30,12 @@ const DealPerformancePage = lazy(() =>
 const MyCustomerActivityPage = lazy(() =>
   import('@/features/deal-performance/MyCustomerActivityPage').then((m) => ({ default: m.MyCustomerActivityPage })),
 );
+const BusinessKnowledgePage = lazy(() =>
+  import('@/features/business-knowledge/BusinessKnowledgePage').then((m) => ({ default: m.BusinessKnowledgePage })),
+);
+const EmailIntelligencePage = lazy(() =>
+  import('@/features/email-intelligence/EmailIntelligencePage').then((m) => ({ default: m.EmailIntelligencePage })),
+);
 const FinancePage = lazy(() => import('@/features/finance/FinancePage').then((m) => ({ default: m.FinancePage })));
 const TodoEodPage = lazy(() => import('@/features/todo-eod/TodoEodPage').then((m) => ({ default: m.TodoEodPage })));
 const ChatPage = lazy(() => import('@/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
@@ -123,6 +129,9 @@ export function AppRoutes() {
             <Route element={<RequireRole role="consultant" />}>
               <Route path={ROUTES.myCustomerActivity} element={<MyCustomerActivityPage />} />
             </Route>
+            <Route element={<RequireRole role={['owner', 'admin', 'manager']} />}>
+              <Route path={ROUTES.businessKnowledge} element={<BusinessKnowledgePage />} />
+            </Route>
             <Route element={<RequireRole role={['owner', 'admin']} />}>
               <Route path={ROUTES.finance} element={<FinancePage />} />
             </Route>
@@ -133,6 +142,7 @@ export function AppRoutes() {
             <Route path={ROUTES.profile} element={<ProfilePage />} />
 
             <Route element={<BlockRole role="agent_user" />}>
+              <Route path={ROUTES.emailIntelligence} element={<EmailIntelligencePage />} />
               <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
               <Route path={ROUTES.settings} element={<SettingsLayout />}>
                 <Route index element={<Navigate to={ROUTES.settingsGeneral} replace />} />

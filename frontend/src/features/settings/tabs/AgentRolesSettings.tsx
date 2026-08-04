@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { FiPlus, FiTrash2, FiUpload, FiX } from 'react-icons/fi';
-import { Avatar, Badge, Button, IconButton, Input, Modal, Spinner } from '@/components/ui';
+import { Avatar, Badge, Button, IconButton, Input, Modal, Spinner, StringListEditor } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { agentRolesService, type AgentRole, type AgentRoleKpi } from '@/services/agentRolesService';
 import { usersService, type AdminUser } from '@/services/usersService';
@@ -10,46 +10,6 @@ import { SettingsField, SettingsSection } from '../components/SettingsSection';
 import styles from './AgentRolesSettings.module.css';
 
 const ACCEPTED_EXTENSIONS = '.pdf,.docx,.xlsx,.xls,.csv,.html,.htm,.txt,.md';
-
-function StringListEditor({
-  label,
-  items,
-  onChange,
-}: {
-  label: string;
-  items: string[];
-  onChange: (items: string[]) => void;
-}) {
-  return (
-    <SettingsField label={label}>
-      <div className={styles.listEditor}>
-        {items.map((item, index) => (
-          <div key={index} className={styles.listEditorRow}>
-            <Input
-              value={item}
-              onChange={(e) => onChange(items.map((it, i) => (i === index ? e.target.value : it)))}
-            />
-            <IconButton
-              icon={<FiX />}
-              label="Remove"
-              size="sm"
-              onClick={() => onChange(items.filter((_, i) => i !== index))}
-            />
-          </div>
-        ))}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          leftIcon={<FiPlus />}
-          onClick={() => onChange([...items, ''])}
-        >
-          Add
-        </Button>
-      </div>
-    </SettingsField>
-  );
-}
 
 function KpiListEditor({ kpis, onChange }: { kpis: AgentRoleKpi[]; onChange: (kpis: AgentRoleKpi[]) => void }) {
   return (

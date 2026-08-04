@@ -49,6 +49,31 @@ def graph_post(path: str, access_token: str, json_body: dict) -> dict:
     return response.json()
 
 
+def reply_to_message(access_token: str, message_id: str, comment: str) -> None:
+    """Phase 14d — sends a reply to the ORIGINAL SENDER ONLY (Graph's own
+    /reply endpoint, not /replyAll) with the given comment as the reply body.
+    Graph handles recipient resolution, the "RE:" subject prefix, and
+    quoting the original message automatically — deliberately not
+    reconstructed manually via /me/sendMail. Requires the Mail.Send scope
+    (see backend/src/outlook/outlook.service.ts's GRAPH_SCOPES) — a token
+    issued before that scope was added will fail this call with a real
+    Graph permission error, which the caller should surface honestly.
+
+    Deliberately NOT built on graph_post() — Graph's /reply returns 202
+    Accepted with an empty body on success, and graph_post()'s every other
+    caller assumes response.json() always succeeds (true for /me/events,
+    which this app's only other graph_post caller targets). Calling
+    response.json() on that empty body would raise a JSON decode error and
+    misreport a genuinely successful send as a failure."""
+    response = requests.post(
+        f"{GRAPH_BASE}/me/messages/{message_id}/reply",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"comment": comment},
+        timeout=15,
+    )
+    response.raise_for_status()
+
+
 def list_recent_messages(access_token: str, top: int = 50) -> list[dict]:
     """Recent inbox messages for the RAG business sync job — includes `id`
     (needed for a deterministic Qdrant point id) alongside the fields
