@@ -1,11 +1,20 @@
 .logo {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   color: var(--color-text-primary);
 }
 
-.logo svg {
-  width: 132px;
-  height: auto;
+.mark {
+  width: 28px;
+  height: 28px;
   display: block;
+}
+
+.wordmark {
+  font-family: var(--font-sans);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: currentColor;
 }

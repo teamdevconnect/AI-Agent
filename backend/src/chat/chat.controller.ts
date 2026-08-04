@@ -11,6 +11,11 @@ import { SendMessageDto } from './dto/send-message.dto';
 export class ChatController {
   constructor(private chatService: ChatService) {}
 
+  @Get('agents')
+  listAgents(@CurrentUser() user: JwtPayload) {
+    return this.chatService.listAgents(user);
+  }
+
   @Get('conversations')
   listConversations(@CurrentUser() user: JwtPayload) {
     return this.chatService.listConversations(user.sub);
@@ -24,6 +29,9 @@ export class ChatController {
   @Post('messages')
   sendMessage(@CurrentUser() user: JwtPayload, @Req() req: Request, @Body() dto: SendMessageDto) {
     const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    return this.chatService.sendMessage(user.sub, bearerToken, dto.message, dto.conversationId);
+    // agent_user accounts only ever see one agent in the mention list anyway
+    // — default new conversations to it so they don't need to @mention.
+    const agentId = dto.agentId ?? (user.roles.includes('agent_user') ? user.assignedAgentId : undefined);
+    return this.chatService.sendMessage(user.sub, user.organizationId, bearerToken, dto.message, dto.conversationId, agentId);
   }
 }

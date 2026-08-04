@@ -9,6 +9,11 @@ interface ChatState {
   conversations: Conversation[];
   messages: Record<string, ChatMessage[]>;
   activeConversationId: string | null;
+  // Which persona (see backend/src/chat/agents.ts ids) the active
+  // conversation talks to — null is the generic assistant. Seeded from the
+  // conversation's persisted agentId on selectConversation, so reopening a
+  // Store-Manager conversation keeps using it without re-mentioning.
+  activeAgentId: string | null;
   streamingConversationId: string | null;
   isLoadingConversations: boolean;
   isLoadingMessages: boolean;
@@ -19,7 +24,7 @@ interface ChatState {
   loadConversations: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
   startNewConversation: () => void;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, agentId?: string) => Promise<void>;
   stopGeneration: () => void;
   regenerate: () => Promise<void>;
   toggleConversationFlag: (id: string, flag: 'pinned' | 'favorite' | 'archived') => Promise<void>;
@@ -42,6 +47,7 @@ function streamAssistantReply(
   workingId: string,
   prompt: string,
   isNewConversation: boolean,
+  agentId?: string,
 ) {
   const placeholderId = generateId('msg');
   set((state) => ({
@@ -63,8 +69,30 @@ function streamAssistantReply(
         set((state) => ({
           messages: {
             ...state.messages,
+            // Real text has started — clear any status/tool label so the
+            // bubble switches from "thinking" to the actual streamed reply.
             [workingId]: (state.messages[workingId] ?? []).map((m) =>
-              m.id === placeholderId ? { ...m, content: accumulated } : m,
+              m.id === placeholderId ? { ...m, content: accumulated, progressTool: undefined, statusText: undefined } : m,
+            ),
+          },
+        }));
+      },
+      onProgress: (tool) => {
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [workingId]: (state.messages[workingId] ?? []).map((m) =>
+              m.id === placeholderId ? { ...m, progressTool: tool, statusText: undefined } : m,
+            ),
+          },
+        }));
+      },
+      onStatus: (status) => {
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [workingId]: (state.messages[workingId] ?? []).map((m) =>
+              m.id === placeholderId ? { ...m, statusText: status, progressTool: undefined } : m,
             ),
           },
         }));
@@ -115,6 +143,7 @@ function streamAssistantReply(
       },
     },
     isNewConversation,
+    agentId,
   );
 
   set({ streamController: controller });
@@ -124,6 +153,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   messages: {},
   activeConversationId: null,
+  activeAgentId: null,
   streamingConversationId: null,
   isLoadingConversations: false,
   isLoadingMessages: false,
@@ -139,17 +169,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   async selectConversation(id) {
     set({ activeConversationId: id, isLoadingMessages: true });
-    const messages = await chatService.getMessages(id);
-    set((state) => ({ messages: { ...state.messages, [id]: messages }, isLoadingMessages: false }));
+    const { messages, agentId } = await chatService.getMessages(id);
+    set((state) => ({
+      messages: { ...state.messages, [id]: messages },
+      isLoadingMessages: false,
+      activeAgentId: agentId ?? null,
+    }));
   },
 
   startNewConversation() {
-    set({ activeConversationId: null });
+    set({ activeConversationId: null, activeAgentId: null });
   },
 
-  async sendMessage(text) {
-    const { activeConversationId } = get();
+  async sendMessage(text, agentId) {
+    const { activeConversationId, activeAgentId } = get();
     const isNewConversation = !activeConversationId;
+    // An explicit @mention (agentId passed in) always wins; otherwise stay
+    // on whatever persona this conversation is already sticky to.
+    const resolvedAgentId = agentId ?? activeAgentId ?? undefined;
 
     let workingId = activeConversationId;
     if (!workingId) {
@@ -171,9 +208,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Reflect the working id immediately so the UI (welcome screen vs.
       // message list) switches over even before the server responds.
       activeConversationId: workingId,
+      activeAgentId: resolvedAgentId ?? null,
     }));
 
-    streamAssistantReply(set, workingId, text, isNewConversation);
+    streamAssistantReply(set, workingId, text, isNewConversation, resolvedAgentId);
   },
 
   stopGeneration() {
@@ -181,7 +219,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   async regenerate() {
-    const { activeConversationId, messages } = get();
+    const { activeConversationId, messages, activeAgentId } = get();
     if (!activeConversationId) return;
     const list = messages[activeConversationId] ?? [];
     const lastUserMessage = [...list].reverse().find((m) => m.role === 'user');
@@ -190,7 +228,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => ({
       messages: { ...state.messages, [activeConversationId]: trimmed },
     }));
-    streamAssistantReply(set, activeConversationId, lastUserMessage.content, false);
+    streamAssistantReply(set, activeConversationId, lastUserMessage.content, false, activeAgentId ?? undefined);
   },
 
   async toggleConversationFlag(id, flag) {

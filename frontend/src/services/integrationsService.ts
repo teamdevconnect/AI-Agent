@@ -12,6 +12,8 @@ export interface OutlookAccount {
   connectedAt: string;
 }
 
+export type GmailAccount = OutlookAccount;
+
 export const integrationsService = {
   // Generic API-key-backed integrations (Anthropic, CRM) — backed by the
   // NestJS /integrations module, which stores the credential in Mongo for
@@ -51,5 +53,25 @@ export const integrationsService = {
 
   async disconnectOutlookAccount(email: string): Promise<void> {
     await axiosClient.delete(`/outlook/accounts/${encodeURIComponent(email)}`);
+  },
+
+  // Gmail mirrors Outlook's OAuth shape exactly (real Google OAuth
+  // delegated auth-code flow) — see backend/src/gmail.
+  async getGmailConnectUrl(): Promise<string> {
+    const { data } = await axiosClient.get<{ url: string }>('/gmail/connect-url');
+    return data.url;
+  },
+
+  async getGmailAccounts(): Promise<GmailAccount[]> {
+    const { data } = await axiosClient.get<GmailAccount[]>('/gmail/accounts');
+    return data;
+  },
+
+  async setActiveGmailAccount(email: string): Promise<void> {
+    await axiosClient.post(`/gmail/accounts/${encodeURIComponent(email)}/activate`);
+  },
+
+  async disconnectGmailAccount(email: string): Promise<void> {
+    await axiosClient.delete(`/gmail/accounts/${encodeURIComponent(email)}`);
   },
 };

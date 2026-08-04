@@ -1,0 +1,138 @@
+.page {
+  padding: var(--space-6);
+  overflow-y: auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.boardDateNav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.boardDateLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  min-width: 180px;
+}
+
+.calendarLayout {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.calendarPanel {
+  /* Card chrome now comes from the SectionCard wrapping MonthCalendar. */
+  flex: 0 0 320px;
+}
+
+.selectedDateTasks {
+  flex: 1;
+  min-width: 280px;
+}
+
+.taskRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+}
+
+.emptyState {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  padding: var(--space-4);
+}
+
+/* A real LLM-generated recommendation (todoEodService.getRecommendations(),
+   the forced-tool-choice recommend_next_actions call) — brought up to the
+   same "AI callout" accent-border + glow treatment used everywhere else in
+   the app for genuine AI-generated content. */
+.recommendCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-left: 3px solid var(--brand-accent-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.recommendHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.recommendTitle {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.recommendNote {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.recommendList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recommendRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+}
+
+.recommendRowHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.recommendRowTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.recommendRationale {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}

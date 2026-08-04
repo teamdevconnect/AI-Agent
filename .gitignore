@@ -10,6 +10,7 @@ npm-debug.log*
 __pycache__/
 *.py[cod]
 .venv/
+python-agent/.venv/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -18,7 +19,10 @@ venv/
 # Env / secrets
 .env
 .env.local
+.env.*
 *.local
+backend/.env
+python-agent/.env
 
 # Editor / OS
 .vscode/
@@ -29,3 +33,6 @@ Thumbs.db
 # Model / vector caches
 .cache/
 models/
+
+# MongoDB
+.mongodata/

@@ -62,11 +62,13 @@ SPEC = {
 _LIST_DEFAULT_FIELDS = ["name", "first_name", "last_name", "email", "phone", "tags", "stage_id", "date_created"]
 
 
-def _fetch_raw_contacts(*, search_after=0, limit=50, search_text="", fields=None) -> dict:
+def _fetch_raw_contacts(*, search_after=0, limit=50, search_text="", fields=None, organization_id=None) -> dict:
     """Parsed {"count", "data"} from /contact/search/contact — used by run()
     (list action) and by the RAG business sync job, which needs individual
-    contact records rather than a pre-stringified blob."""
-    base_url, api_key = prospectconnect.resolve_credentials()
+    contact records rather than a pre-stringified blob. organization_id is
+    None for the sync job (not yet org-scoped), matching the .env-fallback
+    behavior it always had."""
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id)
     if not base_url or not api_key:
         return {"count": 0, "data": []}
     payload = {
@@ -82,7 +84,8 @@ def _fetch_raw_contacts(*, search_after=0, limit=50, search_text="", fields=None
 
 def run(tool_input: dict, context: dict) -> str:
     action = tool_input.get("action", "upsert")
-    base_url, api_key = prospectconnect.resolve_credentials()
+    organization_id = context.get("organization_id")
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id, context.get("user_id", ""))
 
     if not base_url or not api_key:
         return "No CRM is connected yet. Ask the user to connect one via the Integrations page."
@@ -99,6 +102,7 @@ def run(tool_input: dict, context: dict) -> str:
             limit=tool_input.get("limit", 50),
             search_text=tool_input.get("search_text") or "",
             fields=tool_input.get("fields"),
+            organization_id=organization_id,
         ))
 
     data = {

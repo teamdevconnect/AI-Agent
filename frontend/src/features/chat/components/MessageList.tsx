@@ -4,16 +4,14 @@ import { FiArrowDown } from 'react-icons/fi';
 import { IconButton, Skeleton } from '@/components/ui';
 import type { ChatMessage } from '@/types';
 import { MessageBubble } from './MessageBubble';
-import { TypingIndicator } from './TypingIndicator';
 import styles from '../ChatPage.module.css';
 
 export interface MessageListProps {
   messages: ChatMessage[];
   isLoading: boolean;
-  showTypingIndicator: boolean;
 }
 
-export function MessageList({ messages, isLoading, showTypingIndicator }: MessageListProps) {
+export function MessageList({ messages, isLoading }: MessageListProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [atBottom, setAtBottom] = useState(true);
 
@@ -47,7 +45,7 @@ export function MessageList({ messages, isLoading, showTypingIndicator }: Messag
         atBottomStateChange={setAtBottom}
         components={{
           Header: () => <div style={{ height: 'var(--space-6)' }} />,
-          Footer: () => (showTypingIndicator ? <TypingIndicator /> : <div style={{ height: 'var(--space-6)' }} />),
+          Footer: () => <div style={{ height: 'var(--space-6)' }} />,
         }}
         itemContent={(index, message) => (
           <div className={styles.messagesInner} style={{ paddingTop: 0, paddingBottom: 'var(--space-5)' }}>

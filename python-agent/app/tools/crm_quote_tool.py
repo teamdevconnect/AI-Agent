@@ -40,10 +40,10 @@ def _trim(quote: dict) -> dict:
     return {k: quote[k] for k in _KEEP_FIELDS if k in quote}
 
 
-def _fetch_raw_quotes(*, limit=25, search="", start_after=0, deal_id=None) -> dict:
+def _fetch_raw_quotes(*, limit=25, search="", start_after=0, deal_id=None, organization_id=None) -> dict:
     """Parsed, trimmed {"count", "quotes"} — used by run() and by the RAG
     business sync job."""
-    base_url, api_key = prospectconnect.resolve_credentials()
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id)
     if not base_url or not api_key:
         return {"count": 0, "quotes": []}
 
@@ -57,7 +57,8 @@ def _fetch_raw_quotes(*, limit=25, search="", start_after=0, deal_id=None) -> di
 
 
 def run(tool_input: dict, context: dict) -> str:
-    base_url, api_key = prospectconnect.resolve_credentials()
+    organization_id = context.get("organization_id")
+    base_url, api_key = prospectconnect.resolve_credentials(organization_id, context.get("user_id", ""))
     if not base_url or not api_key:
         return "No CRM is connected yet. Ask the user to connect one via the Integrations page."
 
@@ -67,6 +68,7 @@ def run(tool_input: dict, context: dict) -> str:
             search=tool_input.get("search") or "",
             start_after=tool_input.get("start_after", 0),
             deal_id=tool_input.get("deal_id"),
+            organization_id=organization_id,
         )
     except requests.RequestException as exc:
         response = getattr(exc, "response", None)

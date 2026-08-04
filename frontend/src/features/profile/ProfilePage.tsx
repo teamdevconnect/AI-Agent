@@ -31,7 +31,7 @@ export function ProfilePage() {
           </div>
           <div className={styles.email}>{user.email}</div>
         </div>
-        <Badge variant="accent">{user.role}</Badge>
+        <Badge variant="accent">{user.roles.join(', ')}</Badge>
       </Card>
 
       <div className={styles.quickLinks}>

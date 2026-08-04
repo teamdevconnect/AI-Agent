@@ -25,6 +25,13 @@ export interface ChatMessage {
   feedback?: FeedbackVote;
   editedAt?: string;
   model?: string;
+  /** Name of the tool currently running, while status is 'streaming' and no
+   * text has arrived yet — drives the "thinking" bubble's label. */
+  progressTool?: string;
+  /** Higher-level status text (planning/delegating/reflecting — see
+   * agentLabels.ts) shown instead of progressTool's tool-level label when
+   * present; cleared once real text starts streaming. */
+  statusText?: string;
 }
 
 export type ConversationGroupKey = 'today' | 'yesterday' | 'lastWeek' | 'older';
@@ -40,6 +47,17 @@ export interface Conversation {
   agentId?: string;
   messageCount: number;
   preview?: string;
+}
+
+// The two real, backend-defined chat personas (Store Manager / Sales
+// Consultant) — deliberately lighter than `Agent` below, which was built
+// for an unrelated mock "agent builder" feature and carries fields
+// (model/personality/knowledgeSources/...) this real endpoint never returns.
+export interface ChatAgent {
+  id: string;
+  name: string;
+  description: string;
+  avatarColor: string;
 }
 
 export interface Agent {

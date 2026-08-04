@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 
-interface IngestResult {
+export interface IngestResult {
   document_id: string;
   chunks: number;
   status: string;

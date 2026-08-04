@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useNotificationsStore } from '@/stores/notificationsStore';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import styles from './AppLayout.module.css';
@@ -13,6 +14,15 @@ export function AppLayout() {
   useEffect(() => {
     if (!isMobile) setMobileSidebarOpen(false);
   }, [isMobile]);
+
+  // Fetches existing notifications and subscribes to live push as soon as
+  // any authenticated page mounts — not just when the user opens the
+  // Notifications page — so the TopBar's unread dot (see TopBar.tsx) is
+  // accurate app-wide, and proactive AI notifications (app.workflows in
+  // python-agent) arrive live without a manual refresh.
+  useEffect(() => {
+    useNotificationsStore.getState().init();
+  }, []);
 
   if (!isMobile) {
     return (

@@ -4,7 +4,8 @@ export interface User {
   firstName: string;
   lastName: string;
   company?: string;
-  role: 'owner' | 'admin' | 'member';
+  roles: string[];
+  assignedAgentId?: string;
   avatarUrl?: string;
   timezone?: string;
   language?: string;

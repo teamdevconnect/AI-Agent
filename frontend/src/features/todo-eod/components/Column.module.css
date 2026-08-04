@@ -1,0 +1,40 @@
+.column {
+  display: flex;
+  flex-direction: column;
+  min-width: 280px;
+  flex: 1;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.dropArea {
+  flex: 1;
+  min-height: 80px;
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+}
+
+.dropAreaOver {
+  background: var(--color-bg-surface);
+}
+
+.empty {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  padding: var(--space-3);
+  text-align: center;
+}

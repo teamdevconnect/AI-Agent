@@ -6,4 +6,6 @@ export interface NavItem {
   path: string;
   icon: IconType;
   badge?: number;
+  // Only agent_user ever populates this — admin/legacy user roles always see everything.
+  hideForRoles?: string[];
 }

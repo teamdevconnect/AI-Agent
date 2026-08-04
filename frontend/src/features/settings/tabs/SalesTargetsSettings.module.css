@@ -1,0 +1,45 @@
+.monthInput {
+  height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--text-md);
+}
+
+.targetList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.targetRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.targetInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.targetName {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.amountField {
+  width: 200px;
+  flex-shrink: 0;
+}

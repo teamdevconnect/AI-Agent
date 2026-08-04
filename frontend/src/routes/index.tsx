@@ -3,6 +3,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/layouts/AppLayout/AppLayout';
 import { AuthLayout } from '@/layouts/AuthLayout/AuthLayout';
 import { ProtectedRoute, PublicOnlyRoute } from './ProtectedRoute';
+import { RequireRole } from './RequireRole';
+import { BlockRole } from './BlockRole';
 import { Spinner } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 
@@ -12,6 +14,24 @@ const ForgotPasswordPage = lazy(() =>
   import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
 );
 
+const DashboardRouterPage = lazy(() =>
+  import('@/features/business-dashboard/DashboardRouterPage').then((m) => ({ default: m.DashboardRouterPage })),
+);
+const AgentWorkforceDashboardPage = lazy(() =>
+  import('@/features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
+);
+const TimelinePage = lazy(() => import('@/features/timeline/TimelinePage').then((m) => ({ default: m.TimelinePage })));
+const CommandCenterPage = lazy(() =>
+  import('@/features/command-center/CommandCenterPage').then((m) => ({ default: m.CommandCenterPage })),
+);
+const DealPerformancePage = lazy(() =>
+  import('@/features/deal-performance/DealPerformancePage').then((m) => ({ default: m.DealPerformancePage })),
+);
+const MyCustomerActivityPage = lazy(() =>
+  import('@/features/deal-performance/MyCustomerActivityPage').then((m) => ({ default: m.MyCustomerActivityPage })),
+);
+const FinancePage = lazy(() => import('@/features/finance/FinancePage').then((m) => ({ default: m.FinancePage })));
+const TodoEodPage = lazy(() => import('@/features/todo-eod/TodoEodPage').then((m) => ({ default: m.TodoEodPage })));
 const ChatPage = lazy(() => import('@/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
 const IntegrationsPage = lazy(() =>
   import('@/features/integrations/IntegrationsPage').then((m) => ({ default: m.IntegrationsPage })),
@@ -30,6 +50,21 @@ const NotificationSettings = lazy(() =>
 );
 const SecuritySettings = lazy(() =>
   import('@/features/settings/tabs/SecuritySettings').then((m) => ({ default: m.SecuritySettings })),
+);
+const AgentRolesSettings = lazy(() =>
+  import('@/features/settings/tabs/AgentRolesSettings').then((m) => ({ default: m.AgentRolesSettings })),
+);
+const UsersSettings = lazy(() =>
+  import('@/features/settings/tabs/UsersSettings').then((m) => ({ default: m.UsersSettings })),
+);
+const SalesTargetsSettings = lazy(() =>
+  import('@/features/settings/tabs/SalesTargetsSettings').then((m) => ({ default: m.SalesTargetsSettings })),
+);
+const DealAssignmentSettings = lazy(() =>
+  import('@/features/settings/tabs/DealAssignmentSettings').then((m) => ({ default: m.DealAssignmentSettings })),
+);
+const WorkflowsSettings = lazy(() =>
+  import('@/features/settings/tabs/WorkflowsSettings').then((m) => ({ default: m.WorkflowsSettings })),
 );
 
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
@@ -76,17 +111,42 @@ export function AppRoutes() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route index element={<Navigate to={ROUTES.chat} replace />} />
+            <Route path={ROUTES.dashboard} element={<DashboardRouterPage />} />
+            <Route path={ROUTES.agentActivity} element={<AgentWorkforceDashboardPage />} />
+            <Route path={ROUTES.timeline} element={<TimelinePage />} />
+            <Route element={<RequireRole role="admin" />}>
+              <Route path={ROUTES.commandCenter} element={<CommandCenterPage />} />
+            </Route>
+            <Route element={<RequireRole role={['owner', 'admin', 'manager']} />}>
+              <Route path={ROUTES.dealPerformance} element={<DealPerformancePage />} />
+            </Route>
+            <Route element={<RequireRole role="consultant" />}>
+              <Route path={ROUTES.myCustomerActivity} element={<MyCustomerActivityPage />} />
+            </Route>
+            <Route element={<RequireRole role={['owner', 'admin']} />}>
+              <Route path={ROUTES.finance} element={<FinancePage />} />
+            </Route>
+            <Route path={ROUTES.todoEod} element={<TodoEodPage />} />
             <Route path={ROUTES.chat} element={<ChatPage />} />
             <Route path={`${ROUTES.chat}/:conversationId`} element={<ChatPage />} />
-            <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
             <Route path={ROUTES.notifications} element={<NotificationsPage />} />
             <Route path={ROUTES.profile} element={<ProfilePage />} />
 
-            <Route path={ROUTES.settings} element={<SettingsLayout />}>
-              <Route index element={<Navigate to={ROUTES.settingsGeneral} replace />} />
-              <Route path="general" element={<GeneralSettings />} />
-              <Route path="notifications" element={<NotificationSettings />} />
-              <Route path="security" element={<SecuritySettings />} />
+            <Route element={<BlockRole role="agent_user" />}>
+              <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
+              <Route path={ROUTES.settings} element={<SettingsLayout />}>
+                <Route index element={<Navigate to={ROUTES.settingsGeneral} replace />} />
+                <Route path="general" element={<GeneralSettings />} />
+                <Route path="notifications" element={<NotificationSettings />} />
+                <Route path="security" element={<SecuritySettings />} />
+                <Route path="agent-roles" element={<AgentRolesSettings />} />
+                <Route element={<RequireRole role="admin" />}>
+                  <Route path="users" element={<UsersSettings />} />
+                  <Route path="sales-targets" element={<SalesTargetsSettings />} />
+                  <Route path="deal-assignment" element={<DealAssignmentSettings />} />
+                  <Route path="workflows" element={<WorkflowsSettings />} />
+                </Route>
+              </Route>
             </Route>
           </Route>
         </Route>

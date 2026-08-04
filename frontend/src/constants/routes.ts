@@ -3,6 +3,14 @@ export const ROUTES = {
   register: '/register',
   forgotPassword: '/forgot-password',
 
+  dashboard: '/dashboard',
+  agentActivity: '/agent-activity',
+  timeline: '/timeline',
+  commandCenter: '/command-center',
+  dealPerformance: '/deal-performance',
+  myCustomerActivity: '/my-customer-activity',
+  finance: '/finance',
+  todoEod: '/todo-eod',
   chat: '/chat',
   chatConversation: (id: string) => `/chat/${id}`,
   integrations: '/integrations',
@@ -12,6 +20,11 @@ export const ROUTES = {
   settingsGeneral: '/settings/general',
   settingsNotifications: '/settings/notifications',
   settingsSecurity: '/settings/security',
+  settingsAgentRoles: '/settings/agent-roles',
+  settingsUsers: '/settings/users',
+  settingsSalesTargets: '/settings/sales-targets',
+  settingsDealAssignment: '/settings/deal-assignment',
+  settingsWorkflows: '/settings/workflows',
 
   profile: '/profile',
 } as const;

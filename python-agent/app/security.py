@@ -9,6 +9,16 @@ def get_current_user(request: Request) -> dict:
 
     The agent is never openly callable: every route depends on this so a
     request without a valid backend-issued token is rejected here too.
+
+    The backend now mints tokens with an `organizationId` claim (multi-tenant
+    Phase 1) alongside the required `sub` — it flows through here unchanged
+    since this returns the whole payload dict, so any route/tool that later
+    needs to scope a query by tenant (CRM, documents, memory — see the
+    roadmap's Phase 2+) can read `user["organizationId"]` with no security.py
+    change needed. Short-lived internal tokens (e.g. the ones NestJS mints for
+    the scheduled morning/EOD job, `{"sub": userId}`) have no organizationId —
+    treat it as optional (`user.get("organizationId")`), never required, when
+    consuming it.
     """
     header = request.headers.get("authorization", "")
     if not header.lower().startswith("bearer "):

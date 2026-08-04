@@ -10,6 +10,7 @@ import { formatMessageTime } from '@/utils/date';
 import { useAuthStore } from '@/stores/authStore';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@/types';
+import { toolLabel } from '../toolLabels';
 import { CodeBlock } from './CodeBlock';
 import styles from './MessageBubble.module.css';
 
@@ -30,6 +31,7 @@ export function MessageBubble({ message, isLast }: MessageBubbleProps) {
 
   const isUser = message.role === 'user';
   const showCursor = message.status === 'streaming' && isLast;
+  const isThinking = message.status === 'streaming' && !message.content;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -78,6 +80,15 @@ export function MessageBubble({ message, isLast }: MessageBubbleProps) {
                 Save &amp; Submit
               </Button>
             </div>
+          </div>
+        ) : isThinking ? (
+          <div className={clsx(styles.bubble, styles.bubbleAssistant, styles.bubbleThinking)}>
+            <span className={styles.thinkingDots}>
+              <span className={styles.thinkingDot} />
+              <span className={styles.thinkingDot} />
+              <span className={styles.thinkingDot} />
+            </span>
+            <span className={styles.thinkingLabel}>{message.statusText ?? toolLabel(message.progressTool)}</span>
           </div>
         ) : (
           <div className={clsx(styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant)}>

@@ -24,6 +24,7 @@ import { useChatStore, type ConversationFilter } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from '@/constants/navigation';
 import { ROUTES } from '@/constants/routes';
+import { hasRole } from '@/utils/roles';
 import { getConversationGroup, CONVERSATION_GROUP_LABELS, type ConversationGroupKey } from '@/utils/date';
 import type { Conversation } from '@/types';
 import styles from './Sidebar.module.css';
@@ -87,6 +88,9 @@ export function Sidebar() {
     }
     return groups;
   }, [filtered]);
+
+  const visiblePrimaryNav = PRIMARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
+  const visibleSecondaryNav = SECONDARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
 
   const handleNewChat = () => {
     startNewConversation();
@@ -236,7 +240,7 @@ export function Sidebar() {
       </div>
 
       <nav className={styles.navSection}>
-        {PRIMARY_NAV_ITEMS.map((item) => (
+        {visiblePrimaryNav.map((item) => (
           <NavLink
             key={item.id}
             to={item.path}
@@ -246,7 +250,7 @@ export function Sidebar() {
             {!collapsed && item.label}
           </NavLink>
         ))}
-        {SECONDARY_NAV_ITEMS.map((item) => (
+        {visibleSecondaryNav.map((item) => (
           <NavLink
             key={item.id}
             to={item.path}

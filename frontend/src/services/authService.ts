@@ -21,6 +21,7 @@ interface BackendUserProfile {
   email: string;
   name: string;
   roles: string[];
+  assignedAgentId?: string;
 }
 
 function toUser(profile: BackendUserProfile): User {
@@ -30,7 +31,8 @@ function toUser(profile: BackendUserProfile): User {
     email: profile.email,
     firstName: firstName || profile.email,
     lastName: rest.join(' '),
-    role: (profile.roles?.[0] as User['role']) ?? 'member',
+    roles: profile.roles ?? [],
+    assignedAgentId: profile.assignedAgentId,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     language: 'en-US',
     createdAt: new Date().toISOString(),
@@ -59,6 +61,10 @@ export const authService = {
       email: payload.email,
       password: payload.password,
       name: `${payload.firstName} ${payload.lastName}`.trim(),
+      // Registration now always creates a new organization (multi-tenant
+      // Phase 1) with this user as its owner — the form already collects
+      // "Company", it just wasn't being sent before.
+      organizationName: payload.company,
     });
     const profile = await fetchProfile(data.accessToken);
     return { user: toUser(profile), accessToken: data.accessToken, refreshToken: '', expiresAt: '' };
