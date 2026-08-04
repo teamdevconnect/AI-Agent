@@ -20,7 +20,7 @@ const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const rxjs_1 = require("rxjs");
 const outlook_connection_schema_1 = require("./schemas/outlook-connection.schema");
-const GRAPH_SCOPES = 'offline_access User.Read Mail.Read Calendars.Read Contacts.Read';
+const GRAPH_SCOPES = 'offline_access User.Read Mail.Read Mail.Send Calendars.Read Contacts.Read';
 let OutlookService = class OutlookService {
     constructor(config, http, connectionModel) {
         this.config = config;

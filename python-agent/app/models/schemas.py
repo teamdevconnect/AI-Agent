@@ -56,6 +56,34 @@ class FinanceBankDetails(BaseModel):
     accountHolderName: str | None = None
 
 
+class BusinessProfileSyncResponse(BaseModel):
+    documentId: str
+    chunkCount: int
+
+
+class EmailAnalysisResponse(BaseModel):
+    intent: str
+    priority: str
+    urgency: str
+    sentiment: str
+    recommendedAction: str
+    shouldDraft: bool
+    draftReply: str | None = None
+    draftReasoning: str | None = None
+
+
+class BusinessDocumentExtractResponse(BaseModel):
+    vectorDocumentId: str
+    vectorChunkCount: int
+    title: str
+    assetType: str
+    summary: str
+    keyTopics: list[str] = []
+    extractedEntities: dict = {}
+    missingFields: list[str] = []
+    inconsistencyNotes: list[str] = []
+
+
 class FinanceExtractResponse(BaseModel):
     vectorDocumentId: str
     vectorChunkCount: int

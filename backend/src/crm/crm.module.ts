@@ -86,5 +86,8 @@ import { SalesTargetController } from './sales-target.controller';
     DealPerformancePresetService,
     CustomerActivityService,
   ],
+  // CustomerActivityService.gatherCorrelationContext (Phase 14b) is consumed
+  // by EmailIntelligenceModule — this is CrmModule's first export.
+  exports: [CustomerActivityService],
 })
 export class CrmModule {}

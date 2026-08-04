@@ -47,3 +47,29 @@ def retrieve_finance_documents_as_context(query: str, organization_id: str, top_
     if not hits:
         return ""
     return "\n\n".join(f"[{h['filename']}] {h['text']}" for h in hits)
+
+
+def _business_knowledge_filter(organization_id: str) -> qmodels.Filter:
+    # Org-wide, not per-uploader-private — same reasoning as
+    # _finance_document_filter above: a catalog/SOP/business profile is an
+    # organizational asset multiple people in one org legitimately need.
+    return qmodels.Filter(
+        must=[
+            qmodels.FieldCondition(
+                key="source_type",
+                match=qmodels.MatchAny(any=["business_knowledge_document", "business_profile"]),
+            ),
+            qmodels.FieldCondition(key="organization_id", match=qmodels.MatchValue(value=organization_id)),
+        ]
+    )
+
+
+def retrieve_business_knowledge(query: str, organization_id: str, top_k: int = 5) -> list[dict]:
+    return hybrid_search.search(query, _business_knowledge_filter(organization_id), top_k=top_k)
+
+
+def retrieve_business_knowledge_as_context(query: str, organization_id: str, top_k: int = 5) -> str:
+    hits = retrieve_business_knowledge(query, organization_id, top_k=top_k)
+    if not hits:
+        return ""
+    return "\n\n".join(f"[{h['filename']}] {h['text']}" for h in hits)

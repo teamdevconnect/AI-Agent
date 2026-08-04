@@ -309,10 +309,13 @@ expenseCategory using a short, human-readable label (e.g. "Software", "Travel", 
 force-fit into a closed list. Always call extract_finance_document exactly once."""
 
 
-def _run_finance_extraction(user_content: list[dict]) -> dict:
-    """Shared forced-tool-choice call for both extraction paths below — same
-    retry-once-then-raise shape as extract_role, but accepts content blocks
-    (not just a string) since the native vision/PDF path needs them."""
+def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: list[dict]) -> dict:
+    """Shared forced-tool-choice call — same retry-once-then-raise shape as
+    extract_role, but accepts content blocks (not just a string) since the
+    native vision/PDF path needs them. Generalized from the original
+    finance-only _run_finance_extraction once Business Knowledge document
+    extraction (Phase 14a) became a second real consumer of the identical
+    shape — pure DRY, zero behavior change for Finance's existing calls."""
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
@@ -323,9 +326,9 @@ def _run_finance_extraction(user_content: list[dict]) -> dict:
             response = _client(api_key).messages.create(
                 model=settings.anthropic_model,
                 max_tokens=8192,
-                system=FINANCE_EXTRACTION_SYSTEM_PROMPT,
-                tools=[FINANCE_EXTRACTION_TOOL],
-                tool_choice={"type": "tool", "name": "extract_finance_document"},
+                system=system_prompt,
+                tools=[tool],
+                tool_choice={"type": "tool", "name": tool["name"]},
                 messages=[{"role": "user", "content": user_content}],
             )
             block = next((b for b in response.content if b.type == "tool_use"), None)
@@ -334,7 +337,11 @@ def _run_finance_extraction(user_content: list[dict]) -> dict:
             return block.input
         except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
             last_error = exc
-    raise RuntimeError(f"Finance document extraction failed after retry: {last_error}")
+    raise RuntimeError(f"{tool['name']} extraction failed after retry: {last_error}")
+
+
+def _run_finance_extraction(user_content: list[dict]) -> dict:
+    return _run_forced_tool_extraction(FINANCE_EXTRACTION_SYSTEM_PROMPT, FINANCE_EXTRACTION_TOOL, user_content)
 
 
 def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
@@ -358,6 +365,83 @@ def extract_finance_document_from_text(document_text: str, filename: str) -> dic
     already gives pandas-clean structured text for them at zero extra cost."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
     return _run_finance_extraction(content)
+
+
+BUSINESS_DOCUMENT_EXTRACTION_TOOL = {
+    "name": "extract_business_document",
+    "description": "Return a structured summary/classification of the supplied business knowledge document.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "A short, human-readable title for this document."},
+            "assetType": {
+                "type": "string",
+                "enum": [
+                    "product_catalog", "brochure", "quotation", "price_list", "agreement",
+                    "vendor_document", "company_profile", "sales_deck", "marketing_material",
+                    "brand_guideline", "internal_manual", "other",
+                ],
+            },
+            "summary": {"type": "string", "description": "2-4 sentence synthesis of what this document contains and why it matters."},
+            "keyTopics": {"type": "array", "items": {"type": "string"}},
+            "extractedEntities": {
+                "type": "object",
+                "description": (
+                    "Concrete named entities/figures actually present (product names, SKUs, "
+                    "prices, dates, contacts, vendor names) — only what is explicitly stated, "
+                    "never inferred."
+                ),
+            },
+            "missingFields": {"type": "array", "items": {"type": "string"}},
+            "inconsistencyNotes": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["title", "assetType", "summary", "keyTopics", "missingFields", "inconsistencyNotes"],
+    },
+}
+
+# A deliberate hybrid of ROLE_EXTRACTION's "always infer, never refuse" and
+# FINANCE_EXTRACTION's "never fabricate a figure" — this task mixes two
+# genuinely different kinds of output. Classifying/titling/summarizing a
+# document is a judgment call with no ground truth to fabricate against, so
+# those fields always get a confident best answer. But any concrete fact
+# reported in extractedEntities (a price, date, SKU, contact) is exactly as
+# harmful to hallucinate here as in a finance document, since chat personas
+# may quote it back to a real customer.
+BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT = """You are summarizing and classifying a business \
+knowledge asset (product catalog, brochure, price list, sales deck, brand guideline, SOP, vendor \
+document, or similar company material) so it can be indexed for retrieval by the company's AI \
+assistants. This is a hybrid task: classifying the document and writing its title/summary/ \
+keyTopics calls for your own reasonable judgment — always produce a confident answer, picking \
+the closest-fitting assetType even for an ambiguous document, never refuse or leave these blank. \
+But any concrete fact you report in extractedEntities (a price, date, SKU, contact, policy \
+number) must come directly from the document — never invent or guess a figure or identifier. \
+Flag anything a document of this type would normally include but doesn't state in missingFields, \
+and any internal contradiction (e.g. two different prices for the same item) in \
+inconsistencyNotes. Always call extract_business_document exactly once."""
+
+
+def _run_business_document_extraction(user_content: list[dict]) -> dict:
+    return _run_forced_tool_extraction(BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT, BUSINESS_DOCUMENT_EXTRACTION_TOOL, user_content)
+
+
+def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+    """PDF/image-native path — identical construction to extract_finance_document,
+    reusing the same base64 content-block approach for scanned/image documents."""
+    block_type = "image" if mime_type.startswith("image/") else "document"
+    content = [
+        {
+            "type": block_type,
+            "source": {"type": "base64", "media_type": mime_type, "data": base64.standard_b64encode(file_bytes).decode()},
+        },
+        {"type": "text", "text": f"Summarize and classify '{filename}' using the extract_business_document tool."},
+    ]
+    return _run_business_document_extraction(content)
+
+
+def extract_business_document_from_text(document_text: str, filename: str) -> dict:
+    """Text path for spreadsheet/already-text formats — mirrors extract_finance_document_from_text."""
+    content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
+    return _run_business_document_extraction(content)
 
 
 REPORT_EXTRACTION_TOOL = {
@@ -943,3 +1027,84 @@ def analyze_finance_activity(payload: dict) -> dict:
     raise RuntimeError(f"Finance activity analysis failed after retry: {last_error}")
 
     return _normalize_response(response)
+
+
+EMAIL_INTENT_TOOL = {
+    "name": "analyze_email",
+    "description": "Classify one inbound email and, when appropriate, draft a reply — using only the CRM/business context actually supplied.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "intent": {
+                "type": "string",
+                "enum": [
+                    "new_enquiry", "existing_customer", "quotation_request", "price_negotiation",
+                    "complaint", "technical_support", "payment", "purchase_order", "vendor",
+                    "refund", "meeting_request", "escalation", "internal", "spam", "other",
+                ],
+            },
+            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+            "urgency": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+            "sentiment": {"type": "string", "enum": ["positive", "neutral", "negative", "frustrated"]},
+            "recommendedAction": {"type": "string", "description": "One or two sentences: exactly what the salesperson should do next."},
+            "shouldDraft": {
+                "type": "boolean",
+                "description": (
+                    "True only for new_enquiry, existing_customer, quotation_request, "
+                    "price_negotiation, complaint, technical_support, meeting_request. Always false otherwise."
+                ),
+            },
+            "draftReply": {"type": ["string", "null"]},
+            "draftReasoning": {
+                "type": ["string", "null"],
+                "description": "Required (non-null) whenever shouldDraft is true; null otherwise.",
+            },
+        },
+        "required": ["intent", "priority", "urgency", "sentiment", "recommendedAction", "shouldDraft", "draftReply", "draftReasoning"],
+    },
+}
+
+# The pricing constraint below exists because this organization has no
+# cost/margin data configured anywhere yet (Phase 14b explicitly defers
+# quotation pricing intelligence) — any specific price/discount/margin this
+# model produced would be fabricated, not derived from real data.
+EMAIL_INTENT_SYSTEM_PROMPT = """You are triaging one inbound email for a salesperson, using only the \
+CRM/business context that has already been deterministically gathered and supplied — never invent a \
+customer fact, quote amount, deal detail, or company name not present in the input. The input's \
+correlation.matchConfidence field ('exact', 'domain', 'fuzzy', or 'none') tells you how sure the system \
+is that this sender belongs to a known business: treat 'exact' as fact, hedge 'fuzzy' explicitly \
+(e.g. "this may be related to...") in recommendedAction/draftReply, and treat the sender as unknown \
+whenever matchConfidence is 'none' or businessContext is null.
+
+Classify intent using: new_enquiry, existing_customer, quotation_request, price_negotiation, complaint, \
+technical_support, payment, purchase_order, vendor, refund, meeting_request, escalation, internal, spam, \
+other. Set shouldDraft true ONLY for new_enquiry, existing_customer, quotation_request, \
+price_negotiation, complaint, technical_support, meeting_request. Always set shouldDraft false for \
+payment, purchase_order, vendor, refund, internal, spam, other, and escalation (escalations need a human \
+decision first, not an AI-authored reply).
+
+Critical pricing constraint: for quotation_request or price_negotiation, you may cite the customer's \
+real previous quotes if supplied (amount, quote number, status) as factual context, but you must NEVER \
+propose, imply, or draft a specific new price, discount percentage, or margin — this organization has no \
+cost/margin data configured yet, so any such number would be fabricated. recommendedAction and any draft \
+must instead direct the salesperson to follow up personally on pricing, while still being helpful about \
+scope/timeline/acknowledging the request.
+
+businessKnowledgeContext, when non-empty, is real company knowledge (policies, FAQs, product info) — use \
+it to make a draft more accurate, but its absence is not a reason to leave a draft generic if the email \
+itself gives you enough to work with. draftReply, when present, should be ready to send with only light \
+editing, matching the email's own tone, never inventing commitments (dates, prices, guarantees) beyond \
+what's supplied. Always call analyze_email exactly once."""
+
+
+def analyze_email(payload: dict) -> dict:
+    """One-shot forced-tool-choice classification+draft pass for Phase 14b —
+    reuses _run_forced_tool_extraction (already generalized in Phase 14a for
+    exactly this system_prompt/tool/user_content shape), operating on one
+    email plus its deterministically-gathered CRM correlation context (see
+    backend/src/email-intelligence/email-intelligence.service.ts)."""
+    return _run_forced_tool_extraction(
+        EMAIL_INTENT_SYSTEM_PROMPT,
+        EMAIL_INTENT_TOOL,
+        [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(payload, default=str)[:40000]}"}],
+    )

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -47,5 +47,27 @@ export class CustomerActivityController {
   @Roles('consultant')
   generatePersonalSummary(@CurrentUser() user: JwtPayload, @Body() body: { regenerate?: boolean }) {
     return this.customerActivityService.generatePersonalSummary(user, body?.regenerate ?? false);
+  }
+
+  // Phase 14a relationship view — same RBAC/store-scoping pattern as
+  // `overview` above. businessKey is a Deal.accountId or a normalized
+  // heuristic/email-derived string (see customer-grouping.util.ts) — the
+  // frontend must encodeURIComponent it since it can contain arbitrary
+  // characters (spaces, "@", ":").
+  @Get('relationships/:businessKey')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin', 'manager')
+  relationships(@CurrentUser() user: JwtPayload, @Param('businessKey') businessKey: string, @Query('storeId') storeIdOverride?: string) {
+    const canOverride = user.roles.includes('admin') || user.roles.includes('owner');
+    const storeConstraint = canOverride ? storeIdOverride : user.storeId;
+    return this.customerActivityService.getRelationshipView(user, businessKey, storeConstraint);
+  }
+
+  // Consultant-only, always self-scoped — mirrors personal-overview above.
+  @Get('personal-relationships/:businessKey')
+  @UseGuards(RolesGuard)
+  @Roles('consultant')
+  personalRelationships(@CurrentUser() user: JwtPayload, @Param('businessKey') businessKey: string) {
+    return this.customerActivityService.getPersonalRelationshipView(user, businessKey);
   }
 }

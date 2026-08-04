@@ -1,5 +1,5 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -21,6 +21,14 @@ import {
   CustomerActivityPersonalSummary,
   CustomerActivityPersonalSummaryDocument,
 } from './schemas/customer-activity-personal-summary.schema';
+import {
+  BusinessGroup,
+  EmailCorrelationContext,
+  buildBusinessGroups,
+  groupKeyFor,
+  normalizeKey,
+  quoteGroupKey,
+} from './customer-grouping.util';
 
 export interface TodaysEmail {
   id: string;
@@ -39,32 +47,7 @@ export interface CorrelatedEmail extends TodaysEmail {
   matchedBusinessName: string;
 }
 
-type BusinessNameSource = 'account' | 'quote_client_details' | 'deal_name_heuristic';
-
-interface BusinessGroup {
-  key: string;
-  businessName: string;
-  businessNameSource: BusinessNameSource;
-  contactEmail?: string;
-  accountDomain?: string;
-  deals: DealDocument[];
-  quotes: QuoteDocument[];
-}
-
 const FOLLOW_UP_WINDOW_DAYS = 7;
-
-// Best-effort business-name extraction from a native/synced Deal.name string
-// (e.g. "Noble hospital - Uniforms") when no real Account is linked — labeled
-// businessNameSource: 'deal_name_heuristic' everywhere it's used, never
-// presented as equally authoritative to a real Account/clientDetails name.
-function heuristicBusinessName(dealName: string): string {
-  const match = /^(.+?)\s*[-–:]\s*.+$/.exec(dealName);
-  return (match ? match[1] : dealName).trim();
-}
-
-function normalizeKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
-}
 
 // today's calendar-day boundary in a given IANA timezone — mirrors
 // store-settings.service.ts's scheduledInstant() en-CA formatting approach
@@ -286,7 +269,8 @@ export class CustomerActivityService {
       accounts.filter((a) => a.domain).map((a): [string, string] => [a._id.toString(), a.domain!]),
     );
 
-    const groups = this.buildBusinessGroups(deals, scopedQuotes, accountNameById, accountDomainById);
+    const groups = buildBusinessGroups(deals, scopedQuotes, accountNameById, accountDomainById);
+    const accountsById = new Map(accounts.map((a): [string, AccountDocument] => [a._id.toString(), a]));
 
     const isToday = (d?: Date) => !!d && d >= start && d <= end;
     const daysSince = (d?: Date) => (d ? Math.max(0, Math.floor((start.getTime() - new Date(d).setHours(0, 0, 0, 0)) / 86_400_000)) : 0);
@@ -309,7 +293,7 @@ export class CustomerActivityService {
         type: 'deal' as const,
         id: d._id.toString(),
         name: d.name,
-        businessName: this.groupKeyFor(d, accountNameById).businessName,
+        businessName: groupKeyFor(d, accountNameById).businessName,
         daysSinceLastUpdate: daysSince(activityDate(d)),
       }));
     const unactionedQuotes = scopedQuotes
@@ -318,7 +302,7 @@ export class CustomerActivityService {
         type: 'quote' as const,
         id: q._id.toString(),
         name: q.quoteName ?? q.quoteNumber ?? 'Untitled quote',
-        businessName: q.clientDetails?.companyName ?? groups.get(this.quoteGroupKey(q, deals))?.businessName ?? q.quoteName ?? 'Unknown',
+        businessName: q.clientDetails?.companyName ?? groups.get(quoteGroupKey(q, deals))?.businessName ?? q.quoteName ?? 'Unknown',
         daysSinceLastUpdate: daysSince(activityDate(q)),
       }));
 
@@ -327,7 +311,7 @@ export class CustomerActivityService {
       .map((d) => ({
         dealId: d._id.toString(),
         name: d.name,
-        businessName: this.groupKeyFor(d, accountNameById).businessName,
+        businessName: groupKeyFor(d, accountNameById).businessName,
         monetaryValue: d.monetaryValue,
         lostReason: d.lostReason ?? null,
         lostReasonSource: d.lostReasonSource ?? null,
@@ -339,8 +323,8 @@ export class CustomerActivityService {
     // Existing/New/Follow-up counts — independent, not mutually exclusive
     // (see plan §5b): computed over the set of businesses actioned today.
     const actionedGroupKeys = new Set([
-      ...actionedDealsToday.map((d) => this.groupKeyFor(d, accountNameById).key),
-      ...actionedQuotesToday.map((q) => this.quoteGroupKey(q, deals)),
+      ...actionedDealsToday.map((d) => groupKeyFor(d, accountNameById).key),
+      ...actionedQuotesToday.map((q) => quoteGroupKey(q, deals)),
     ]);
     let existingCount = 0;
     let newCount = 0;
@@ -425,11 +409,17 @@ export class CustomerActivityService {
             ? 'No CRM contact/quote emails available yet to correlate against — connect/sync more customer data for higher-confidence matches.'
             : `${exactEmails.size} known customer email(s) available for exact matching.`,
       },
+      // Internal only — deliberately stripped in toOverviewShape/toLlmPayload
+      // before anything reaches the public API. Exists so getRelationshipView
+      // (Phase 14a) can look up one business's full Deal/Quote/Account
+      // documents without recomputing gatherActivity's grouping a second time.
+      groupsByKey: groups,
+      accountsById,
     };
   }
 
   private toOverviewShape(activity: Awaited<ReturnType<CustomerActivityService['gatherActivity']>>) {
-    const { dateStr, ...rest } = activity;
+    const { dateStr, groupsByKey, accountsById, ...rest } = activity;
     return { date: dateStr, ...rest };
   }
 
@@ -445,69 +435,118 @@ export class CustomerActivityService {
     };
   }
 
-  private groupKeyFor(deal: DealDocument, accountNameById: Map<string, string>): { key: string; businessName: string; source: BusinessNameSource } {
-    if (deal.accountId && accountNameById.has(deal.accountId)) {
-      return { key: deal.accountId, businessName: accountNameById.get(deal.accountId)!, source: 'account' };
-    }
-    const name = heuristicBusinessName(deal.name);
-    return { key: normalizeKey(name), businessName: name, source: 'deal_name_heuristic' };
+  // Owner/admin/manager path — same canOverride/storeConstraint pattern the
+  // sibling overview endpoint already uses. Reuses gatherActivity's internal
+  // groupsByKey/accountsById (never exposed via toOverviewShape/toLlmPayload)
+  // rather than recomputing the business-grouping pass a second time.
+  async getRelationshipView(caller: JwtPayload, businessKey: string, storeConstraint?: string) {
+    const activity = await this.gatherActivity(caller.organizationId, storeConstraint);
+    return this.buildRelationshipView(activity, businessKey);
   }
 
-  private quoteGroupKey(quote: QuoteDocument, deals: DealDocument[]): string {
-    if (quote.dealId) {
-      const deal = deals.find((d) => d._id.toString() === quote.dealId);
-      if (deal) return deal.accountId ?? normalizeKey(heuristicBusinessName(deal.name));
-    }
-    if (quote.clientDetails?.email) return `email:${quote.clientDetails.email.toLowerCase()}`;
-    if (quote.clientDetails?.companyName) return normalizeKey(quote.clientDetails.companyName);
-    return normalizeKey(quote.quoteName ?? quote._id.toString());
+  // Consultant-only, self-scoped — mirrors getPersonalOverview's precedent
+  // (no owner/admin override to view a specific consultant's feed).
+  async getPersonalRelationshipView(caller: JwtPayload, businessKey: string) {
+    const activity = await this.gatherActivity(caller.organizationId, undefined, caller.sub, caller.storeId);
+    return this.buildRelationshipView(activity, businessKey);
   }
 
-  private buildBusinessGroups(
-    deals: DealDocument[],
-    quotes: QuoteDocument[],
-    accountNameById: Map<string, string>,
-    accountDomainById: Map<string, string | undefined>,
-  ): Map<string, BusinessGroup> {
-    const groups = new Map<string, BusinessGroup>();
+  private buildRelationshipView(activity: Awaited<ReturnType<CustomerActivityService['gatherActivity']>>, businessKey: string) {
+    const group = activity.groupsByKey.get(businessKey);
+    if (!group) throw new NotFoundException('Business not found in this scope');
 
-    for (const deal of deals) {
-      const { key, businessName, source } = this.groupKeyFor(deal, accountNameById);
-      const group = groups.get(key) ?? {
-        key,
-        businessName,
-        businessNameSource: source,
-        accountDomain: deal.accountId ? accountDomainById.get(deal.accountId) : undefined,
-        deals: [],
-        quotes: [],
-      };
-      group.deals.push(deal);
-      groups.set(key, group);
+    const account = group.businessNameSource === 'account' ? activity.accountsById.get(group.key) : undefined;
+    const correlatedEmails = activity.correlatedEmails.filter((e) => e.matchedBusinessKey === group.key);
+
+    return {
+      key: group.key,
+      businessName: group.businessName,
+      businessNameSource: group.businessNameSource,
+      account: account
+        ? { name: account.name, domain: account.domain, city: account.city, industry: account.industry, revenue: account.revenue }
+        : null,
+      quotes: group.quotes.map((q) => ({
+        id: q._id.toString(),
+        quoteNumber: q.quoteNumber ?? null,
+        quoteName: q.quoteName ?? null,
+        quoteStatus: q.quoteStatus,
+        quoteAmount: q.quoteAmount,
+        currency: q.currency,
+        clientDetails: q.clientDetails ?? null,
+        dealId: q.dealId ?? null,
+        // Additive (Phase 14c) — lets the Customer Timeline merge quotes into
+        // a chronological feed without a second query.
+        createdAt: q.createdAt ?? null,
+      })),
+      deals: group.deals.map((d) => ({
+        id: d._id.toString(),
+        name: d.name,
+        dealStatus: d.dealStatus,
+        monetaryValue: d.monetaryValue,
+        expectedClosingDate: d.expectedClosingDate ?? null,
+        stageId: d.stageId ?? null,
+        // Additive (Phase 14c) — same reasoning as Quote.createdAt above.
+        createdAt: d.createdAt ?? null,
+      })),
+      // Deliberately today-only — no multi-day Outlook fetch endpoint exists
+      // yet (real-time email intelligence is a later, separate sub-phase).
+      correlatedEmails,
+    };
+  }
+
+  // Phase 14b — a deliberately separate, unscoped (whole-org, not store/
+  // personal-constrained) counterpart to gatherActivity's own internal
+  // exact/domain/group computation. Kept independent rather than having
+  // gatherActivity delegate here: gatherActivity's deals/quotes are always
+  // store/personal-scoped for its own callers, while Email Intelligence's
+  // scheduled poller correlates one org's mailboxes against the WHOLE org's
+  // CRM data regardless of which store/consultant a match belongs to — a
+  // shared implementation would either wrongly scope one caller or the
+  // other. Some duplication with gatherActivity's setup is accepted as the
+  // safer trade-off against risking a regression in the already-verified
+  // Customer Activity feature.
+  async gatherCorrelationContext(organizationId: string): Promise<EmailCorrelationContext> {
+    const deals = await this.dealModel.find({ organizationId }).exec();
+    const quotes = await this.quoteModel.find({ organizationId }).exec();
+
+    const accountIds = [...new Set(deals.map((d) => d.accountId).filter((id): id is string => !!id))];
+    const accounts = accountIds.length ? await this.accountModel.find({ organizationId, _id: { $in: accountIds } }).exec() : [];
+    const accountNameById = new Map(accounts.map((a): [string, string] => [a._id.toString(), a.name]));
+    const accountDomainById = new Map(
+      accounts.filter((a) => a.domain).map((a): [string, string] => [a._id.toString(), a.domain!]),
+    );
+
+    const groups = buildBusinessGroups(deals, quotes, accountNameById, accountDomainById);
+
+    const contacts = await this.contactModel.find({ organizationId, email: { $exists: true, $nin: [null, ''] } }).exec();
+    const exactEmails = new Set<string>();
+    for (const c of contacts) if (c.email) exactEmails.add(c.email.toLowerCase());
+
+    const emailToGroupKey = new Map<string, string>();
+    for (const q of quotes) {
+      if (!q.clientDetails?.email) continue;
+      const email = q.clientDetails.email.toLowerCase();
+      exactEmails.add(email);
+      emailToGroupKey.set(email, quoteGroupKey(q, deals));
     }
 
-    for (const quote of quotes) {
-      const key = this.quoteGroupKey(quote, deals);
-      let group = groups.get(key);
-      if (!group) {
-        group = {
-          key,
-          businessName: quote.clientDetails?.companyName ?? quote.quoteName ?? 'Unknown business',
-          businessNameSource: quote.clientDetails?.companyName ? 'quote_client_details' : 'deal_name_heuristic',
-          contactEmail: quote.clientDetails?.email,
-          deals: [],
-          quotes: [],
-        };
-        groups.set(key, group);
-      } else if (group.businessNameSource === 'deal_name_heuristic' && quote.clientDetails?.companyName) {
-        // A real client-details name beats a guessed one — upgrade in place.
-        group.businessName = quote.clientDetails.companyName;
-        group.businessNameSource = 'quote_client_details';
-        group.contactEmail = quote.clientDetails.email;
-      }
-      group.quotes.push(quote);
+    const domains = new Set<string>();
+    const domainToGroupKey = new Map<string, string>();
+    for (const [accountId, domain] of accountDomainById) {
+      if (!domain) continue;
+      const lower = domain.toLowerCase();
+      domains.add(lower);
+      domainToGroupKey.set(lower, accountId);
     }
 
-    return groups;
+    return {
+      exactEmails,
+      domains,
+      businessNamesForFuzzy: [...groups.values()].map((g) => ({ key: g.key, name: g.businessName })),
+      emailToGroupKey,
+      domainToGroupKey,
+      groups,
+    };
   }
 
   private async resolveTimezone(organizationId: string, storeConstraint?: string): Promise<string> {
