@@ -13,34 +13,147 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IntegrationsService = void 0;
+const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
+const rxjs_1 = require("rxjs");
+const encryption_service_1 = require("../common/encryption/encryption.service");
+const auth_methods_1 = require("./auth-methods");
+const provider_rules_1 = require("./provider-rules");
 const integration_credential_schema_1 = require("./schemas/integration-credential.schema");
-const ALLOWED_PROVIDERS = ['anthropic', 'crm'];
+const PROVIDER_SLUG = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 let IntegrationsService = class IntegrationsService {
-    constructor(credentialModel) {
+    constructor(credentialModel, encryption, http) {
         this.credentialModel = credentialModel;
+        this.encryption = encryption;
+        this.http = http;
     }
     async connect(organizationId, provider, apiKey, baseUrl) {
         this.assertAllowed(provider);
-        await this.credentialModel.findOneAndUpdate({ organizationId, provider }, { organizationId, provider, apiKey, baseUrl }, { upsert: true });
+        await this.credentialModel.findOneAndUpdate({ organizationId, provider }, { organizationId, provider, apiKey, baseUrl, authType: undefined, credentialsEncrypted: undefined }, { upsert: true });
         return { connected: true, maskedKey: this.mask(apiKey), baseUrl };
+    }
+    async connectWithAuth(organizationId, provider, dto) {
+        const authType = dto.authType;
+        this.assertAllowed(provider, authType);
+        const credentials = (dto.credentials ?? {});
+        const missing = (0, auth_methods_1.requiredCredentialFields)(authType).filter((field) => !credentials[field]);
+        if (missing.length > 0) {
+            throw new common_1.BadRequestException(`Missing required field(s) for ${authType}: ${missing.join(', ')}`);
+        }
+        await this.credentialModel.findOneAndUpdate({ organizationId, provider }, {
+            organizationId,
+            provider,
+            authType,
+            credentialsEncrypted: this.encryption.encrypt(JSON.stringify(credentials)),
+            baseUrl: dto.baseUrl,
+            healthCheckPath: dto.healthCheckPath,
+            apiKey: undefined,
+        }, { upsert: true });
+        return { connected: true, authType, baseUrl: dto.baseUrl };
+    }
+    connectFromDto(organizationId, provider, dto) {
+        if (dto.authType)
+            return this.connectWithAuth(organizationId, provider, dto);
+        return this.connect(organizationId, provider, dto.apiKey, dto.baseUrl);
     }
     async status(organizationId, provider) {
         this.assertAllowed(provider);
         const doc = await this.credentialModel.findOne({ organizationId, provider });
         if (!doc)
             return { connected: false };
-        return { connected: true, maskedKey: this.mask(doc.apiKey), baseUrl: doc.baseUrl };
+        if (doc.authType) {
+            return { connected: true, authType: doc.authType, baseUrl: doc.baseUrl };
+        }
+        return { connected: true, maskedKey: this.mask(doc.apiKey ?? ''), baseUrl: doc.baseUrl };
+    }
+    async listCustom(organizationId) {
+        const docs = await this.credentialModel
+            .find({ organizationId, provider: { $nin: ['anthropic', 'crm'] } })
+            .sort({ createdAt: -1 });
+        return docs.map((doc) => ({
+            provider: doc.provider,
+            connected: true,
+            authType: doc.authType,
+            maskedKey: doc.authType ? undefined : this.mask(doc.apiKey ?? ''),
+            baseUrl: doc.baseUrl,
+            connectedAt: doc.createdAt,
+        }));
     }
     async disconnect(organizationId, provider) {
         this.assertAllowed(provider);
         await this.credentialModel.deleteOne({ organizationId, provider });
     }
-    assertAllowed(provider) {
-        if (!ALLOWED_PROVIDERS.includes(provider)) {
-            throw new common_1.BadRequestException(`Unknown integration provider: ${provider}`);
+    async testConnection(organizationId, provider, dto) {
+        let baseUrl = dto.baseUrl;
+        let healthCheckPath = dto.healthCheckPath;
+        let authType = dto.authType;
+        let credentials = dto.credentials;
+        if (!authType && !dto.apiKey) {
+            const doc = await this.credentialModel.findOne({ organizationId, provider });
+            if (!doc)
+                return { ok: false, message: 'Nothing connected yet for this provider.' };
+            baseUrl = baseUrl ?? doc.baseUrl;
+            healthCheckPath = healthCheckPath ?? doc.healthCheckPath;
+            if (doc.authType) {
+                authType = doc.authType;
+                credentials = JSON.parse(this.encryption.decrypt(doc.credentialsEncrypted));
+            }
+            else {
+                authType = 'apiKeyBaseUrl';
+                credentials = { apiKey: doc.apiKey };
+            }
+        }
+        else if (!authType) {
+            authType = 'apiKeyBaseUrl';
+            credentials = { apiKey: dto.apiKey };
+        }
+        if (!baseUrl) {
+            return { ok: false, message: 'A base URL is required to test the connection.' };
+        }
+        const url = healthCheckPath ? `${baseUrl.replace(/\/$/, '')}/${healthCheckPath.replace(/^\//, '')}` : baseUrl;
+        const headers = (0, auth_methods_1.buildAuthHeaders)(authType, credentials ?? {});
+        try {
+            const response = await (0, rxjs_1.firstValueFrom)(this.http.get(url, { headers, timeout: 10_000 }));
+            return { ok: true, message: `Connected — received HTTP ${response.status}.` };
+        }
+        catch (err) {
+            return { ok: false, message: this.friendlyErrorMessage(err) };
+        }
+    }
+    friendlyErrorMessage(err) {
+        const axiosErr = err;
+        const status = axiosErr.response?.status;
+        if (status === 401)
+            return 'The provider rejected these credentials (401 Unauthorized).';
+        if (status === 403)
+            return 'These credentials don\'t have permission to access this resource (403 Forbidden).';
+        if (status === 404)
+            return 'Reached the server, but that URL/endpoint was not found (404).';
+        if (status && status >= 500)
+            return `The provider's server had an error (HTTP ${status}).`;
+        if (axiosErr.code === 'ECONNABORTED')
+            return 'The connection timed out — check the base URL.';
+        if (axiosErr.code === 'ENOTFOUND' || axiosErr.code === 'ECONNREFUSED') {
+            return "Couldn't reach that URL — check it's correct and publicly reachable.";
+        }
+        return 'Could not connect — please check the URL and credentials.';
+    }
+    getProviderRule(provider) {
+        return (0, provider_rules_1.getProviderRule)(provider);
+    }
+    assertAllowed(provider, authType) {
+        if (!PROVIDER_SLUG.test(provider)) {
+            throw new common_1.BadRequestException('Provider name must be alphanumeric (dashes/underscores allowed).');
+        }
+        const rule = (0, provider_rules_1.getProviderRule)(provider);
+        if (rule.dedicatedFlowPath) {
+            throw new common_1.BadRequestException(rule.note ?? `"${provider}" has its own dedicated connect flow.`);
+        }
+        if (authType && !rule.allowedAuthTypes.includes(authType)) {
+            throw new common_1.BadRequestException(rule.note ??
+                `${rule.label} only supports: ${rule.allowedAuthTypes.join(', ') || 'a dedicated flow not yet built here'}.`);
         }
     }
     mask(apiKey) {
@@ -51,6 +164,8 @@ exports.IntegrationsService = IntegrationsService;
 exports.IntegrationsService = IntegrationsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, mongoose_1.InjectModel)(integration_credential_schema_1.IntegrationCredential.name)),
-    __metadata("design:paramtypes", [mongoose_2.Model])
+    __metadata("design:paramtypes", [mongoose_2.Model,
+        encryption_service_1.EncryptionService,
+        axios_1.HttpService])
 ], IntegrationsService);
 //# sourceMappingURL=integrations.service.js.map

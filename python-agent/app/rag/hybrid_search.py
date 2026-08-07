@@ -13,11 +13,15 @@ pipeline shape, built without adding new infrastructure.
 
 from rank_bm25 import BM25Okapi
 
+from app.config import settings
 from app.rag.embeddings import embed_one
 from app.rag.reranker import rerank
 from app.rag.vector_store import search as vector_search
 
-CANDIDATE_POOL_SIZE = 20
+# Was a hardcoded 20 — now settings.rag_candidate_pool_size (same default,
+# see config.py). Kept as a module-level alias since callers may still
+# reference CANDIDATE_POOL_SIZE directly.
+CANDIDATE_POOL_SIZE = settings.rag_candidate_pool_size
 
 
 def _tokenize(text: str) -> list[str]:
@@ -41,7 +45,13 @@ def _normalize(values: list[float]) -> list[float]:
     return [(v - lo) / (hi - lo) for v in values]
 
 
-def search(query: str, query_filter, top_k: int = 5, text_key: str = "text", pool_size: int = CANDIDATE_POOL_SIZE) -> list[dict]:
+def search(
+    query: str,
+    query_filter,
+    top_k: int = settings.rag_top_k,
+    text_key: str = "text",
+    pool_size: int = CANDIDATE_POOL_SIZE,
+) -> list[dict]:
     """Vector recall -> BM25+vector fusion -> cross-encoder rerank -> top_k.
     query_filter is passed straight through to app.rag.vector_store.search —
     the same qdrant_client Filter objects every existing caller already

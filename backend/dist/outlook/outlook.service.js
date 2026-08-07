@@ -13,19 +13,31 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OutlookService = void 0;
+exports.isAdminConsentRequiredError = isAdminConsentRequiredError;
 const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const rxjs_1 = require("rxjs");
+const encryption_service_1 = require("../common/encryption/encryption.service");
+const users_service_1 = require("../users/users.service");
 const outlook_connection_schema_1 = require("./schemas/outlook-connection.schema");
-const GRAPH_SCOPES = 'offline_access User.Read Mail.Read Mail.Send Calendars.Read Contacts.Read';
+const microsoft_tenant_authorization_schema_1 = require("./schemas/microsoft-tenant-authorization.schema");
+const GRAPH_SCOPES = 'offline_access User.Read Mail.Read Mail.Send Calendars.Read Calendars.ReadWrite Contacts.Read';
+function isAdminConsentRequiredError(errorDescription) {
+    if (!errorDescription)
+        return false;
+    return /AADSTS90094|admin approval|admin consent/i.test(errorDescription);
+}
 let OutlookService = class OutlookService {
-    constructor(config, http, connectionModel) {
+    constructor(config, http, encryption, usersService, connectionModel, tenantAuthModel) {
         this.config = config;
         this.http = http;
+        this.encryption = encryption;
+        this.usersService = usersService;
         this.connectionModel = connectionModel;
+        this.tenantAuthModel = tenantAuthModel;
     }
     get configured() {
         return Boolean(this.config.get('integrations.msGraph.clientId'));
@@ -65,35 +77,82 @@ let OutlookService = class OutlookService {
         });
         return `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params.toString()}`;
     }
-    async handleCallback(code, userId) {
+    buildAdminConsentUrl(state) {
+        const clientId = this.config.get('integrations.msGraph.clientId');
+        const redirectUri = this.config.get('integrations.msGraph.adminConsentRedirectUri');
+        const params = new URLSearchParams({
+            client_id: clientId ?? '',
+            redirect_uri: redirectUri ?? '',
+            state,
+        });
+        return `https://login.microsoftonline.com/organizations/adminconsent?${params.toString()}`;
+    }
+    async recordTenantAuthorization(tenantId, organizationId, userId, userEmail) {
+        await this.tenantAuthModel.findOneAndUpdate({ tenantId }, { tenantId, organizationId, authorizedByUserId: userId, authorizedByEmail: userEmail }, { upsert: true });
+    }
+    async getTenantAuthorizationStatus(organizationId) {
+        const doc = await this.tenantAuthModel.findOne({ organizationId }).sort({ createdAt: -1 });
+        if (!doc)
+            return { authorized: false };
+        return { authorized: true, tenantId: doc.tenantId, authorizedByEmail: doc.authorizedByEmail };
+    }
+    async handleCallback(code, userId, organizationId) {
         const tokens = await this.exchangeCode(code);
         const email = await this.fetchUserEmail(tokens.access_token);
         await this.connectionModel.updateMany({ userId }, { isActive: false });
         await this.connectionModel.findOneAndUpdate({ userId, email }, {
             userId,
+            organizationId,
             email,
-            accessToken: tokens.access_token,
-            refreshToken: tokens.refresh_token,
+            accessToken: this.encryption.encrypt(tokens.access_token),
+            refreshToken: this.encryption.encrypt(tokens.refresh_token),
             expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
             scope: tokens.scope,
             isActive: true,
+            status: 'connected',
         }, { upsert: true });
         return { email };
     }
     async getStatus(userId) {
-        const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1 });
-        return { connected: Boolean(active), email: active?.email };
+        const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1, status: 1 });
+        return {
+            connected: Boolean(active) && active?.status !== 'needs_reauth',
+            email: active?.email,
+            needsReauth: active?.status === 'needs_reauth',
+        };
     }
     async listAccounts(userId) {
         const connections = await this.connectionModel
             .find({ userId })
-            .select({ email: 1, isActive: 1, createdAt: 1 })
+            .select({ email: 1, isActive: 1, createdAt: 1, status: 1 })
             .sort({ createdAt: -1 });
         return connections.map((c) => ({
             email: c.email,
             isActive: c.isActive,
             connectedAt: c.createdAt,
+            status: c.status ?? 'connected',
         }));
+    }
+    async listOrgAccounts(organizationId) {
+        const connections = await this.connectionModel
+            .find({ organizationId })
+            .select({ userId: 1, email: 1, isActive: 1, createdAt: 1, status: 1 })
+            .sort({ createdAt: -1 });
+        const ownerIds = [...new Set(connections.map((c) => c.userId))];
+        const owners = await Promise.all(ownerIds.map((id) => this.usersService.findById(id)));
+        const ownersById = new Map(owners.filter(Boolean).map((u) => [u._id.toString(), u]));
+        return connections.map((c) => {
+            const owner = ownersById.get(c.userId);
+            return {
+                email: c.email,
+                isActive: c.isActive,
+                connectedAt: c.createdAt,
+                status: c.status ?? 'connected',
+                ownerUserId: c.userId,
+                ownerName: owner?.name ?? 'Unknown',
+                ownerEmail: owner?.email ?? '',
+            };
+        });
     }
     async setActive(userId, email) {
         const target = await this.connectionModel.findOne({ userId, email });
@@ -141,9 +200,13 @@ let OutlookService = class OutlookService {
 exports.OutlookService = OutlookService;
 exports.OutlookService = OutlookService = __decorate([
     (0, common_1.Injectable)(),
-    __param(2, (0, mongoose_1.InjectModel)(outlook_connection_schema_1.OutlookConnection.name)),
+    __param(4, (0, mongoose_1.InjectModel)(outlook_connection_schema_1.OutlookConnection.name)),
+    __param(5, (0, mongoose_1.InjectModel)(microsoft_tenant_authorization_schema_1.MicrosoftTenantAuthorization.name)),
     __metadata("design:paramtypes", [config_1.ConfigService,
         axios_1.HttpService,
+        encryption_service_1.EncryptionService,
+        users_service_1.UsersService,
+        mongoose_2.Model,
         mongoose_2.Model])
 ], OutlookService);
 //# sourceMappingURL=outlook.service.js.map

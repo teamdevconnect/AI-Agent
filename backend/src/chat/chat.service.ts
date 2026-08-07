@@ -339,7 +339,24 @@ export class ChatService {
             buffer = buffer.slice(boundary + 2);
             if (!frame.startsWith('data: ')) continue;
 
-            const event = JSON.parse(frame.slice(6));
+            // Was previously unguarded: a JSON.parse throw here happens
+            // inside this 'data' event-listener callback, outside the
+            // try/catch below (that one only wraps the initial POST + this
+            // Promise executor's synchronous setup, not code running later
+            // inside a callback it registered) — an uncaught throw here
+            // would surface as an unhandled request error instead of
+            // degrading gracefully. Skipping just this one malformed frame
+            // and continuing is safe: every frame is self-contained (see
+            // the SSE framing above), so losing one doesn't corrupt the
+            // ones before/after it, and a truly fatal stream problem still
+            // surfaces via the 'error'/'end' handlers below.
+            let event;
+            try {
+              event = JSON.parse(frame.slice(6));
+            } catch (parseErr) {
+              this.logger.warn(`Skipping malformed SSE frame: ${(parseErr as Error).message}`);
+              continue;
+            }
             if (
               event.type === 'delta' ||
               event.type === 'progress' ||

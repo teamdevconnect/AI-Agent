@@ -1,6 +1,7 @@
 from bson import ObjectId
 
 from app.cache.cache import cache_key, get_json, set_json
+from app.config import settings
 from app.memory.mongo_client import get_db
 
 # Short-term "conversation state" cache — a burst of agent activity within
@@ -12,7 +13,7 @@ from app.memory.mongo_client import get_db
 _TTL_SECONDS = 15
 
 
-def get_recent_messages(conversation_id: str, limit: int = 20) -> list[dict]:
+def get_recent_messages(conversation_id: str, limit: int = settings.conversation_history_limit) -> list[dict]:
     """Reads conversation history the NestJS backend already persisted.
 
     The backend owns writes to this collection (it appends both the user's

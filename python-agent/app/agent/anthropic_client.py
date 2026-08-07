@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import time
 from functools import lru_cache
 from typing import Callable
@@ -13,6 +14,8 @@ from app.tools.registry import TOOL_DEFINITIONS
 
 from app.agent.llm_client import SYSTEM_PROMPT
 from app.agent.specialists import SPECIALISTS
+
+logger = logging.getLogger(__name__)
 
 # Anthropic error shapes worth a short backoff-retry — all transient/load-related,
 # never a genuine request problem (bad schema, invalid content, auth) that a retry
@@ -116,6 +119,82 @@ def _to_anthropic_messages(input_items: list[dict]) -> list[dict]:
     return messages
 
 
+def _truncate_payload_for_prompt(payload: dict, max_chars: int = 40_000) -> dict:
+    """Schema-agnostic safe truncation for a JSON payload embedded in a
+    prompt (analyze_customer_activity/analyze_finance_activity/email+CRM
+    correlation below). Replaces the old `json.dumps(payload)[:N]` raw
+    string slice, which had two real problems: it cuts mid-object (the
+    model receives invalid, partially-garbled JSON past the cut point), and
+    it never discloses that anything was dropped, so the model can't caveat
+    an answer it doesn't know is based on incomplete data.
+
+    This instead shortens the largest list-valued fields first (the thing
+    that actually drives payload size for these callers — arrays of
+    emails/deals/documents, not scalar fields) and adds a
+    "_truncationNotice" key naming exactly what was cut, so the model's
+    own prompts (which already say "only what's present in the input") can
+    honestly hedge instead of reasoning over corrupted trailing JSON.
+    """
+    serialized = json.dumps(payload, default=str)
+    if len(serialized) <= max_chars:
+        return payload
+
+    truncated = dict(payload)
+    notices: list[str] = []
+    # The "_truncationNotice" string is added to `truncated` only after
+    # this loop, but its own bytes still count against max_chars — the
+    # shrink target below reserves headroom for it up front. Without this,
+    # a payload could converge to exactly max_chars *before* the notice is
+    # appended, then land a few hundred bytes over budget once it is,
+    # tripping the hard-cut fallback for no real reason.
+    notice_budget = 300
+    shrink_target = max_chars - notice_budget
+    list_fields = sorted(
+        ((k, v) for k, v in payload.items() if isinstance(v, list) and v),
+        key=lambda kv: len(json.dumps(kv[1], default=str)),
+        reverse=True,
+    )
+    for key, items in list_fields:
+        if len(json.dumps(truncated, default=str)) <= shrink_target:
+            break
+        kept = len(items) // 2
+        while kept > 0 and len(json.dumps({**truncated, key: items[:kept]}, default=str)) > shrink_target:
+            kept -= 1
+        if kept < len(items):
+            truncated[key] = items[:kept]
+            notices.append(f"{key}: showing {kept} of {len(items)} items")
+
+    if notices:
+        truncated["_truncationNotice"] = "Some data was too large to include in full and was shortened: " + "; ".join(
+            notices
+        )
+
+    serialized = json.dumps(truncated, default=str)
+    if len(serialized) > max_chars:
+        # No list fields to shrink (or still too big after shrinking them
+        # all to nothing) — a hard cut is the last resort, but at least the
+        # model is told, rather than silently fed a broken tail. Wrapping
+        # the sliced text back in a dict (JSON-escaping, the notice field,
+        # the braces) costs bytes of its own — measure that overhead first
+        # so the *final* wrapped result actually respects max_chars, not
+        # just the slice before wrapping.
+        logger.warning("Payload still exceeds %d chars after list truncation — falling back to a hard cut", max_chars)
+        notice_text = "Data was too large to include in full and was cut short."
+        # json.dumps escapes characters in `serialized` itself (every `"`
+        # becomes `\"`, etc.) when it's re-embedded as a string value below —
+        # a fixed-overhead estimate can't account for that (it's content-
+        # dependent), so this shrinks the slice length until the actual
+        # wrapped-and-escaped result verifiably fits, same defensive
+        # approach as the list-shrinking loop above.
+        partial_len = max_chars
+        wrapped = {"_truncationNotice": notice_text, "_partial": serialized[:partial_len]}
+        while partial_len > 0 and len(json.dumps(wrapped, default=str)) > max_chars:
+            partial_len -= max(1, partial_len // 10)
+            wrapped["_partial"] = serialized[:partial_len]
+        return wrapped
+    return truncated
+
+
 def _normalize_response(response: anthropic.types.Message) -> list[dict]:
     """Commentary text alongside tool_use in a round that still has pending
     tool calls is deliberately dropped, not just reordered after the
@@ -159,6 +238,46 @@ def _normalize_response(response: anthropic.types.Message) -> list[dict]:
             }
         )
     return items
+
+
+def _merge_continuation(first: list[dict], continuation: list[dict]) -> list[dict]:
+    """Concatenates a truncated text reply with its continuation into ONE
+    assistant message. Required, not cosmetic: final_text() (app.agent.graph)
+    only ever reads the LAST assistant message in a turn's item list — two
+    separate items would silently replace the first half of the answer with
+    just the continuation instead of extending it."""
+    first_text = first[-1]["content"][0]["text"] if first and first[-1].get("type") == "message" else ""
+    continuation_text = (
+        continuation[-1]["content"][0]["text"] if continuation and continuation[-1].get("type") == "message" else ""
+    )
+    # Verified live: Claude's continuation usually resumes at the next word
+    # with no leading space (asked to "continue exactly where it left off",
+    # it treats that literally), which glues the two chunks into one word
+    # ("greater" + "than" -> "greaterthan") when the cut fell between words.
+    # A missing space reads as an obvious defect; an extra one between two
+    # already-separate words is invisible. Mid-word cuts are the rarer case
+    # for a max_tokens stop, so this heuristic optimizes for the common one.
+    if (
+        first_text
+        and continuation_text
+        and not first_text[-1].isspace()
+        and not continuation_text[0].isspace()
+        and continuation_text[0] not in ".,!?;:)]}\"'"
+    ):
+        first_text += " "
+    return [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": first_text + continuation_text}],
+        }
+    ]
+
+
+_CONTINUE_PROMPT = (
+    "Continue your previous response exactly where it left off. Do not repeat any text "
+    "already given, and do not add any preamble (e.g. \"continuing...\") — resume the answer directly."
+)
 
 
 ROLE_EXTRACTION_TOOL = {
@@ -761,6 +880,7 @@ def call(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    _continuation_depth: int = 0,
 ) -> list[dict]:
     """Runs one planner round. If on_event is given, streams two kinds of
     live events as they happen: {"type": "progress", "tool": name} the
@@ -781,6 +901,19 @@ def call(
     either duplicate it or need to guess how to resume, so the error is
     raised as-is instead (the caller/orchestrator already degrades this to a
     generic reply rather than crashing the request).
+
+    _continuation_depth is internal (not part of this function's public
+    contract — every external caller omits it): if Claude fills the entire
+    max_tokens budget on a text-only (no tool_use) reply, that's
+    stop_reason == "max_tokens", i.e. the answer was cut off mid-thought, not
+    finished. Up to settings.anthropic_max_continuations times, this issues
+    a follow-up call asking Claude to continue exactly where it left off and
+    merges the two into one seamless reply (see _merge_continuation) — the
+    user still sees one continuous stream of deltas, just spanning two API
+    calls instead of one. A tool_use-bearing reply is never continued this
+    way; a truncated tool call already surfaces naturally as a normal next
+    planner round (see app.agent.graph's tool-calling loop), which this
+    would only complicate.
     """
     api_key = _resolve_api_key()
     if not api_key:
@@ -802,7 +935,7 @@ def call(
             try:
                 with _client(api_key).messages.stream(
                     model=resolved_model,
-                    max_tokens=1024,
+                    max_tokens=settings.anthropic_max_output_tokens,
                     system=[
                         {
                             "type": "text",
@@ -849,6 +982,46 @@ def call(
                     time.sleep(0.5 * (2**attempt))
                     continue
                 raise
+
+    normalized = _normalize_response(response)
+
+    is_truncated_text_reply = (
+        response.stop_reason == "max_tokens"
+        and len(normalized) == 1
+        and normalized[0].get("type") == "message"
+    )
+    if not is_truncated_text_reply or _continuation_depth >= settings.anthropic_max_continuations:
+        if is_truncated_text_reply:
+            logger.warning(
+                "Reply hit max_tokens (%d) and continuation budget is exhausted (depth=%d) — "
+                "returning truncated text for conversation_id=%s",
+                settings.anthropic_max_output_tokens,
+                _continuation_depth,
+                conversation_id,
+            )
+        return normalized
+
+    logger.info(
+        "Reply hit max_tokens (%d) — requesting continuation %d/%d for conversation_id=%s",
+        settings.anthropic_max_output_tokens,
+        _continuation_depth + 1,
+        settings.anthropic_max_continuations,
+        conversation_id,
+    )
+    continuation_input = input_items + normalized + [{"role": "user", "content": _CONTINUE_PROMPT}]
+    continuation = call(
+        continuation_input,
+        on_event=on_event,
+        system_prompt=system_prompt,
+        tools=tools,
+        cancel_event=cancel_event,
+        model=model,
+        organization_id=organization_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        _continuation_depth=_continuation_depth + 1,
+    )
+    return _merge_continuation(normalized, continuation)
 
 
 CUSTOMER_ACTIVITY_TOOL = {
@@ -923,7 +1096,7 @@ def analyze_customer_activity(payload: dict) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Today's customer activity data:\n\n{json.dumps(payload, default=str)[:40000]}",
+                        "content": f"Today's customer activity data:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}",
                     }
                 ],
             )
@@ -1014,7 +1187,7 @@ def analyze_finance_activity(payload: dict) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Today's vendor payment activity data:\n\n{json.dumps(payload, default=str)[:40000]}",
+                        "content": f"Today's vendor payment activity data:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}",
                     }
                 ],
             )
@@ -1106,5 +1279,5 @@ def analyze_email(payload: dict) -> dict:
     return _run_forced_tool_extraction(
         EMAIL_INTENT_SYSTEM_PROMPT,
         EMAIL_INTENT_TOOL,
-        [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(payload, default=str)[:40000]}"}],
+        [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
     )

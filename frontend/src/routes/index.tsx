@@ -13,6 +13,9 @@ const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) 
 const ForgotPasswordPage = lazy(() =>
   import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
 );
+const OAuthCallbackPage = lazy(() =>
+  import('@/features/auth/OAuthCallbackPage').then((m) => ({ default: m.OAuthCallbackPage })),
+);
 
 const DashboardRouterPage = lazy(() =>
   import('@/features/business-dashboard/DashboardRouterPage').then((m) => ({ default: m.DashboardRouterPage })),
@@ -160,6 +163,10 @@ export function AppRoutes() {
             </Route>
           </Route>
         </Route>
+
+        {/* Unguarded: reached mid-flow with no session yet — the page
+            itself establishes one from the token in the URL. */}
+        <Route path={ROUTES.oauthCallback} element={<OAuthCallbackPage />} />
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

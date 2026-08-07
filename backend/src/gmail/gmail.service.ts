@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
+import { EncryptionService } from '../common/encryption/encryption.service';
 import { GmailConnection, GmailConnectionDocument } from './schemas/gmail-connection.schema';
 
 interface TokenResponse {
@@ -17,6 +18,7 @@ export interface GmailAccountSummary {
   email: string;
   isActive: boolean;
   connectedAt: Date;
+  status: 'connected' | 'needs_reauth';
 }
 
 // gmail.send is requested now (not just gmail.readonly) so a future
@@ -39,6 +41,7 @@ export class GmailService {
   constructor(
     private config: ConfigService,
     private http: HttpService,
+    private encryption: EncryptionService,
     @InjectModel(GmailConnection.name) private connectionModel: Model<GmailConnectionDocument>,
   ) {}
 
@@ -75,31 +78,41 @@ export class GmailService {
       {
         userId,
         email,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
+        // Encrypted at rest (see common/encryption/encryption.service.ts).
+        // A fresh reconnect through this same callback is also how a
+        // needs_reauth row recovers — this upsert overwrites status back to
+        // the schema default ('connected') along with the new tokens.
+        accessToken: this.encryption.encrypt(tokens.access_token),
+        refreshToken: this.encryption.encrypt(tokens.refresh_token),
         expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
         scope: tokens.scope,
         isActive: true,
+        status: 'connected',
       },
       { upsert: true },
     );
     return { email };
   }
 
-  async getStatus(userId: string): Promise<{ connected: boolean; email?: string }> {
-    const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1 });
-    return { connected: Boolean(active), email: active?.email };
+  async getStatus(userId: string): Promise<{ connected: boolean; email?: string; needsReauth?: boolean }> {
+    const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1, status: 1 });
+    return {
+      connected: Boolean(active) && active?.status !== 'needs_reauth',
+      email: active?.email,
+      needsReauth: active?.status === 'needs_reauth',
+    };
   }
 
   async listAccounts(userId: string): Promise<GmailAccountSummary[]> {
     const connections = await this.connectionModel
       .find({ userId })
-      .select({ email: 1, isActive: 1, createdAt: 1 })
+      .select({ email: 1, isActive: 1, createdAt: 1, status: 1 })
       .sort({ createdAt: -1 });
     return connections.map((c) => ({
       email: c.email,
       isActive: c.isActive,
       connectedAt: (c as unknown as { createdAt: Date }).createdAt,
+      status: c.status ?? 'connected',
     }));
   }
 

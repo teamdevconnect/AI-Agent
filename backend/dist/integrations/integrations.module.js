@@ -7,6 +7,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IntegrationsModule = void 0;
+const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const auth_module_1 = require("../auth/auth.module");
@@ -22,6 +23,7 @@ exports.IntegrationsModule = IntegrationsModule = __decorate([
             mongoose_1.MongooseModule.forFeature([
                 { name: integration_credential_schema_1.IntegrationCredential.name, schema: integration_credential_schema_1.IntegrationCredentialSchema },
             ]),
+            axios_1.HttpModule.register({ timeout: 15_000 }),
             auth_module_1.AuthModule,
         ],
         controllers: [integrations_controller_1.IntegrationsController],

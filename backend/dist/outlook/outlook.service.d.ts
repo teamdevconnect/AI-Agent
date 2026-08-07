@@ -1,17 +1,30 @@
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
+import { EncryptionService } from '../common/encryption/encryption.service';
+import { UsersService } from '../users/users.service';
 import { OutlookConnectionDocument } from './schemas/outlook-connection.schema';
+import { MicrosoftTenantAuthorizationDocument } from './schemas/microsoft-tenant-authorization.schema';
 export interface OutlookAccountSummary {
     email: string;
     isActive: boolean;
     connectedAt: Date;
+    status: 'connected' | 'needs_reauth';
 }
+export interface OutlookOrgAccountSummary extends OutlookAccountSummary {
+    ownerUserId: string;
+    ownerName: string;
+    ownerEmail: string;
+}
+export declare function isAdminConsentRequiredError(errorDescription?: string): boolean;
 export declare class OutlookService {
     private config;
     private http;
+    private encryption;
+    private usersService;
     private connectionModel;
-    constructor(config: ConfigService, http: HttpService, connectionModel: Model<OutlookConnectionDocument>);
+    private tenantAuthModel;
+    constructor(config: ConfigService, http: HttpService, encryption: EncryptionService, usersService: UsersService, connectionModel: Model<OutlookConnectionDocument>, tenantAuthModel: Model<MicrosoftTenantAuthorizationDocument>);
     private get configured();
     getEmails(): Promise<{
         id: string;
@@ -23,14 +36,23 @@ export declare class OutlookService {
     getContacts(): Promise<never[]>;
     private placeholderEmails;
     buildAuthorizeUrl(state: string): string;
-    handleCallback(code: string, userId: string): Promise<{
+    buildAdminConsentUrl(state: string): string;
+    recordTenantAuthorization(tenantId: string, organizationId: string, userId: string, userEmail: string): Promise<void>;
+    getTenantAuthorizationStatus(organizationId: string): Promise<{
+        authorized: boolean;
+        tenantId?: string;
+        authorizedByEmail?: string;
+    }>;
+    handleCallback(code: string, userId: string, organizationId?: string): Promise<{
         email: string;
     }>;
     getStatus(userId: string): Promise<{
         connected: boolean;
         email?: string;
+        needsReauth?: boolean;
     }>;
     listAccounts(userId: string): Promise<OutlookAccountSummary[]>;
+    listOrgAccounts(organizationId: string): Promise<OutlookOrgAccountSummary[]>;
     setActive(userId: string, email: string): Promise<void>;
     disconnect(userId: string, email: string): Promise<void>;
     private tokenEndpoint;

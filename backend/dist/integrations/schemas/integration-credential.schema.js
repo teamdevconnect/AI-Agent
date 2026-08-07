@@ -23,13 +23,25 @@ __decorate([
     __metadata("design:type", String)
 ], IntegrationCredential.prototype, "provider", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: true }),
+    (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
 ], IntegrationCredential.prototype, "apiKey", void 0);
 __decorate([
     (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
 ], IntegrationCredential.prototype, "baseUrl", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], IntegrationCredential.prototype, "authType", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], IntegrationCredential.prototype, "credentialsEncrypted", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], IntegrationCredential.prototype, "healthCheckPath", void 0);
 exports.IntegrationCredential = IntegrationCredential = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'integration_credentials' })
 ], IntegrationCredential);

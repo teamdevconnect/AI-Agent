@@ -19,6 +19,10 @@ __decorate([
     __metadata("design:type", String)
 ], OutlookConnection.prototype, "userId", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ index: true }),
+    __metadata("design:type", String)
+], OutlookConnection.prototype, "organizationId", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], OutlookConnection.prototype, "email", void 0);
@@ -42,6 +46,10 @@ __decorate([
     (0, mongoose_1.Prop)({ default: false }),
     __metadata("design:type", Boolean)
 ], OutlookConnection.prototype, "isActive", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: 'connected' }),
+    __metadata("design:type", String)
+], OutlookConnection.prototype, "status", void 0);
 exports.OutlookConnection = OutlookConnection = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'outlook_connections' })
 ], OutlookConnection);

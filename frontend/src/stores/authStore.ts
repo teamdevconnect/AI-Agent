@@ -12,6 +12,7 @@ interface AuthState {
   error: string | null;
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 }
@@ -45,6 +46,21 @@ export const useAuthStore = create<AuthState>()(
         try {
           const session = await authService.register(payload);
           set({ ...applySession(session), isLoading: false });
+        } catch (error) {
+          set({ isLoading: false, error: extractErrorMessage(error) });
+          throw error;
+        }
+      },
+
+      // Completes the OAuth redirect flow (see OAuthCallbackPage): the
+      // backend already exchanged the provider code and issued a JWT the
+      // same shape as login/register issue, this just fetches the profile
+      // and applies the session exactly like those do.
+      async loginWithToken(token) {
+        set({ isLoading: true, error: null });
+        try {
+          const user = await authService.fetchCurrentUser(token);
+          set({ user, accessToken: token, isAuthenticated: true, isLoading: false, error: null });
         } catch (error) {
           set({ isLoading: false, error: extractErrorMessage(error) });
           throw error;

@@ -7,7 +7,10 @@ import { FiMail, FiLock, FiEye, FiEyeOff, FiGithub } from 'react-icons/fi';
 import { FaGoogle, FaMicrosoft } from 'react-icons/fa';
 import { Input, Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
+import { authService } from '@/services/authService';
+import { extractErrorMessage } from '@/utils/errors';
 import { ROUTES } from '@/constants/routes';
+import type { OAuthProvider } from '@/types';
 import { loginSchema, type LoginFormValues } from './schemas';
 import styles from './AuthForm.module.css';
 
@@ -34,6 +37,19 @@ export function LoginPage() {
       toast.success('Welcome back!');
     } catch (error) {
       toast.error((error as Error).message);
+    }
+  };
+
+  // Full-page redirect into the provider's consent screen — same shape as
+  // the Gmail/Outlook "Connect" buttons in IntegrationsPage, just for login
+  // instead of mailbox delegation. The backend's callback redirects back to
+  // /oauth/callback with a session token once it completes.
+  const handleOAuth = async (provider: OAuthProvider) => {
+    try {
+      const url = await authService.getOAuthUrl(provider);
+      window.location.href = url;
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
     }
   };
 
@@ -87,18 +103,18 @@ export function LoginPage() {
 
       <div className={styles.divider}>or continue with</div>
       <div className={styles.socialRow}>
-        <button type="button" className={styles.socialButton} onClick={() => toast('Google SSO — Phase 2')} aria-label="Continue with Google">
+        <button type="button" className={styles.socialButton} onClick={() => handleOAuth('google')} aria-label="Continue with Google">
           <FaGoogle />
         </button>
         <button
           type="button"
           className={styles.socialButton}
-          onClick={() => toast('Microsoft SSO — Phase 2')}
+          onClick={() => handleOAuth('microsoft')}
           aria-label="Continue with Microsoft"
         >
           <FaMicrosoft />
         </button>
-        <button type="button" className={styles.socialButton} onClick={() => toast('GitHub SSO — Phase 2')} aria-label="Continue with GitHub">
+        <button type="button" className={styles.socialButton} onClick={() => handleOAuth('github')} aria-label="Continue with GitHub">
           <FiGithub />
         </button>
       </div>

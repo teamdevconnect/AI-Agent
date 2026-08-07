@@ -19,15 +19,29 @@ export declare class OutlookController {
     getConnectUrl(user: JwtPayload): {
         url: string;
     };
-    callback(code?: string, state?: string, error?: string): Promise<{
+    callback(code?: string, state?: string, error?: string, errorDescription?: string): Promise<{
         url: string;
         statusCode: number;
+    }>;
+    getAdminConsentUrl(user: JwtPayload): {
+        url: string;
+    };
+    adminConsentCallback(tenant?: string, adminConsent?: string, state?: string, error?: string, errorDescription?: string): Promise<{
+        url: string;
+        statusCode: number;
+    }>;
+    getTenantAuthorizationStatus(user: JwtPayload): Promise<{
+        authorized: boolean;
+        tenantId?: string;
+        authorizedByEmail?: string;
     }>;
     getStatus(user: JwtPayload): Promise<{
         connected: boolean;
         email?: string;
+        needsReauth?: boolean;
     }>;
     listAccounts(user: JwtPayload): Promise<import("./outlook.service").OutlookAccountSummary[]>;
     setActive(user: JwtPayload, email: string): Promise<void>;
     disconnectAccount(user: JwtPayload, email: string): Promise<void>;
+    listOrgAccounts(user: JwtPayload): Promise<import("./outlook.service").OutlookOrgAccountSummary[]>;
 }

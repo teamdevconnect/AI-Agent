@@ -48,13 +48,23 @@ export class UsersService {
 
   create(data: {
     email: string;
-    passwordHash: string;
+    passwordHash?: string;
     name: string;
     organizationId: string;
     storeId?: string;
     roles?: string[];
   }) {
     return this.userModel.create(data);
+  }
+
+  findByOAuthId(provider: 'google' | 'microsoft' | 'github', providerId: string) {
+    return this.userModel.findOne({ [`oauthProviders.${provider}`]: providerId }).exec();
+  }
+
+  linkOAuthProvider(userId: string, provider: 'google' | 'microsoft' | 'github', providerId: string) {
+    return this.userModel
+      .findByIdAndUpdate(userId, { [`oauthProviders.${provider}`]: providerId }, { new: true })
+      .exec();
   }
 
   async createByAdmin(dto: CreateUserDto, organizationId: string) {
@@ -120,6 +130,31 @@ export class UsersService {
       department: user.department,
       active: user.active,
     };
+  }
+
+  setVerifyOtp(userId: string, otpHash: string, expiresAt: Date) {
+    return this.userModel
+      .findByIdAndUpdate(userId, { verifyOtpHash: otpHash, verifyOtpExpiresAt: expiresAt })
+      .exec();
+  }
+
+  markEmailVerified(userId: string) {
+    return this.userModel
+      .findByIdAndUpdate(userId, {
+        emailVerified: true,
+        $unset: { verifyOtpHash: '', verifyOtpExpiresAt: '' },
+      })
+      .exec();
+  }
+
+  setResetOtp(userId: string, otpHash: string, expiresAt: Date) {
+    return this.userModel.findByIdAndUpdate(userId, { resetOtpHash: otpHash, resetOtpExpiresAt: expiresAt }).exec();
+  }
+
+  resetPassword(userId: string, passwordHash: string) {
+    return this.userModel
+      .findByIdAndUpdate(userId, { passwordHash, $unset: { resetOtpHash: '', resetOtpExpiresAt: '' } })
+      .exec();
   }
 
   private async resolveValidAgentIds(organizationId: string): Promise<Set<string>> {

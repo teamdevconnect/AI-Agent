@@ -34,7 +34,7 @@ export declare class DashboardService {
             id: string;
             name: string;
             avatarColor: string;
-            status: "reported" | "pending";
+            status: "pending" | "reported";
             todaysTaskCount: number;
             lastReportType: "morning" | "eod" | undefined;
             lastReportAt: Date | undefined;

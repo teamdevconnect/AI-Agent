@@ -25,6 +25,15 @@
   color: var(--color-text-muted);
 }
 
+.passwordToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  color: var(--color-text-muted);
+  pointer-events: all;
+}
+
 .apiKeyRow {
   display: flex;
   align-items: center;
