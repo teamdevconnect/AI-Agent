@@ -43,6 +43,15 @@
   border-bottom: none;
   border-right: 1px solid var(--color-border);
   padding-right: var(--space-2);
+  /* .list's overflow-x: auto (needed for horizontal mode's scrollable
+     preset row) has a real CSS-spec side effect here: leaving overflow-y
+     at its default while overflow-x is non-"visible" makes the browser
+     compute overflow-y as auto too — so a vertical Tabs list silently
+     became vertically scrollable the moment its content was even slightly
+     taller than its flex-computed height, showing a phantom scrollbar for
+     as few as 3 items. Horizontal scroll never makes sense in column mode
+     anyway, so this fully overrides it. */
+  overflow-x: visible;
 }
 
 .vertical .tab {

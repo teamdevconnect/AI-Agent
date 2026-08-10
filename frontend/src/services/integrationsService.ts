@@ -37,6 +37,11 @@ export const integrationsService = {
 
   // Outlook has its own dedicated OAuth module on the backend (real
   // Microsoft Graph delegated auth-code flow, already configured).
+  async getOutlookStatus(): Promise<{ connected: boolean; email?: string; canSend: boolean }> {
+    const { data } = await axiosClient.get<{ connected: boolean; email?: string; canSend: boolean }>('/outlook/status');
+    return data;
+  },
+
   async getOutlookConnectUrl(): Promise<string> {
     const { data } = await axiosClient.get<{ url: string }>('/outlook/connect-url');
     return data.url;

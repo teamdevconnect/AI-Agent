@@ -31,6 +31,13 @@
   padding-bottom: var(--space-1);
 }
 
+.filterRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .emptyState {
   font-size: var(--text-sm);
   color: var(--color-text-muted);

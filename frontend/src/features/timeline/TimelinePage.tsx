@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Skeleton } from '@/components/ui';
-import { timelineService, type TimelineEvent } from '@/services/timelineService';
+import { FiClock } from 'react-icons/fi';
+import { Badge, DateRangeControl, MultiSelectDropdown, SectionCard, Skeleton } from '@/components/ui';
+import type { DateRange } from '@/components/ui';
+import { timelineService, TIMELINE_EVENT_TYPE_OPTIONS, type TimelineEvent } from '@/services/timelineService';
 import { dayjs, formatFullDate } from '@/utils/date';
 import styles from './TimelinePage.module.css';
 
 const MISSED_TYPES = new Set(['daily_report_missed']);
+
+const TYPE_LABELS: Record<string, string> = Object.fromEntries(TIMELINE_EVENT_TYPE_OPTIONS.map((o) => [o.value, o.label]));
 
 function badgeVariant(type: string): 'success' | 'warning' | 'info' {
   if (MISSED_TYPES.has(type)) return 'warning';
@@ -13,18 +18,7 @@ function badgeVariant(type: string): 'success' | 'warning' | 'info' {
 }
 
 function typeLabel(type: string): string {
-  switch (type) {
-    case 'daily_report_generated':
-      return 'Report generated';
-    case 'daily_report_missed':
-      return 'Report missed';
-    case 'task_completed':
-      return 'Task completed';
-    case 'achievement_unlocked':
-      return 'Achievement';
-    default:
-      return type;
-  }
+  return TYPE_LABELS[type] ?? type;
 }
 
 function groupByDay(events: TimelineEvent[]): [string, TimelineEvent[]][] {
@@ -37,22 +31,20 @@ function groupByDay(events: TimelineEvent[]): [string, TimelineEvent[]][] {
 }
 
 export function TimelinePage() {
+  const [range, setRange] = useState<DateRange>({});
+  const [types, setTypes] = useState<string[]>([]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['timeline'],
-    queryFn: () => timelineService.list(),
+    queryKey: ['timeline', range],
+    queryFn: () => timelineService.list({ from: range.dateFrom, to: range.dateTo }),
     refetchInterval: 60_000,
   });
 
-  if (isLoading || !data) {
-    return (
-      <div className={styles.page}>
-        <Skeleton height={100} />
-        <Skeleton height={160} />
-      </div>
-    );
-  }
-
-  const groups = groupByDay(data);
+  // Server-side date filtering (real, applied via the DTO's from/to); type
+  // filtering stays client-side over that already-fetched set — the backend
+  // DTO only accepts one `type` string, so forwarding a multi-select
+  // selection would misrepresent what's actually being asked for.
+  const filtered = data?.filter((e) => types.length === 0 || types.includes(e.type));
 
   return (
     <div className={styles.page}>
@@ -61,29 +53,41 @@ export function TimelinePage() {
         <div className={styles.pageSubtitle}>The business's memory — significant events as they happen</div>
       </div>
 
-      {groups.length === 0 ? (
-        <div className={styles.emptyState}>Nothing recorded yet.</div>
-      ) : (
-        groups.map(([day, events]) => (
-          <div key={day} className={styles.group}>
-            <span className={styles.groupLabel}>
-              {dayjs(day).isToday() ? 'Today' : dayjs(day).format('MMMM D, YYYY')}
-            </span>
-            {events.map((event) => (
-              <div key={event._id} className={styles.item}>
-                <div className={styles.itemMain}>
-                  <span className={styles.itemTitle}>{event.title}</span>
-                  <span className={styles.itemMeta}>
-                    {formatFullDate(event.occurredAt)}
-                    {event.description ? ` — ${event.description}` : ''}
-                  </span>
+      <div className={styles.filterRow}>
+        <DateRangeControl value={range} onChange={setRange} />
+        <MultiSelectDropdown label="Type" options={TIMELINE_EVENT_TYPE_OPTIONS} selected={types} onChange={setTypes} />
+      </div>
+
+      <SectionCard title="Timeline" icon={FiClock}>
+        {isLoading || !filtered ? (
+          <>
+            <Skeleton height={100} />
+            <Skeleton height={160} />
+          </>
+        ) : groupByDay(filtered).length === 0 ? (
+          <div className={styles.emptyState}>Nothing recorded yet.</div>
+        ) : (
+          groupByDay(filtered).map(([day, events]) => (
+            <div key={day} className={styles.group}>
+              <span className={styles.groupLabel}>
+                {dayjs(day).isToday() ? 'Today' : dayjs(day).format('MMMM D, YYYY')}
+              </span>
+              {events.map((event) => (
+                <div key={event._id} className={styles.item}>
+                  <div className={styles.itemMain}>
+                    <span className={styles.itemTitle}>{event.title}</span>
+                    <span className={styles.itemMeta}>
+                      {formatFullDate(event.occurredAt)}
+                      {event.description ? ` — ${event.description}` : ''}
+                    </span>
+                  </div>
+                  <Badge variant={badgeVariant(event.type)}>{typeLabel(event.type)}</Badge>
                 </div>
-                <Badge variant={badgeVariant(event.type)}>{typeLabel(event.type)}</Badge>
-              </div>
-            ))}
-          </div>
-        ))
-      )}
+              ))}
+            </div>
+          ))
+        )}
+      </SectionCard>
     </div>
   );
 }

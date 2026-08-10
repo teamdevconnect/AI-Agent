@@ -81,8 +81,8 @@ let OutlookService = class OutlookService {
         return { email };
     }
     async getStatus(userId) {
-        const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1 });
-        return { connected: Boolean(active), email: active?.email };
+        const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1, scope: 1 });
+        return { connected: Boolean(active), email: active?.email, canSend: !!active?.scope?.includes('Mail.Send') };
     }
     async listAccounts(userId) {
         const connections = await this.connectionModel

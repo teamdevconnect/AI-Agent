@@ -63,6 +63,8 @@ export interface OwnerOverview {
   pendingApprovals: unknown[];
   riskAlerts: DealSummary[];
   aiInsight: string;
+  // Phase 16 — Owner previously had no calendar data at all.
+  todaysMeetings: TodaysMeetingsResult;
 }
 
 export interface ManagerOverview {
@@ -74,6 +76,9 @@ export interface ManagerOverview {
   conversionRate: number | null;
   teamPerformance: EmployeeLeaderboardEntry[];
   followUps: DealSummary[];
+  // Phase 16 — store-scoped past-due deals, distinct from followUps (which
+  // is next-7-days). Feeds the Home Dashboard's Critical Alerts tier.
+  dealsAtRisk: DealSummary[];
   missedEodReportToday: boolean;
   aiRecommendation: string;
   teamCalendar: TeamCalendarResult;
@@ -88,6 +93,8 @@ export interface ConsultantOverview {
   remainingTarget: number | null;
   customerPipeline: DealSummary[];
   followUps: DealSummary[];
+  // Phase 16 — personal past-due deals, distinct from followUps.
+  dealsAtRisk: DealSummary[];
   aiCoaching: string;
   todaysMeetings: TodaysMeetingsResult;
   todaysTasks: NotYetAvailable;

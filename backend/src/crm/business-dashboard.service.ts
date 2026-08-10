@@ -79,7 +79,7 @@ export class BusinessDashboardService {
   async getOwnerOverview(caller: JwtPayload, period = currentPeriod()) {
     const organizationId = caller.organizationId;
 
-    const [achievement, revenueTrend, storeRankings, employeeLeaderboard, riskAlerts, workforceOverview, stores, users] =
+    const [achievement, revenueTrend, storeRankings, employeeLeaderboard, riskAlerts, workforceOverview, stores, users, calendar] =
       await Promise.all([
         this.salesAnalyticsService.getAchievement(organizationId, 'org', undefined, period),
         this.getRevenueTrend(organizationId, 6),
@@ -105,6 +105,12 @@ export class BusinessDashboardService {
         this.dashboardService.getOverview(caller),
         this.organizationsService.listStores(organizationId),
         this.usersService.findAll(organizationId),
+        // Phase 16 — Owner previously had no calendar data at all (only
+        // Manager/Consultant did). Reuses the exact same personal-calendar
+        // helper Consultant's todaysMeetings already calls, scoped to the
+        // owner's own connected account — for the new Home Dashboard's
+        // Today's Meetings add-on.
+        this.getUserCalendarEvents(caller.sub, 1),
       ]);
 
     const storeNameById = new Map(stores.map((s) => [s._id.toString(), s.name]));
@@ -140,6 +146,9 @@ export class BusinessDashboardService {
         expectedClosingDate: d.expectedClosingDate,
       })),
       aiInsight: this.buildOwnerInsight(achievement.achievementPct, achievement.remaining, riskAlerts.length),
+      todaysMeetings: calendar.connected
+        ? { available: true as const, events: calendar.events }
+        : CALENDAR_NOT_CONNECTED,
     };
   }
 
@@ -152,7 +161,7 @@ export class BusinessDashboardService {
     }
 
     const dealFilter = { organizationId, storeId };
-    const [achievement, teamPerformance, revenueDeals, followUps, missedEod, users] = await Promise.all([
+    const [achievement, teamPerformance, revenueDeals, followUps, dealsAtRisk, missedEod, users] = await Promise.all([
       this.salesAnalyticsService.getAchievement(organizationId, 'store', storeId, period),
       this.dealModel
         .aggregate<{ _id: string; revenue: number; wonCount: number }>([
@@ -164,6 +173,15 @@ export class BusinessDashboardService {
       this.dealModel.find({ ...dealFilter, expectedClosingDate: { $regex: `^${period}` } }).exec(),
       this.dealModel
         .find({ ...dealFilter, dealStatus: 'open', expectedClosingDate: { $lte: this.daysFromNow(7) } })
+        .sort({ expectedClosingDate: 1 })
+        .limit(20)
+        .exec(),
+      // Phase 16 — store-scoped equivalent of Owner's existing org-wide
+      // riskAlerts query, feeding the new Home Dashboard's Critical Alerts
+      // tier. followUps above is next-7-days (a different, existing signal);
+      // this is genuinely past-due.
+      this.dealModel
+        .find({ ...dealFilter, dealStatus: 'open', expectedClosingDate: { $lt: todayStamp() } })
         .sort({ expectedClosingDate: 1 })
         .limit(20)
         .exec(),
@@ -204,6 +222,12 @@ export class BusinessDashboardService {
         monetaryValue: d.monetaryValue,
         expectedClosingDate: d.expectedClosingDate,
       })),
+      dealsAtRisk: dealsAtRisk.map((d) => ({
+        dealId: d._id.toString(),
+        name: d.name,
+        monetaryValue: d.monetaryValue,
+        expectedClosingDate: d.expectedClosingDate,
+      })),
       missedEodReportToday: !missedEod,
       aiRecommendation: this.buildManagerRecommendation(achievement.achievementPct, followUps.length),
       teamCalendar: { available: true as const, events: teamCalendarEvents },
@@ -222,6 +246,11 @@ export class BusinessDashboardService {
     ]);
 
     const followUps = pipeline.filter((d) => d.expectedClosingDate && d.expectedClosingDate <= this.daysFromNow(7));
+    // Phase 16 — personal equivalent of Owner's riskAlerts / Manager's new
+    // dealsAtRisk: open deals already past their expected close date, not
+    // just approaching one (followUps above). Filtered from the same
+    // already-fetched pipeline, no extra query needed.
+    const dealsAtRisk = pipeline.filter((d) => d.expectedClosingDate && d.expectedClosingDate < todayStamp());
 
     return {
       period,
@@ -237,6 +266,12 @@ export class BusinessDashboardService {
         expectedClosingDate: d.expectedClosingDate,
       })),
       followUps: followUps.map((d) => ({ dealId: d._id.toString(), name: d.name, expectedClosingDate: d.expectedClosingDate })),
+      dealsAtRisk: dealsAtRisk.map((d) => ({
+        dealId: d._id.toString(),
+        name: d.name,
+        monetaryValue: d.monetaryValue,
+        expectedClosingDate: d.expectedClosingDate,
+      })),
       aiCoaching: this.buildCoachingTip(achievement.achievementPct, achievement.remaining, pipeline.length),
       todaysMeetings: calendar.connected
         ? { available: true as const, events: calendar.events }

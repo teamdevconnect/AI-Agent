@@ -16,14 +16,13 @@ import {
   FiUsers,
   FiZap,
 } from 'react-icons/fi';
-import { Button, Dropdown, MultiSelectDropdown, SectionCard, Skeleton, Tabs } from '@/components/ui';
+import { Button, Dropdown, MultiSelectDropdown, SectionCard, Skeleton, StatTile, Tabs } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { getSocket } from '@/api/socketClient';
 import { extractErrorMessage } from '@/utils/errors';
 import { formatINR as money } from '@/utils/currency';
 import { financeDocumentsService, type FinanceDocument, type FinanceFilters } from '@/services/financeDocumentsService';
 import { financeDashboardService, type FinancePreset } from '@/services/financeDashboardService';
-import { StatTile } from '@/features/dashboard/components/StatTile';
 import { FinanceFilterBar } from './components/FinanceFilterBar';
 import { FinanceSavedViewsBar } from './components/FinanceSavedViewsBar';
 import { FinanceSummaryPanel } from './components/FinanceSummaryPanel';

@@ -27,7 +27,7 @@ exports.ChatModule = ChatModule = __decorate([
                 { name: conversation_schema_1.Conversation.name, schema: conversation_schema_1.ConversationSchema },
                 { name: agent_role_schema_1.AgentRole.name, schema: agent_role_schema_1.AgentRoleSchema },
             ]),
-            axios_1.HttpModule.register({ timeout: 120_000 }),
+            axios_1.HttpModule.register({ timeout: 300_000 }),
             auth_module_1.AuthModule,
         ],
         controllers: [chat_controller_1.ChatController],

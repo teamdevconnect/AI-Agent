@@ -140,3 +140,72 @@
   font-weight: 600;
   color: var(--color-text-primary);
 }
+
+/* Phase 16 — Unified Home Dashboard sections */
+
+.stackList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.recommendationRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border-strong);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+}
+
+.recommendationRow[data-severity='critical'] {
+  border-left-color: var(--color-danger);
+}
+
+.recommendationRow[data-severity='warning'] {
+  border-left-color: var(--color-warning);
+}
+
+.recommendationRow[data-severity='info'] {
+  border-left-color: var(--brand-accent-primary);
+}
+
+.alertGroupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.alertGroupLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.emailBucketRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.emailBucketChip {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.footerCard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+}

@@ -1,0 +1,122 @@
+.page {
+  padding: var(--space-6);
+  overflow-y: auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.headerRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.pageTitle {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.pageSubtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* Report Type sits in its own thin card above the filter bar — a wide
+   horizontal Tabs row, not a narrow sidebar list (see ReportingPage.tsx's
+   own comment for why the earlier sidebar layout was replaced). */
+.reportTypeBar {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--gradient-surface), var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+}
+
+/* Same shape as deal-performance/finance/royalty's own .filterBar/.filterRow
+   — DateRangeControl and a Group By selector both live here at full page
+   width, matching how every other filterable page in this app already
+   places them, instead of squeezing them into a narrow column. */
+.filterBar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+}
+
+.filterRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.reportTitle {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.reportDescription {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.sectionHeading {
+  text-align: center;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-top: var(--space-3);
+}
+
+.reportTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.reportTable th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.reportTable td {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.reportTable th:not(:first-child),
+.reportTable td:not(:first-child) {
+  text-align: right;
+}
+
+.reportTable tr:last-child td {
+  border-bottom: none;
+}
+
+.reportTable tr.totalRow td {
+  font-weight: 700;
+  border-top: 2px solid var(--color-border-strong);
+}
+
+.emptyState {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}

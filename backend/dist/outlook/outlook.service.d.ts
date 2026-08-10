@@ -29,6 +29,7 @@ export declare class OutlookService {
     getStatus(userId: string): Promise<{
         connected: boolean;
         email?: string;
+        canSend: boolean;
     }>;
     listAccounts(userId: string): Promise<OutlookAccountSummary[]>;
     setActive(userId: string, email: string): Promise<void>;

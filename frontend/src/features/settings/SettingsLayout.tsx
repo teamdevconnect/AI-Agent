@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { FiSettings, FiBell, FiShield, FiUsers, FiUserPlus, FiTarget, FiUserCheck, FiZap } from 'react-icons/fi';
+import { FiSettings, FiBell, FiShield, FiUsers, FiUserPlus, FiTarget, FiUserCheck, FiZap, FiPercent } from 'react-icons/fi';
 import { Tabs } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { useAuthStore } from '@/stores/authStore';
@@ -32,6 +32,16 @@ const TAB_ITEMS = [
     icon: <FiZap />,
     path: ROUTES.settingsWorkflows,
     requireRoles: ['admin'],
+  },
+  {
+    id: 'royalty-rules',
+    label: 'Royalty Rules',
+    icon: <FiPercent />,
+    path: ROUTES.settingsRoyaltyRules,
+    // Widened to ['owner','admin'] — matches RoyaltyRulesController's actual
+    // backend gate, unlike every other tab above (['admin']-only), since
+    // this is sensitive org-wide financial configuration.
+    requireRoles: ['owner', 'admin'],
   },
 ];
 

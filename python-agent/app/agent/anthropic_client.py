@@ -802,7 +802,15 @@ def call(
             try:
                 with _client(api_key).messages.stream(
                     model=resolved_model,
-                    max_tokens=1024,
+                    # Was 1024 — too small for a genuinely detailed answer (a
+                    # thorough sales-coaching response, a multi-part investigative
+                    # summary, etc.): the stream would hit max_tokens mid-sentence
+                    # and stop, and should_continue() in graph.py only checks for
+                    # pending tool calls, not stop_reason, so a truncated answer
+                    # was silently returned as if it were complete. Matches this
+                    # file's own ceiling for other "may need real length" calls
+                    # (_run_forced_tool_extraction already uses 8192).
+                    max_tokens=8192,
                     system=[
                         {
                             "type": "text",
@@ -849,6 +857,8 @@ def call(
                     time.sleep(0.5 * (2**attempt))
                     continue
                 raise
+
+    return _normalize_response(response)
 
 
 CUSTOMER_ACTIVITY_TOOL = {
@@ -1029,9 +1039,18 @@ def analyze_finance_activity(payload: dict) -> dict:
     return _normalize_response(response)
 
 
+# strict: true (+ additionalProperties: false, every property in `required`)
+# constrains Claude's token sampling to guarantee schema-valid, fully-present
+# output — added after live verification showed the model was silently
+# OMITTING nullable "required" keys entirely (requestedItems,
+# draftWrittenFromOurPerspective) rather than emitting them as null, which
+# silently defeated Phase 17's Layer 2 validation (an absent key can't be
+# checked). Nullable fields use anyOf, not a `type` array — Anthropic's
+# strict-mode JSON Schema subset doesn't support `"type": ["string","null"]`.
 EMAIL_INTENT_TOOL = {
     "name": "analyze_email",
     "description": "Classify one inbound email and, when appropriate, draft a reply — using only the CRM/business context actually supplied.",
+    "strict": True,
     "input_schema": {
         "type": "object",
         "properties": {
@@ -1054,13 +1073,38 @@ EMAIL_INTENT_TOOL = {
                     "price_negotiation, complaint, technical_support, meeting_request. Always false otherwise."
                 ),
             },
-            "draftReply": {"type": ["string", "null"]},
+            "draftReply": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "draftReasoning": {
-                "type": ["string", "null"],
+                "anyOf": [{"type": "string"}, {"type": "null"}],
                 "description": "Required (non-null) whenever shouldDraft is true; null otherwise.",
             },
+            "requestedItems": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "description": (
+                    "Only for quotation_request or price_negotiation: a short, literal description of what "
+                    "the customer asked for (e.g. '500 branded T-shirts'), taken only from what the email "
+                    "actually states — never inferred or expanded. Null for every other intent, and null if "
+                    "the email doesn't clearly state what's being requested."
+                ),
+            },
+            "draftWrittenFromOurPerspective": {
+                "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                "description": (
+                    "Required (non-null) whenever shouldDraft is true; null otherwise. A deliberate, explicit "
+                    "self-check performed AFTER writing draftReply: re-read it and confirm it is written as "
+                    "OUR company (ourEmail) speaking TO the external sender — never in the sender's own voice, "
+                    "never as if you were the customer/vendor replying to us, and never with the sender/"
+                    "recipient roles reversed. Set this to false (not true) if you have any doubt, rather than "
+                    "guessing — a false value causes the draft to be discarded and reviewed by a human instead "
+                    "of shown as ready."
+                ),
+            },
         },
-        "required": ["intent", "priority", "urgency", "sentiment", "recommendedAction", "shouldDraft", "draftReply", "draftReasoning"],
+        "required": [
+            "intent", "priority", "urgency", "sentiment", "recommendedAction", "shouldDraft",
+            "draftReply", "draftReasoning", "requestedItems", "draftWrittenFromOurPerspective",
+        ],
+        "additionalProperties": False,
     },
 }
 
@@ -1068,33 +1112,77 @@ EMAIL_INTENT_TOOL = {
 # cost/margin data configured anywhere yet (Phase 14b explicitly defers
 # quotation pricing intelligence) — any specific price/discount/margin this
 # model produced would be fabricated, not derived from real data.
-EMAIL_INTENT_SYSTEM_PROMPT = """You are triaging one inbound email for a salesperson, using only the \
-CRM/business context that has already been deterministically gathered and supplied — never invent a \
-customer fact, quote amount, deal detail, or company name not present in the input. The input's \
-correlation.matchConfidence field ('exact', 'domain', 'fuzzy', or 'none') tells you how sure the system \
-is that this sender belongs to a known business: treat 'exact' as fact, hedge 'fuzzy' explicitly \
-(e.g. "this may be related to...") in recommendedAction/draftReply, and treat the sender as unknown \
-whenever matchConfidence is 'none' or businessContext is null.
+#
+# The identity/perspective paragraphs below exist because of a real, reported
+# bug (Phase 17): with no explicit "who is us" signal, drafts sometimes came
+# back written in the customer's/vendor's own voice, or with sender/recipient
+# roles reversed. ourEmail (now always present in the input payload) and the
+# draftWrittenFromOurPerspective self-check are the fix — never remove either
+# without a new correctness pass to replace them.
+EMAIL_INTENT_SYSTEM_PROMPT = """You are an employee of the company that owns ourEmail (given in the \
+input payload), triaging one inbound email using only the CRM/business context that has already been \
+deterministically gathered and supplied — never invent a customer fact, quote amount, deal detail, or \
+company name not present in the input.
+
+Identity and perspective — read this before drafting anything: ourEmail is OUR organization's own \
+mailbox address. email.from is the party who sent the message you are triaging; unless email.from equals \
+ourEmail (which the caller already filters out before this call is ever made), treat email.from as the \
+external party — a customer, vendor, or other outside contact, never us. email.to may list ourEmail \
+alongside other recipients; that does not change who "we" are. Any draftReply you write must be composed \
+as OUR company writing back TO that external party: our own voice, our own tone, addressing them in \
+second person ("you"/"your company"), never impersonating them, never written as if the customer or \
+vendor were the one speaking, and never with the sender/recipient roles swapped. If anything about the \
+thread makes the direction unclear or contradictory, set shouldDraft to false rather than guessing at a \
+draft that might be in the wrong voice.
+
+The input's correlation.matchConfidence field ('exact', 'domain', 'fuzzy', or 'none') tells you how sure \
+the system is that this sender belongs to a known business: treat 'exact' as fact, hedge 'fuzzy' \
+explicitly (e.g. "this may be related to...") in recommendedAction/draftReply, and treat the sender as \
+unknown whenever matchConfidence is 'none' or businessContext is null.
 
 Classify intent using: new_enquiry, existing_customer, quotation_request, price_negotiation, complaint, \
 technical_support, payment, purchase_order, vendor, refund, meeting_request, escalation, internal, spam, \
 other. Set shouldDraft true ONLY for new_enquiry, existing_customer, quotation_request, \
-price_negotiation, complaint, technical_support, meeting_request. Always set shouldDraft false for \
-payment, purchase_order, vendor, refund, internal, spam, other, and escalation (escalations need a human \
-decision first, not an AI-authored reply).
+price_negotiation, complaint, technical_support, meeting_request — and only when the external party is \
+genuinely awaiting a substantive reply from us. Always set shouldDraft false for payment, purchase_order, \
+vendor, refund, internal, spam, other, and escalation (escalations need a human decision first, not an \
+AI-authored reply), and also false for automated/system-generated notices (delivery/read receipts, \
+out-of-office auto-replies, mail-relay/bounce notifications) or genuine FYI-only messages that don't \
+actually need a reply, even if their intent classification looks otherwise draftable.
 
 Critical pricing constraint: for quotation_request or price_negotiation, you may cite the customer's \
 real previous quotes if supplied (amount, quote number, status) as factual context, but you must NEVER \
 propose, imply, or draft a specific new price, discount percentage, or margin — this organization has no \
 cost/margin data configured yet, so any such number would be fabricated. recommendedAction and any draft \
 must instead direct the salesperson to follow up personally on pricing, while still being helpful about \
-scope/timeline/acknowledging the request.
+scope/timeline/acknowledging the request. For these two intents only, also set requestedItems to a short, \
+literal restatement of what the customer asked for, taken only from the email itself (e.g. "500 branded \
+T-shirts") — never invented or expanded beyond what's actually written. Leave requestedItems null for \
+every other intent, and null if the email doesn't clearly state what's being requested.
 
 businessKnowledgeContext, when non-empty, is real company knowledge (policies, FAQs, product info) — use \
 it to make a draft more accurate, but its absence is not a reason to leave a draft generic if the email \
 itself gives you enough to work with. draftReply, when present, should be ready to send with only light \
-editing, matching the email's own tone, never inventing commitments (dates, prices, guarantees) beyond \
-what's supplied. Always call analyze_email exactly once."""
+editing, never inventing commitments (dates, prices, guarantees) beyond what's supplied.
+
+Write draftReply the way a real person would actually type a reply, not a formal AI-assistant response: \
+plain prose in short paragraphs, no markdown at all (no **bold**, no bullet/dash lists, no headers) — if \
+you need to ask about a few things, weave them into a sentence or two rather than a checklist. Keep it \
+brief — ask about the 2-3 things that actually matter most, not every conceivable detail. Match the \
+warmth and formality of the incoming message rather than defaulting to stiff corporate phrasing (\"Dear \
+Sir/Madam\", \"We would like to inform you that...\", etc.). Sign off with the mailbox owner's real first \
+name from ourName when it's supplied (e.g. \"Thanks,\\nSanjay\") — never a generic \"AI Assistant\" or \
+\"Support Team\" signature; if ourName is null, sign with the company name only. recommendedAction and \
+draftReasoning should likewise read like a quick, natural note to a colleague — plain and direct (\"call \
+Priya to confirm quantities and branding before quoting\" rather than \"This represents an unmatched \
+customer enquiry requiring qualification of requirements\") — still exactly one or two sentences, still \
+exactly actionable, just not written like a formal report.
+
+Whenever shouldDraft is true, after writing draftReply you must explicitly re-read it and set \
+draftWrittenFromOurPerspective: true only if you are genuinely confident it is written as our company \
+speaking to the external party, with correct sender/recipient direction and no impersonation of the \
+other side — set it false if you have any real doubt, rather than guessing true. Leave it null whenever \
+shouldDraft is false. Always call analyze_email exactly once."""
 
 
 def analyze_email(payload: dict) -> dict:

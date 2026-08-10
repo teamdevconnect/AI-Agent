@@ -9,13 +9,23 @@ import styles from './WonLostTrendChart.module.css';
 // Tooltip's own series names plus the parent's section title are enough to
 // disambiguate two bars. Bars are clickable when `onSelect` is passed,
 // drilling into that month + status's deal list.
+//
+// `metric` (Phase 19) — 'count' (default, unchanged for every existing
+// caller) or 'value', switching which field the two bars read. Lets the
+// Unified Analytics Dashboard's won-vs-lost revenue widget reuse this
+// component verbatim (fed a single-point array) instead of a new chart.
 export function WonLostTrendChart({
   points,
   onSelect,
+  metric = 'count',
 }: {
   points: WonLostTrendPoint[];
   onSelect?: (period: string, status: 'won' | 'lost') => void;
+  metric?: 'count' | 'value';
 }) {
+  const wonKey = metric === 'value' ? 'wonValue' : 'wonCount';
+  const lostKey = metric === 'value' ? 'lostValue' : 'lostCount';
+
   return (
     <div className={styles.wrapper}>
       <ResponsiveContainer width="100%" height={240}>
@@ -33,7 +43,7 @@ export function WonLostTrendChart({
             labelStyle={{ color: 'var(--color-text-primary)' }}
           />
           <Bar
-            dataKey="wonCount"
+            dataKey={wonKey}
             name="Won"
             fill="var(--color-success)"
             radius={[4, 4, 0, 0]}
@@ -41,7 +51,7 @@ export function WonLostTrendChart({
             onClick={onSelect ? (point: WonLostTrendPoint) => onSelect(point.period, 'won') : undefined}
           />
           <Bar
-            dataKey="lostCount"
+            dataKey={lostKey}
             name="Lost"
             fill="var(--color-danger)"
             radius={[4, 4, 0, 0]}

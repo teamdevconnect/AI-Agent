@@ -70,6 +70,8 @@ class EmailAnalysisResponse(BaseModel):
     shouldDraft: bool
     draftReply: str | None = None
     draftReasoning: str | None = None
+    requestedItems: str | None = None
+    draftWrittenFromOurPerspective: bool | None = None
 
 
 class BusinessDocumentExtractResponse(BaseModel):

@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Skeleton } from '@/components/ui';
+import { Badge, Skeleton, StatTile } from '@/components/ui';
 import { commandCenterService } from '@/services/commandCenterService';
-import { StatTile } from '@/features/dashboard/components/StatTile';
 import { CostTrendChart } from './components/CostTrendChart';
 import { dayjs } from '@/utils/date';
 import styles from './command-center.module.css';

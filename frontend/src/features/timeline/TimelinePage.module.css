@@ -18,6 +18,13 @@
   color: var(--color-text-muted);
 }
 
+.filterRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 .group {
   display: flex;
   flex-direction: column;

@@ -20,7 +20,6 @@ const contact_schema_1 = require("./schemas/contact.schema");
 const customer_activity_summary_schema_1 = require("./schemas/customer-activity-summary.schema");
 const customer_activity_personal_summary_schema_1 = require("./schemas/customer-activity-personal-summary.schema");
 const deal_schema_1 = require("./schemas/deal.schema");
-const deal_performance_preset_schema_1 = require("./schemas/deal-performance-preset.schema");
 const note_schema_1 = require("./schemas/note.schema");
 const quote_schema_1 = require("./schemas/quote.schema");
 const quote_counter_schema_1 = require("./schemas/quote-counter.schema");
@@ -32,13 +31,12 @@ const crm_controller_1 = require("./crm.controller");
 const crm_service_1 = require("./crm.service");
 const customer_activity_controller_1 = require("./customer-activity.controller");
 const customer_activity_service_1 = require("./customer-activity.service");
-const deal_performance_dashboard_controller_1 = require("./deal-performance-dashboard.controller");
+const quotes_controller_1 = require("./quotes.controller");
 const deal_performance_dashboard_service_1 = require("./deal-performance-dashboard.service");
-const deal_performance_preset_controller_1 = require("./deal-performance-preset.controller");
-const deal_performance_preset_service_1 = require("./deal-performance-preset.service");
 const deals_controller_1 = require("./deals.controller");
 const deals_export_service_1 = require("./deals-export.service");
 const deals_service_1 = require("./deals.service");
+const quotes_service_1 = require("./quotes.service");
 const sales_analytics_service_1 = require("./sales-analytics.service");
 const sales_target_controller_1 = require("./sales-target.controller");
 let CrmModule = class CrmModule {
@@ -55,7 +53,6 @@ exports.CrmModule = CrmModule = __decorate([
                 { name: note_schema_1.Note.name, schema: note_schema_1.NoteSchema },
                 { name: tag_schema_1.Tag.name, schema: tag_schema_1.TagSchema },
                 { name: sales_target_schema_1.SalesTarget.name, schema: sales_target_schema_1.SalesTargetSchema },
-                { name: deal_performance_preset_schema_1.DealPerformancePreset.name, schema: deal_performance_preset_schema_1.DealPerformancePresetSchema },
                 { name: quote_counter_schema_1.QuoteCounter.name, schema: quote_counter_schema_1.QuoteCounterSchema },
                 { name: customer_activity_summary_schema_1.CustomerActivitySummary.name, schema: customer_activity_summary_schema_1.CustomerActivitySummarySchema },
                 { name: customer_activity_personal_summary_schema_1.CustomerActivityPersonalSummary.name, schema: customer_activity_personal_summary_schema_1.CustomerActivityPersonalSummarySchema },
@@ -72,9 +69,8 @@ exports.CrmModule = CrmModule = __decorate([
             sales_target_controller_1.SalesTargetController,
             business_dashboard_controller_1.BusinessDashboardController,
             deals_controller_1.DealsController,
-            deal_performance_dashboard_controller_1.DealPerformanceDashboardController,
-            deal_performance_preset_controller_1.DealPerformancePresetController,
             customer_activity_controller_1.CustomerActivityController,
+            quotes_controller_1.QuotesController,
         ],
         providers: [
             crm_service_1.CrmService,
@@ -83,10 +79,10 @@ exports.CrmModule = CrmModule = __decorate([
             deals_service_1.DealsService,
             deals_export_service_1.DealsExportService,
             deal_performance_dashboard_service_1.DealPerformanceDashboardService,
-            deal_performance_preset_service_1.DealPerformancePresetService,
             customer_activity_service_1.CustomerActivityService,
+            quotes_service_1.QuotesService,
         ],
-        exports: [customer_activity_service_1.CustomerActivityService],
+        exports: [customer_activity_service_1.CustomerActivityService, quotes_service_1.QuotesService, business_dashboard_service_1.BusinessDashboardService, deal_performance_dashboard_service_1.DealPerformanceDashboardService, sales_analytics_service_1.SalesAnalyticsService],
     })
 ], CrmModule);
 //# sourceMappingURL=crm.module.js.map

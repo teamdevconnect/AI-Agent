@@ -45,12 +45,21 @@ export class DealsController {
     return this.dealsService.list(user.organizationId, storeId);
   }
 
+  // Phase 19 — widened to include 'consultant' (previously owner/admin/
+  // manager only) so the Unified Analytics Dashboard's drill-down works for
+  // every role that can see it. A consultant's ownerId is always
+  // server-forced to their own id here, never client-supplied — same
+  // "server always overrides untrusted client scope" principle already used
+  // throughout this codebase (e.g. customer-activity's personal endpoints).
   @Get('query')
   @UseGuards(RolesGuard)
-  @Roles('owner', 'admin', 'manager')
+  @Roles('owner', 'admin', 'manager', 'consultant')
   listFiltered(@CurrentUser() user: JwtPayload, @Query() query: ListDealsQueryDto) {
     const canOverride = user.roles.includes('admin') || user.roles.includes('owner');
-    const storeConstraint = canOverride ? undefined : user.storeId;
+    const storeConstraint = canOverride ? undefined : user.roles.includes('manager') ? user.storeId : undefined;
+    if (!canOverride && user.roles.includes('consultant')) {
+      query.ownerId = [user.sub];
+    }
     return this.dealsService.listFiltered(user.organizationId, query, storeConstraint);
   }
 

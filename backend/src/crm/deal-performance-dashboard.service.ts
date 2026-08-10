@@ -213,7 +213,11 @@ export class DealPerformanceDashboardService {
     return periods.map((period) => ({ period, ...byPeriod.get(period)! }));
   }
 
-  private async getRevenueProgress(organizationId: string, scope: 'org' | 'store', scopeId: string | undefined, months: number) {
+  // scope widened to include 'user' for Phase 19's Analytics Dashboard
+  // (Consultant's own revenue trend) — getAchievement already supports it,
+  // this method was just never asked for it before; existing callers only
+  // ever pass 'org'/'store', unaffected.
+  async getRevenueProgress(organizationId: string, scope: 'org' | 'store' | 'user', scopeId: string | undefined, months: number) {
     const periods = lastNPeriods(months);
     return Promise.all(
       periods.map(async (period) => {
@@ -228,7 +232,7 @@ export class DealPerformanceDashboardService {
   // manager/consultant in scope is listed (zero-filled if they have no
   // deals in this filter set); a revenue row whose ownerId doesn't match any
   // current employee is never rendered as a fake row.
-  private async getConsultantPerformance(
+  async getConsultantPerformance(
     organizationId: string,
     match: Record<string, unknown>,
     storeConstraint: string | undefined,

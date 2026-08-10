@@ -1,9 +1,9 @@
+import { useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { FiBarChart2, FiClock, FiMail, FiUsers, FiXCircle } from 'react-icons/fi';
+import { FiBarChart2, FiChevronDown, FiChevronUp, FiClock, FiMail, FiUsers, FiXCircle } from 'react-icons/fi';
 import { customerActivityService } from '@/services/customerActivityService';
-import { StatTile } from '@/features/dashboard/components/StatTile';
-import { SectionCard, Skeleton } from '@/components/ui';
+import { Button, SectionCard, Skeleton, StatTile } from '@/components/ui';
 import { CustomerActivityTable } from './components/CustomerActivityTable';
 import { UnactionedList, LostReasonList, CorrelatedEmailList } from './components/CustomerActivityDigest';
 import { CustomerActivitySummaryPanel } from './components/CustomerActivitySummaryPanel';
@@ -17,6 +17,7 @@ import styles from './deal-performance.module.css';
 // component and this module's CSS unmodified.
 export function MyCustomerActivityPage() {
   const queryClient = useQueryClient();
+  const [showDetails, setShowDetails] = useState(false);
 
   const { data, isFetching } = useQuery({
     queryKey: ['customer-activity-personal-overview'],
@@ -63,19 +64,35 @@ export function MyCustomerActivityPage() {
             <CustomerActivityTable rows={data.businessTable} />
           </SectionCard>
 
-          <div className={styles.twoColumn}>
-            <SectionCard title="Left Unactioned" icon={FiClock}>
-              <UnactionedList items={data.unactionedItems} />
-            </SectionCard>
-            <SectionCard title="Lost Deals — Reason" icon={FiXCircle}>
-              <LostReasonList items={data.lostWithReason} />
-            </SectionCard>
+          <div className={styles.detailsToggleRow}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              rightIcon={showDetails ? <FiChevronUp /> : <FiChevronDown />}
+              onClick={() => setShowDetails((v) => !v)}
+            >
+              {showDetails ? 'Hide details' : 'Show more details'}
+            </Button>
           </div>
 
-          <SectionCard title={`Emails Correlated to Your Customers Today (${data.correlatedEmails.length})`} icon={FiMail}>
-            <span className={styles.coverageNote}>{data.emailCorrelationCoverage.note}</span>
-            <CorrelatedEmailList items={data.correlatedEmails} />
-          </SectionCard>
+          {showDetails && (
+            <>
+              <div className={styles.twoColumn}>
+                <SectionCard title="Left Unactioned" icon={FiClock}>
+                  <UnactionedList items={data.unactionedItems} />
+                </SectionCard>
+                <SectionCard title="Lost Deals — Reason" icon={FiXCircle}>
+                  <LostReasonList items={data.lostWithReason} />
+                </SectionCard>
+              </div>
+
+              <SectionCard title={`Emails Correlated to Your Customers Today (${data.correlatedEmails.length})`} icon={FiMail}>
+                <span className={styles.coverageNote}>{data.emailCorrelationCoverage.note}</span>
+                <CorrelatedEmailList items={data.correlatedEmails} />
+              </SectionCard>
+            </>
+          )}
         </div>
       )}
     </div>

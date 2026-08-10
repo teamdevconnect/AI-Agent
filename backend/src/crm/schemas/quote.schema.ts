@@ -75,6 +75,13 @@ export class Quote {
   @Prop({ type: QuoteClientDetailsSchema })
   clientDetails?: QuoteClientDetails;
 
+  // Phase 14e — plain-text "what was requested" (e.g. "500 branded
+  // T-shirts"), captured only for draft quotes QuotesService creates from an
+  // Email Intelligence quotation_request. Never a price — quoteAmount stays
+  // 0 for these until a human prices the quote for real.
+  @Prop()
+  requestNotes?: string;
+
   // See deal.schema.ts's identical field for why this exists — synced
   // quotes need change-aware activity tracking distinct from Mongoose's
   // updatedAt, which raw-pymongo sync writes never touch.

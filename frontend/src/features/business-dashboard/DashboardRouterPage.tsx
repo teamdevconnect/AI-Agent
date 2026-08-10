@@ -1,20 +1,28 @@
 import { useAuthStore } from '@/stores/authStore';
 import { hasRole } from '@/utils/roles';
 import { DashboardPage as AgentWorkforceDashboardPage } from '@/features/dashboard/DashboardPage';
-import { OwnerDashboardView } from './OwnerDashboardView';
-import { ManagerDashboardView } from './ManagerDashboardView';
-import { ConsultantDashboardView } from './ConsultantDashboardView';
+import { AnalyticsDashboardPage } from '@/features/analytics-dashboard/AnalyticsDashboardPage';
 
-// Role dispatch for the primary "/dashboard" landing page — the business
-// hierarchy roles (owner/manager/consultant) each get their own KPI view.
-// Accounts with none of those (a plain admin or agent_user account with no
-// business-hierarchy role assigned) fall back to the original AI-workforce
-// dashboard, so nothing existing becomes unreachable.
+// Phase 19 — the business-hierarchy roles (owner/manager/consultant) now all
+// render the single Unified Analytics Dashboard (role-scoped internally by
+// the backend), replacing the previous three separate OwnerDashboardView/
+// ManagerDashboardView/ConsultantDashboardView components. Those files, and
+// their backing GET /home-dashboard/{role} + GET /crm/dashboard/{role}
+// endpoints, are left completely intact and untouched (not deleted) — this
+// is the literal mechanism for the user's own confirmed two-step sequencing
+// ("implement the new dashboard first, remove the old ones only later, once
+// reviewed and explicitly confirmed"). They simply become unreachable via
+// this router the moment it stops calling them, same as this exact route
+// swap happened once before in this app's history (Phase 3). Deal
+// Performance and Agent Activity are NOT touched by this pass at all —
+// both keep their own live routes/nav entries for direct comparison.
+// Accounts with no business-hierarchy role (a plain admin or agent_user
+// account) keep falling back to the original AI-workforce dashboard.
 export function DashboardRouterPage() {
   const user = useAuthStore((s) => s.user);
 
-  if (hasRole(user, 'owner')) return <OwnerDashboardView />;
-  if (hasRole(user, 'manager')) return <ManagerDashboardView />;
-  if (hasRole(user, 'consultant')) return <ConsultantDashboardView />;
+  if (hasRole(user, 'owner') || hasRole(user, 'manager') || hasRole(user, 'consultant')) {
+    return <AnalyticsDashboardPage />;
+  }
   return <AgentWorkforceDashboardPage />;
 }

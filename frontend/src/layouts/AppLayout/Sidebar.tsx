@@ -92,6 +92,24 @@ export function Sidebar() {
   const visiblePrimaryNav = PRIMARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
   const visibleSecondaryNav = SECONDARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
 
+  // Phase 15: pure re-partition of the already-role-filtered array for
+  // display — a group only appears if it has at least one visible item, and
+  // items with no `section` fall into a single unlabeled group (rendered
+  // without a header), so this never changes who sees which item.
+  const groupedPrimaryNav = useMemo(() => {
+    const order: string[] = [];
+    const bySection = new Map<string, typeof visiblePrimaryNav>();
+    for (const item of visiblePrimaryNav) {
+      const key = item.section ?? '';
+      if (!bySection.has(key)) {
+        bySection.set(key, []);
+        order.push(key);
+      }
+      bySection.get(key)!.push(item);
+    }
+    return order.map((section) => ({ section, items: bySection.get(section)! }));
+  }, [visiblePrimaryNav]);
+
   const handleNewChat = () => {
     startNewConversation();
     navigate(ROUTES.chat);
@@ -240,15 +258,20 @@ export function Sidebar() {
       </div>
 
       <nav className={styles.navSection}>
-        {visiblePrimaryNav.map((item) => (
-          <NavLink
-            key={item.id}
-            to={item.path}
-            className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
-          >
-            <item.icon className={styles.navIcon} />
-            {!collapsed && item.label}
-          </NavLink>
+        {groupedPrimaryNav.map(({ section, items }) => (
+          <div key={section || 'ungrouped'} className={styles.navGroup}>
+            {section && !collapsed && <span className={styles.navGroupLabel}>{section}</span>}
+            {items.map((item) => (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
+              >
+                <item.icon className={styles.navIcon} />
+                {!collapsed && item.label}
+              </NavLink>
+            ))}
+          </div>
         ))}
         {visibleSecondaryNav.map((item) => (
           <NavLink

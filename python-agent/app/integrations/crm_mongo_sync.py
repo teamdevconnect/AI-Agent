@@ -20,7 +20,8 @@ external CRM starts tracking assignment.
 import logging
 from datetime import datetime, timezone
 
-from pymongo import UpdateOne
+from bson import ObjectId
+from pymongo import ReturnDocument, UpdateOne
 
 from app.memory.mongo_client import get_db
 from app.tools import crm_deal_tool, crm_quote_tool
@@ -285,6 +286,12 @@ def sync_quotes_for_org(organization_id: str) -> int:
         )
     }
 
+    # Phase 20a — collected while iterating the OLD (pre-sync) state above,
+    # so this only ever fires on a genuine clientApprovalStatus transition
+    # into 'approved', never on a quote that stays approved across the next
+    # poll (see _draft_invoice_for_approved_quote's own docstring).
+    newly_approved_external_ids: list[str] = []
+
     for _ in range(_MAX_PAGES):
         body = crm_quote_tool._fetch_raw_quotes(
             limit=page_size, start_after=start_after, organization_id=organization_id,
@@ -293,14 +300,21 @@ def sync_quotes_for_org(organization_id: str) -> int:
         if not raw_quotes:
             break
 
-        operations = [
-            op
-            for op in (
-                _to_native_quote_update(organization_id, q, deal_native_id_by_external_id, existing_by_external_id)
-                for q in raw_quotes
-            )
-            if op
-        ]
+        operations = []
+        for raw_quote in raw_quotes:
+            op = _to_native_quote_update(organization_id, raw_quote, deal_native_id_by_external_id, existing_by_external_id)
+            if op:
+                operations.append(op)
+
+            external_id = raw_quote.get("_id")
+            if not external_id:
+                continue
+            if (raw_quote.get("client_approval_status") or "pending") != "approved":
+                continue
+            existing = existing_by_external_id.get(str(external_id))
+            if existing is None or existing.get("clientApprovalStatus") != "approved":
+                newly_approved_external_ids.append(str(external_id))
+
         if operations:
             result = db.crm_quotes.bulk_write(operations, ordered=False)
             synced += result.upserted_count + result.modified_count
@@ -309,7 +323,96 @@ def sync_quotes_for_org(organization_id: str) -> int:
             break
         start_after += page_size
 
+    if newly_approved_external_ids:
+        _draft_invoices_for_newly_approved(db, organization_id, newly_approved_external_ids)
+
     return synced
+
+
+def _draft_invoice_for_approved_quote(db, organization_id: str, quote: dict) -> None:
+    """Phase 20a's live production trigger for the Royalty Report Engine's
+    Invoice entity — auto-drafts an Invoice the moment a Quote's
+    clientApprovalStatus transitions to 'approved'. Mirrors
+    backend/src/royalty/invoices.service.ts's createDraftFromQuote (built
+    for a future native quote-approval path that doesn't exist yet — this
+    function is the only real, live caller today). Carries over only real,
+    known values — the quote's own accepted amount — never a fabricated
+    figure; every invoice-specific field with no real source (GST, shipping,
+    payment/void status) starts unset, filled in later by a human.
+    """
+    quote_id = str(quote["_id"])
+
+    # Defensive dedupe on top of the transition-only trigger above and the
+    # schema's own unique partial index on {organizationId, quoteId} — a
+    # duplicated invoice directly inflates a real royalty-due dollar figure,
+    # worth the extra guard (the same reasoning crm_mongo_sync.py already
+    # applies to mailbox-dedup elsewhere in this codebase).
+    if db.royalty_invoices.find_one({"organizationId": organization_id, "quoteId": quote_id}):
+        return
+
+    # storeId/salespersonId are only ever set when actually known via the
+    # linked Deal — never guessed, same "only safe when known" rule
+    # _default_store_id already applies to Deal syncing.
+    deal = None
+    deal_id = quote.get("dealId")
+    if deal_id:
+        try:
+            deal = db.crm_deals.find_one({"_id": ObjectId(deal_id)})
+        except Exception:
+            deal = None
+
+    counter = db.royalty_invoice_counters.find_one_and_update(
+        {"organizationId": organization_id},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    invoice_number = f"INV-{counter['seq']:04d}"
+    now = datetime.now(timezone.utc)
+    quote_amount = quote.get("quoteAmount") or 0
+
+    fields: dict = {
+        "organizationId": organization_id,
+        "quoteId": quote_id,
+        "invoiceNumber": invoice_number,
+        "invoiceDate": now,
+        "originalValue": quote_amount,
+        "currentValue": quote_amount,
+        "currency": quote.get("currency") or "INR",
+        "invoiceStatus": "draft",
+        "voidStatus": False,
+        "source": "auto_from_quote",
+        "createdBy": "system:crm-sync",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    if deal:
+        fields["dealId"] = str(deal["_id"])
+        if deal.get("storeId"):
+            fields["storeId"] = deal["storeId"]
+        if deal.get("ownerId"):
+            fields["salespersonId"] = deal["ownerId"]
+    client_details = quote.get("clientDetails")
+    if client_details:
+        fields["clientDetails"] = client_details
+
+    db.royalty_invoices.insert_one(fields)
+
+
+def _draft_invoices_for_newly_approved(db, organization_id: str, external_ids: list[str]) -> None:
+    # Wrapped per-quote — one malformed/unexpected quote must never abort
+    # drafting for the rest, matching this file's existing per-org resilience
+    # convention (see sync_all_orgs/sync_all_quote_orgs).
+    quotes = db.crm_quotes.find({"organizationId": organization_id, "externalId": {"$in": external_ids}})
+    for quote in quotes:
+        try:
+            _draft_invoice_for_approved_quote(db, organization_id, quote)
+        except Exception:
+            logger.exception(
+                "Auto-draft invoice failed for quote externalId=%s org=%s",
+                quote.get("externalId"),
+                organization_id,
+            )
 
 
 def sync_all_quote_orgs() -> dict:

@@ -14,7 +14,6 @@ import {
   CustomerActivityPersonalSummarySchema,
 } from './schemas/customer-activity-personal-summary.schema';
 import { Deal, DealSchema } from './schemas/deal.schema';
-import { DealPerformancePreset, DealPerformancePresetSchema } from './schemas/deal-performance-preset.schema';
 import { Note, NoteSchema } from './schemas/note.schema';
 import { Quote, QuoteSchema } from './schemas/quote.schema';
 import { QuoteCounter, QuoteCounterSchema } from './schemas/quote-counter.schema';
@@ -26,13 +25,12 @@ import { CrmController } from './crm.controller';
 import { CrmService } from './crm.service';
 import { CustomerActivityController } from './customer-activity.controller';
 import { CustomerActivityService } from './customer-activity.service';
-import { DealPerformanceDashboardController } from './deal-performance-dashboard.controller';
+import { QuotesController } from './quotes.controller';
 import { DealPerformanceDashboardService } from './deal-performance-dashboard.service';
-import { DealPerformancePresetController } from './deal-performance-preset.controller';
-import { DealPerformancePresetService } from './deal-performance-preset.service';
 import { DealsController } from './deals.controller';
 import { DealsExportService } from './deals-export.service';
 import { DealsService } from './deals.service';
+import { QuotesService } from './quotes.service';
 import { SalesAnalyticsService } from './sales-analytics.service';
 import { SalesTargetController } from './sales-target.controller';
 
@@ -46,7 +44,6 @@ import { SalesTargetController } from './sales-target.controller';
       { name: Note.name, schema: NoteSchema },
       { name: Tag.name, schema: TagSchema },
       { name: SalesTarget.name, schema: SalesTargetSchema },
-      { name: DealPerformancePreset.name, schema: DealPerformancePresetSchema },
       { name: QuoteCounter.name, schema: QuoteCounterSchema },
       { name: CustomerActivitySummary.name, schema: CustomerActivitySummarySchema },
       { name: CustomerActivityPersonalSummary.name, schema: CustomerActivityPersonalSummarySchema },
@@ -72,9 +69,8 @@ import { SalesTargetController } from './sales-target.controller';
     SalesTargetController,
     BusinessDashboardController,
     DealsController,
-    DealPerformanceDashboardController,
-    DealPerformancePresetController,
     CustomerActivityController,
+    QuotesController,
   ],
   providers: [
     CrmService,
@@ -82,12 +78,19 @@ import { SalesTargetController } from './sales-target.controller';
     BusinessDashboardService,
     DealsService,
     DealsExportService,
+    // DealPerformanceDashboardService has no controller of its own anymore
+    // (Deal Performance page removed) — kept as a provider purely because
+    // AnalyticsDashboardService injects getConsultantPerformance/
+    // getRevenueProgress directly; its own getOverview() method is now dead
+    // code (unused, harmless, left in place rather than surgically excised).
     DealPerformanceDashboardService,
-    DealPerformancePresetService,
     CustomerActivityService,
+    QuotesService,
   ],
-  // CustomerActivityService.gatherCorrelationContext (Phase 14b) is consumed
-  // by EmailIntelligenceModule — this is CrmModule's first export.
-  exports: [CustomerActivityService],
+  // Consumed by EmailIntelligenceModule: CustomerActivityService.gatherCorrelationContext
+  // (Phase 14b) and QuotesService.createDraftQuote (Phase 14e, post-send actions).
+  // BusinessDashboardService (Phase 16) is consumed by the new HomeDashboardModule,
+  // which sits above both CrmModule and EmailIntelligenceModule.
+  exports: [CustomerActivityService, QuotesService, BusinessDashboardService, DealPerformanceDashboardService, SalesAnalyticsService],
 })
 export class CrmModule {}

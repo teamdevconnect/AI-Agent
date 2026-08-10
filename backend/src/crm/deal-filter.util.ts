@@ -33,10 +33,19 @@ export function buildDealMatchStage(
   if (filters.customerType?.length) match.customerType = { $in: filters.customerType };
   if (filters.region?.length) match.region = { $in: filters.region };
 
+  // Real user-reported bug, fixed here: was expectedClosingDate (a forecast
+  // field — "when will this revenue land"), which made a deal created today
+  // with a next-month expected close date invisible to a "this month"
+  // filter — reads as broken, not as intended forecast behavior. Filters
+  // on createdAt instead — "did I create/touch this record in this
+  // window" — matching Quote's own equivalent filtering, which was already
+  // correctly createdAt-based. dateFrom/dateTo are plain "YYYY-MM-DD"
+  // strings; dateTo is pushed to end-of-day so a date-only value doesn't
+  // mean midnight and silently exclude that entire day's own records.
   if (includeDateRange && (filters.dateFrom || filters.dateTo)) {
-    match.expectedClosingDate = {
-      ...(filters.dateFrom ? { $gte: filters.dateFrom } : {}),
-      ...(filters.dateTo ? { $lte: filters.dateTo } : {}),
+    match.createdAt = {
+      ...(filters.dateFrom ? { $gte: new Date(filters.dateFrom) } : {}),
+      ...(filters.dateTo ? { $lte: new Date(new Date(filters.dateTo).setHours(23, 59, 59, 999)) } : {}),
     };
   }
 

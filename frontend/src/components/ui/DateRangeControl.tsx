@@ -9,6 +9,7 @@ export interface DateRange {
 }
 
 const PRESETS = [
+  { id: 'today', label: 'Today' },
   { id: '7', label: '7 Days', days: 7 },
   { id: '30', label: '30 Days', days: 30 },
   { id: '90', label: '90 Days', days: 90 },
@@ -19,6 +20,7 @@ const PRESETS = [
 
 function presetToRange(id: string): DateRange {
   const today = dayjs();
+  if (id === 'today') return { dateFrom: today.format('YYYY-MM-DD'), dateTo: today.format('YYYY-MM-DD') };
   if (id === 'month') return { dateFrom: today.startOf('month').format('YYYY-MM-DD'), dateTo: today.format('YYYY-MM-DD') };
   if (id === 'all') return {};
   const preset = PRESETS.find((p) => p.id === id);

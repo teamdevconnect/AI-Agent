@@ -26,6 +26,7 @@ export declare class OutlookController {
     getStatus(user: JwtPayload): Promise<{
         connected: boolean;
         email?: string;
+        canSend: boolean;
     }>;
     listAccounts(user: JwtPayload): Promise<import("./outlook.service").OutlookAccountSummary[]>;
     setActive(user: JwtPayload, email: string): Promise<void>;

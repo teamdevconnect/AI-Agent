@@ -1,19 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { FiBarChart2, FiCalendar, FiCheckSquare, FiClipboard, FiClock, FiUsers, FiZap } from 'react-icons/fi';
-import { Badge, SectionCard, Skeleton } from '@/components/ui';
+import { FiBarChart2, FiClipboard, FiClock, FiUsers } from 'react-icons/fi';
+import { Badge, SectionCard, Skeleton, StatTile } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
 import { customerActivityService } from '@/services/customerActivityService';
-import { StatTile } from '@/features/dashboard/components/StatTile';
+import { homeDashboardService } from '@/services/homeDashboardService';
 import { ROUTES } from '@/constants/routes';
 import { formatINR as money } from '@/utils/currency';
-import { dayjs } from '@/utils/date';
 import { CustomerActivitySection } from './components/CustomerActivitySection';
+import { AiRecommendationsSection } from './components/AiRecommendationsSection';
+import { CriticalAlertsSection } from './components/CriticalAlertsSection';
+import { TodaysTasksSection } from './components/TodaysTasksSection';
+import { EmailSummarySection } from './components/EmailSummarySection';
+import { TimelineSection } from './components/TimelineSection';
+import { HistoricalActivityFooter } from './components/HistoricalActivityFooter';
 import styles from './business-dashboard.module.css';
-
-function eventTime(start: string): string {
-  return start ? dayjs(start).format('h:mm A') : '';
-}
 
 export function ManagerDashboardView() {
   const navigate = useNavigate();
@@ -30,6 +31,11 @@ export function ManagerDashboardView() {
   const { data: activity } = useQuery({
     queryKey: ['customer-activity-overview'],
     queryFn: () => customerActivityService.getOverview(),
+    refetchInterval: 60_000,
+  });
+  const { data: home } = useQuery({
+    queryKey: ['home-dashboard-manager'],
+    queryFn: () => homeDashboardService.getManagerHome(),
     refetchInterval: 60_000,
   });
 
@@ -57,22 +63,19 @@ export function ManagerDashboardView() {
         <div className={styles.pageSubtitle}>{data.period}</div>
       </div>
 
-      <SectionCard title="This Period" icon={FiBarChart2}>
-        <div className={styles.statsGrid}>
-          <StatTile value={money(data.storeTarget)} label="Store Target" />
-          <StatTile value={data.storeAchievement === null ? '—' : `${data.storeAchievement}%`} label="Store Achievement" />
-          <StatTile value={money(data.revenue)} label="Revenue" />
-          <StatTile value={data.conversionRate === null ? '—' : `${data.conversionRate}%`} label="Conversion Rate" />
-        </div>
-      </SectionCard>
+      {/* Tier 1 */}
+      {home ? <AiRecommendationsSection items={home.aiRecommendations} /> : <Skeleton height={100} />}
 
-      <div className={styles.insightCard}>
-        <span className={styles.insightLabel}>
-          <FiZap size={14} /> AI Recommendation
-        </span>
-        <span className={styles.insightText}>{data.aiRecommendation}</span>
-      </div>
+      {/* Tier 2 */}
+      {home && <CriticalAlertsSection groups={home.criticalAlerts} />}
 
+      {/* Tier 3 */}
+      <TodaysTasksSection
+        calendarEvents={data.teamCalendar.available ? data.teamCalendar.events : undefined}
+        calendarMessage={data.teamCalendar.available ? undefined : data.teamCalendar.message}
+      />
+
+      {/* Tier 4 */}
       {activity && (
         <CustomerActivitySection
           data={activity}
@@ -87,8 +90,22 @@ export function ManagerDashboardView() {
             }))}
           viewFullLabel="View full Customer Activity →"
           onViewFull={() => navigate(`${ROUTES.dealPerformance}?tab=customer-activity`)}
+          extraStats={[{ value: data.dealsAtRisk.length, label: 'Deals at Risk' }]}
         />
       )}
+
+      {/* Tier 5 */}
+      {home && <EmailSummarySection summary={home.emailSummary} />}
+
+      {/* Tier 6 — Sales Performance (existing, repositioned) */}
+      <SectionCard title="This Period" icon={FiBarChart2}>
+        <div className={styles.statsGrid}>
+          <StatTile value={money(data.storeTarget)} label="Store Target" />
+          <StatTile value={data.storeAchievement === null ? '—' : `${data.storeAchievement}%`} label="Store Achievement" />
+          <StatTile value={money(data.revenue)} label="Revenue" />
+          <StatTile value={data.conversionRate === null ? '—' : `${data.conversionRate}%`} label="Conversion Rate" />
+        </div>
+      </SectionCard>
 
       <SectionCard
         title="Today's EOD Report"
@@ -136,29 +153,11 @@ export function ManagerDashboardView() {
         </SectionCard>
       </div>
 
-      <div className={styles.twoColumn}>
-        <SectionCard title="Team Calendar — Today" icon={FiCalendar}>
-          {!data.teamCalendar.available ? (
-            <div className={styles.emptyState}>{data.teamCalendar.message}</div>
-          ) : data.teamCalendar.events.length === 0 ? (
-            <div className={styles.emptyState}>No meetings today for anyone with Outlook connected.</div>
-          ) : (
-            data.teamCalendar.events.map((e) => (
-              <div key={e.id} className={styles.listItem}>
-                <div className={styles.listItemMain}>
-                  <span className={styles.listItemTitle}>{e.title || 'Untitled event'}</span>
-                  <span className={styles.listItemMeta}>
-                    {e.userName} — {eventTime(e.start)}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </SectionCard>
-        <SectionCard title="Pending Tasks" icon={FiCheckSquare}>
-          <div className={styles.emptyState}>{data.pendingTasks.message}</div>
-        </SectionCard>
-      </div>
+      {/* Tier 7 */}
+      {home && <TimelineSection events={home.timeline} />}
+
+      {/* Tier 8 */}
+      <HistoricalActivityFooter />
     </div>
   );
 }

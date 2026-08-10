@@ -125,6 +125,25 @@ export class EmailIntelligenceItem {
   @Prop()
   draftReasoning?: string;
 
+  // ---- Phase 17 — perspective-correctness fields, all computed by
+  // EmailIntelligenceService (deterministic, not raw LLM output — see
+  // deriveFromRole/the Layer 1+2 gates in the service). Existing pre-Phase-17
+  // documents simply lack these; frontend renders a neutral fallback. ----
+  @Prop({ enum: ['internal', 'customer', 'vendor', 'external_other'] })
+  fromRole?: 'internal' | 'customer' | 'vendor' | 'external_other';
+
+  @Prop({ enum: ['company_reply', 'awaiting_customer', 'no_action_required'] })
+  expectedNextAction?: 'company_reply' | 'awaiting_customer' | 'no_action_required';
+
+  @Prop({ enum: ['draft_ready', 'no_reply_needed', 'awaiting_customer_response', 'validation_failed'] })
+  aiStatus?: 'draft_ready' | 'no_reply_needed' | 'awaiting_customer_response' | 'validation_failed';
+
+  // Human-readable explanation of aiStatus/expectedNextAction — either the
+  // deterministic Layer 1/Layer 2 sentence, or draftReasoning/recommendedAction
+  // for the normal case.
+  @Prop()
+  reason?: string;
+
   // ---- approval-queue lifecycle — approved is terminal, no "un-approve"
   // path. Sending (Phase 14d) is a separate, explicit action layered on top
   // of an already-approved item — see sentAt/sendError below — not a status

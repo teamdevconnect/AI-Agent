@@ -12,6 +12,7 @@ export const ROUTES = {
   businessKnowledge: '/business-knowledge',
   emailIntelligence: '/ai-email-inbox',
   finance: '/finance',
+  reporting: '/reporting',
   todoEod: '/todo-eod',
   chat: '/chat',
   chatConversation: (id: string) => `/chat/${id}`,
@@ -27,6 +28,7 @@ export const ROUTES = {
   settingsSalesTargets: '/settings/sales-targets',
   settingsDealAssignment: '/settings/deal-assignment',
   settingsWorkflows: '/settings/workflows',
+  settingsRoyaltyRules: '/settings/royalty-rules',
 
   profile: '/profile',
 } as const;
