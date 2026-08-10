@@ -309,13 +309,31 @@ expenseCategory using a short, human-readable label (e.g. "Software", "Travel", 
 force-fit into a closed list. Always call extract_finance_document exactly once."""
 
 
-def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: list[dict]) -> dict:
+def _run_forced_tool_extraction(
+    system_prompt: str,
+    tool: dict,
+    user_content: list[dict],
+    *,
+    name: str,
+    organization_id: str | None = None,
+    user_id: str = "",
+) -> dict:
     """Shared forced-tool-choice call — same retry-once-then-raise shape as
     extract_role, but accepts content blocks (not just a string) since the
     native vision/PDF path needs them. Generalized from the original
     finance-only _run_finance_extraction once Business Knowledge document
     extraction (Phase 14a) became a second real consumer of the identical
-    shape — pure DRY, zero behavior change for Finance's existing calls."""
+    shape — pure DRY, zero behavior change for Finance's existing calls.
+
+    Phase 21 follow-up: each attempt is now traced (see
+    app.observability.tracing.traced_llm_call) — previously this whole
+    helper (and every caller: Finance/Business Knowledge document
+    extraction, Email Intelligence analysis) was invisible to Command
+    Center and had no real token/cost history anywhere, which is what
+    forced Email Sync's preview to show operation counts only instead of a
+    real estimate. `name` identifies which caller this is for in telemetry
+    (e.g. "email_analyze") — required, not optional, since every caller of
+    this shared helper should identify itself now that it's traced."""
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
@@ -323,14 +341,23 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     last_error: Exception | None = None
     for _ in range(2):
         try:
-            response = _client(api_key).messages.create(
+            with traced_llm_call(
+                name,
+                organization_id=organization_id,
+                user_id=user_id,
+                provider="anthropic",
                 model=settings.anthropic_model,
-                max_tokens=8192,
-                system=system_prompt,
-                tools=[tool],
-                tool_choice={"type": "tool", "name": tool["name"]},
-                messages=[{"role": "user", "content": user_content}],
-            )
+            ) as usage:
+                response = _client(api_key).messages.create(
+                    model=settings.anthropic_model,
+                    max_tokens=8192,
+                    system=system_prompt,
+                    tools=[tool],
+                    tool_choice={"type": "tool", "name": tool["name"]},
+                    messages=[{"role": "user", "content": user_content}],
+                )
+                usage["input_tokens"] = response.usage.input_tokens
+                usage["output_tokens"] = response.usage.output_tokens
             block = next((b for b in response.content if b.type == "tool_use"), None)
             if block is None:
                 raise ValueError("Model did not return a tool_use block")
@@ -340,11 +367,20 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     raise RuntimeError(f"{tool['name']} extraction failed after retry: {last_error}")
 
 
-def _run_finance_extraction(user_content: list[dict]) -> dict:
-    return _run_forced_tool_extraction(FINANCE_EXTRACTION_SYSTEM_PROMPT, FINANCE_EXTRACTION_TOOL, user_content)
+def _run_finance_extraction(user_content: list[dict], *, organization_id: str | None = None, user_id: str = "") -> dict:
+    return _run_forced_tool_extraction(
+        FINANCE_EXTRACTION_SYSTEM_PROMPT,
+        FINANCE_EXTRACTION_TOOL,
+        user_content,
+        name="finance_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
-def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+def extract_finance_document(
+    file_bytes: bytes, mime_type: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """PDF/image-native path — sends the raw file as a document/image content
     block instead of pre-extracted text, so scanned/image documents work
     through the same code path as text-layer PDFs (no OCR library added)."""
@@ -356,15 +392,17 @@ def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -
         },
         {"type": "text", "text": f"Extract every financial field you can find from '{filename}' using the extract_finance_document tool."},
     ]
-    return _run_finance_extraction(content)
+    return _run_finance_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
-def extract_finance_document_from_text(document_text: str, filename: str) -> dict:
+def extract_finance_document_from_text(
+    document_text: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """Text path for spreadsheet/already-text formats (xlsx/xls/csv/docx) —
     spreadsheets aren't a vision problem, and app.rag.loader.load_text
     already gives pandas-clean structured text for them at zero extra cost."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
-    return _run_finance_extraction(content)
+    return _run_finance_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
 BUSINESS_DOCUMENT_EXTRACTION_TOOL = {
@@ -420,11 +458,22 @@ and any internal contradiction (e.g. two different prices for the same item) in 
 inconsistencyNotes. Always call extract_business_document exactly once."""
 
 
-def _run_business_document_extraction(user_content: list[dict]) -> dict:
-    return _run_forced_tool_extraction(BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT, BUSINESS_DOCUMENT_EXTRACTION_TOOL, user_content)
+def _run_business_document_extraction(
+    user_content: list[dict], *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
+    return _run_forced_tool_extraction(
+        BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT,
+        BUSINESS_DOCUMENT_EXTRACTION_TOOL,
+        user_content,
+        name="business_document_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
-def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+def extract_business_document(
+    file_bytes: bytes, mime_type: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """PDF/image-native path — identical construction to extract_finance_document,
     reusing the same base64 content-block approach for scanned/image documents."""
     block_type = "image" if mime_type.startswith("image/") else "document"
@@ -435,13 +484,15 @@ def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) 
         },
         {"type": "text", "text": f"Summarize and classify '{filename}' using the extract_business_document tool."},
     ]
-    return _run_business_document_extraction(content)
+    return _run_business_document_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
-def extract_business_document_from_text(document_text: str, filename: str) -> dict:
+def extract_business_document_from_text(
+    document_text: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """Text path for spreadsheet/already-text formats — mirrors extract_finance_document_from_text."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
-    return _run_business_document_extraction(content)
+    return _run_business_document_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
 REPORT_EXTRACTION_TOOL = {
@@ -1185,14 +1236,21 @@ other side — set it false if you have any real doubt, rather than guessing tru
 shouldDraft is false. Always call analyze_email exactly once."""
 
 
-def analyze_email(payload: dict) -> dict:
+def analyze_email(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
     """One-shot forced-tool-choice classification+draft pass for Phase 14b —
     reuses _run_forced_tool_extraction (already generalized in Phase 14a for
     exactly this system_prompt/tool/user_content shape), operating on one
     email plus its deterministically-gathered CRM correlation context (see
-    backend/src/email-intelligence/email-intelligence.service.ts)."""
+    backend/src/email-intelligence/email-intelligence.service.ts).
+
+    Phase 21 follow-up: now traced as "email_analyze" — real token/cost
+    history here is what lets Email Sync's preview show a genuine estimate
+    instead of just an operation count."""
     return _run_forced_tool_extraction(
         EMAIL_INTENT_SYSTEM_PROMPT,
         EMAIL_INTENT_TOOL,
         [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(payload, default=str)[:40000]}"}],
+        name="email_analyze",
+        organization_id=organization_id,
+        user_id=user_id,
     )

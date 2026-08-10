@@ -6,11 +6,13 @@ import { CrmModule } from '../crm/crm.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OutlookConnection, OutlookConnectionSchema } from '../outlook/schemas/outlook-connection.schema';
 import { UsersModule } from '../users/users.module';
+import { AgentExecution, AgentExecutionSchema } from '../command-center/schemas/agent-execution.schema';
 import { EmailFollowUpReminder, EmailFollowUpReminderSchema } from './schemas/email-follow-up-reminder.schema';
 import { EmailIntelligenceItem, EmailIntelligenceItemSchema } from './schemas/email-intelligence-item.schema';
+import { EmailSyncJob, EmailSyncJobSchema } from './schemas/email-sync-job.schema';
 import { CustomerTimelineController } from './customer-timeline.controller';
 import { EmailIntelligenceController } from './email-intelligence.controller';
-import { EmailIntelligencePollerService } from './email-intelligence-poller.service';
+import { EmailIntelligenceSyncService } from './email-intelligence-sync.service';
 import { EmailIntelligenceService } from './email-intelligence.service';
 
 @Module({
@@ -19,10 +21,18 @@ import { EmailIntelligenceService } from './email-intelligence.service';
       { name: EmailIntelligenceItem.name, schema: EmailIntelligenceItemSchema },
       { name: EmailFollowUpReminder.name, schema: EmailFollowUpReminderSchema },
       // Read-only reuse of OutlookModule's schema class (not a DI export) —
-      // the poller only ever needs `find({isActive:true})`, no OutlookService
-      // method exists for "every connected mailbox org-wide" so this is
-      // simpler than adding one there for a single call site.
+      // EmailIntelligenceSyncService only ever needs `findOne({userId,
+      // isActive:true})`, no OutlookService method exists for that shape so
+      // this is simpler than adding one there for a single call site.
       { name: OutlookConnection.name, schema: OutlookConnectionSchema },
+      // Phase 21 — sync-job history, written by EmailIntelligenceSyncService.
+      { name: EmailSyncJob.name, schema: EmailSyncJobSchema },
+      // Phase 21 follow-up — read-only reuse of Command Center's telemetry
+      // collection (same "second module re-registers the schema" precedent
+      // as OutlookConnection above), so previewSync can build a real
+      // token/cost estimate from history and getProviderHealth can report
+      // real recent success/failure, instead of either being invented.
+      { name: AgentExecution.name, schema: AgentExecutionSchema },
     ]),
     // A single forced-tool-choice analyze_email call can legitimately exceed
     // 30s (confirmed live — a real regenerate call timed out at exactly
@@ -39,7 +49,7 @@ import { EmailIntelligenceService } from './email-intelligence.service';
     NotificationsModule,
   ],
   controllers: [EmailIntelligenceController, CustomerTimelineController],
-  providers: [EmailIntelligenceService, EmailIntelligencePollerService],
+  providers: [EmailIntelligenceService, EmailIntelligenceSyncService],
   // Phase 16: EmailIntelligenceService.list() (self-scoped) is consumed by
   // the new HomeDashboardModule, which sits above both this module and
   // CrmModule — safe since HomeDashboardModule imports both but neither of

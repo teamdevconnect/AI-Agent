@@ -89,6 +89,20 @@ export class EmailIntelligenceService {
     return !!(await this.itemModel.exists({ userId, externalMessageId }));
   }
 
+  // Phase 21 follow-up — a read-only dry-run of the same two deterministic
+  // gates analyzeAndCreate/regenerate apply below (Phase 17 Layer 1 self-send
+  // + Phase 18 Layer 0 pre-filter), used by EmailIntelligenceSyncService's
+  // previewSync to count how many "new" items would actually spend an LLM
+  // call before anything runs. Deliberately NOT a refactor of those two
+  // already-verified methods to share this — the persisted-field shape
+  // differs per gate and isn't needed here, only the boolean answer, so
+  // mirroring these two simple conditions is a smaller, safer footprint than
+  // restructuring production-critical branching logic.
+  wouldSkipLlmAnalysis(email: { from: string; subject: string; preview: string }, mailboxEmail: string): boolean {
+    if (email.from.trim().toLowerCase() === mailboxEmail.trim().toLowerCase()) return true;
+    return !!classifyEmailDeterministically({ from: email.from, subject: email.subject, preview: email.preview });
+  }
+
   // Correlates the email, calls python-agent for classification+draft,
   // persists the result, and notifies the mailbox owner. Called by the
   // scheduled poller (new emails) and by regenerate() (re-running analysis

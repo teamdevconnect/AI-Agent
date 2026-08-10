@@ -27,4 +27,10 @@ def analyze(payload: dict, user: dict = Depends(get_current_user)):
     query = f"{email.get('subject', '')} {email.get('preview', '')}".strip()
     kb_context = retrieve_business_knowledge_as_context(query, organization_id) if query else ""
 
-    return EmailAnalysisResponse(**analyze_email({**payload, "businessKnowledgeContext": kb_context}))
+    return EmailAnalysisResponse(
+        **analyze_email(
+            {**payload, "businessKnowledgeContext": kb_context},
+            organization_id=organization_id,
+            user_id=user.get("sub", ""),
+        )
+    )

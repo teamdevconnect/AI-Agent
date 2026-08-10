@@ -119,7 +119,83 @@ export interface EmailFollowUpReminder {
   updatedAt: string;
 }
 
+export interface SyncMailboxResult {
+  connected: boolean;
+  scannedCount: number;
+  newItemsCount: number;
+}
+
+// Phase 21 follow-up — genuinely richer than SyncMailboxResult now: breaks
+// "new" down into what's already stored, what the deterministic gates would
+// auto-skip (no LLM cost), and what would actually spend a real AI call,
+// plus a real (never guessed) token estimate once history exists.
+export interface SyncPreviewResult {
+  connected: boolean;
+  scannedCount: number;
+  alreadyAnalyzedCount: number;
+  autoSkippedCount: number;
+  willAnalyzeCount: number;
+  estimatedInputTokens: number | null;
+  estimatedOutputTokens: number | null;
+  estimatedBasis: 'historical_average' | 'no_history';
+  lastSyncedAt: string | null;
+}
+
+export interface EmailSyncJob {
+  _id: string;
+  // 'completed_with_errors' distinguishes "ran, but some/all items failed"
+  // (e.g. a real Anthropic outage) from a genuinely clean run — 'failed' is
+  // reserved for the sync operation itself throwing before it finished.
+  status: 'completed' | 'completed_with_errors' | 'failed';
+  scannedCount: number;
+  newItemsCount: number;
+  succeededCount: number;
+  failedCount: number;
+  triggeredBy: 'user';
+  startedAt: string;
+  completedAt: string;
+  createdAt: string;
+}
+
+export interface ProviderHealthStatus {
+  provider: 'anthropic' | 'groq';
+  status: 'available' | 'degraded' | 'unknown';
+  lastCheckedAt: string | null;
+  lastError: string | null;
+}
+
 export const emailIntelligenceService = {
+  // The only way this feature ever spends an LLM call outside of an explicit
+  // approve/reject/regenerate/send action — nothing runs automatically in
+  // the background (see backend/src/email-intelligence/
+  // email-intelligence-sync.service.ts's own comment for why the old
+  // always-on 3-minute cron was removed).
+  async sync(): Promise<SyncMailboxResult> {
+    const { data } = await axiosClient.post<SyncMailboxResult>('/email-intelligence/sync');
+    return data;
+  },
+
+  // Phase 21 — cheap, LLM-free count of new mail, called before sync() so
+  // the caller can confirm a real operation count rather than spending
+  // credit blind.
+  async previewSync(): Promise<SyncPreviewResult> {
+    const { data } = await axiosClient.get<SyncPreviewResult>('/email-intelligence/sync/preview');
+    return data;
+  },
+
+  async getRecentSyncJobs(): Promise<EmailSyncJob[]> {
+    const { data } = await axiosClient.get<EmailSyncJob[]>('/email-intelligence/sync/jobs');
+    return data;
+  },
+
+  // Phase 21 follow-up — surfaced on the page before the user clicks Sync,
+  // so a credit/outage issue is visible up front rather than discovered
+  // only after spending a click on a sync that will fail.
+  async getProviderHealth(): Promise<ProviderHealthStatus[]> {
+    const { data } = await axiosClient.get<ProviderHealthStatus[]>('/email-intelligence/provider-health');
+    return data;
+  },
+
   async list(
     status?: 'pending' | 'approved' | 'rejected',
     range?: { from?: string; to?: string },

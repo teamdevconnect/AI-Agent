@@ -53,15 +53,22 @@
   gap: var(--space-4);
 }
 
+/* A 2x2 grid, not a 4-wide flex row — four "flex: 1" chips with no
+   min-width/truncation couldn't actually shrink below their own label's
+   width (flex items default to a content-based minimum), so at the
+   sidebar's fixed width "Favorites"/"Archived" would squeeze the row past
+   its available space. Two per row gives every label roughly double the
+   room, which comfortably fits all four without wrapping or truncating. */
 .filterRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 4px;
   padding: 0 var(--space-1) var(--space-2);
   flex-shrink: 0;
 }
 
 .filterChip {
-  flex: 1;
+  min-width: 0;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
@@ -70,7 +77,10 @@
   font-size: var(--text-xs);
   font-weight: 600;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
 }
 
 .filterChip:hover {
