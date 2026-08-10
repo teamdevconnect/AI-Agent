@@ -18,6 +18,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const mongoose_2 = require("mongoose");
 const rxjs_1 = require("rxjs");
+const ssrf_guard_1 = require("../common/security/ssrf-guard");
 const encryption_service_1 = require("../common/encryption/encryption.service");
 const auth_methods_1 = require("./auth-methods");
 const provider_rules_1 = require("./provider-rules");
@@ -113,6 +114,12 @@ let IntegrationsService = class IntegrationsService {
             return { ok: false, message: 'A base URL is required to test the connection.' };
         }
         const url = healthCheckPath ? `${baseUrl.replace(/\/$/, '')}/${healthCheckPath.replace(/^\//, '')}` : baseUrl;
+        try {
+            await (0, ssrf_guard_1.assertPublicHttpUrl)(url);
+        }
+        catch (err) {
+            return { ok: false, message: err.message };
+        }
         const headers = (0, auth_methods_1.buildAuthHeaders)(authType, credentials ?? {});
         try {
             const response = await (0, rxjs_1.firstValueFrom)(this.http.get(url, { headers, timeout: 10_000 }));
@@ -121,6 +128,29 @@ let IntegrationsService = class IntegrationsService {
         catch (err) {
             return { ok: false, message: this.friendlyErrorMessage(err) };
         }
+    }
+    async resolveAuth(organizationId, provider) {
+        const doc = await this.credentialModel.findOne({ organizationId, provider });
+        if (!doc)
+            return null;
+        if (doc.authType) {
+            return {
+                integrationId: doc._id,
+                authType: doc.authType,
+                credentials: JSON.parse(this.encryption.decrypt(doc.credentialsEncrypted)),
+                baseUrl: doc.baseUrl,
+            };
+        }
+        return {
+            integrationId: doc._id,
+            authType: 'apiKeyBaseUrl',
+            credentials: { apiKey: doc.apiKey },
+            baseUrl: doc.baseUrl,
+        };
+    }
+    async listConnected(organizationId) {
+        const docs = await this.credentialModel.find({ organizationId }, { provider: 1 });
+        return docs.map((doc) => ({ integrationId: doc._id, provider: doc.provider }));
     }
     friendlyErrorMessage(err) {
         const axiosErr = err;

@@ -1,7 +1,7 @@
 import { HttpService } from '@nestjs/axios';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { EncryptionService } from '../common/encryption/encryption.service';
-import { AuthType } from './auth-methods';
+import { AuthCredentials, AuthType } from './auth-methods';
 import { ConnectIntegrationDto } from './dto/connect-integration.dto';
 import { TestConnectionDto } from './dto/test-connection.dto';
 import { ProviderRule } from './provider-rules';
@@ -47,6 +47,16 @@ export declare class IntegrationsService {
         ok: boolean;
         message: string;
     }>;
+    resolveAuth(organizationId: string, provider: string): Promise<{
+        integrationId: Types.ObjectId;
+        authType: AuthType;
+        credentials: AuthCredentials;
+        baseUrl?: string;
+    } | null>;
+    listConnected(organizationId: string): Promise<{
+        integrationId: Types.ObjectId;
+        provider: string;
+    }[]>;
     private friendlyErrorMessage;
     getProviderRule(provider: string): ProviderRule;
     private assertAllowed;

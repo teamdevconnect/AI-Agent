@@ -73,6 +73,71 @@ export interface ProviderRule {
   note?: string;
 }
 
+// API Integration Engine — one integration -> unlimited resources ->
+// unlimited endpoints, each an arbitrary REST action run through the
+// backend's one generic Dynamic Executor (see backend/src/integrations/
+// dynamic-executor.service.ts). Mirrors integration-resource.schema.ts /
+// integration-endpoint.schema.ts.
+export interface IntegrationResource {
+  _id: string;
+  key: string;
+  name: string;
+  description?: string;
+}
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface EndpointQueryParam {
+  name: string;
+  required?: boolean;
+  description?: string;
+}
+
+export interface EndpointStaticHeader {
+  name: string;
+  value: string;
+}
+
+export interface IntegrationEndpoint {
+  _id: string;
+  key: string;
+  name: string;
+  method: HttpMethod;
+  path: string;
+  queryParams?: EndpointQueryParam[];
+  headers?: EndpointStaticHeader[];
+  requestBodySchema?: Record<string, unknown>;
+  responseSchema?: Record<string, unknown>;
+  timeoutMs?: number;
+  description?: string;
+}
+
+export interface CreateResourcePayload {
+  name: string;
+  key: string;
+  description?: string;
+}
+
+export interface CreateEndpointPayload {
+  name: string;
+  key: string;
+  method: HttpMethod;
+  path: string;
+  queryParams?: EndpointQueryParam[];
+  headers?: EndpointStaticHeader[];
+  requestBodySchema?: Record<string, unknown>;
+  responseSchema?: Record<string, unknown>;
+  timeoutMs?: number;
+  description?: string;
+}
+
+export interface EndpointTestResult {
+  ok: boolean;
+  message: string;
+  statusCode?: number;
+  data?: unknown;
+}
+
 export const integrationsService = {
   // Generic API-key-backed integrations (Anthropic, CRM) — backed by the
   // NestJS /integrations module, which stores the credential in Mongo for
@@ -187,5 +252,59 @@ export const integrationsService = {
 
   async disconnectGmailAccount(email: string): Promise<void> {
     await axiosClient.delete(`/gmail/accounts/${encodeURIComponent(email)}`);
+  },
+
+  // API Integration Engine — resource/endpoint CRUD (admin) + the generic
+  // execute route (any authenticated user) backed by resources.controller.ts.
+  async listResources(provider: string): Promise<IntegrationResource[]> {
+    const { data } = await axiosClient.get<IntegrationResource[]>(`/integrations/${provider}/resources`);
+    return data;
+  },
+
+  async createResource(provider: string, payload: CreateResourcePayload): Promise<IntegrationResource> {
+    const { data } = await axiosClient.post<IntegrationResource>(`/integrations/${provider}/resources`, payload);
+    return data;
+  },
+
+  async deleteResource(provider: string, resourceKey: string): Promise<void> {
+    await axiosClient.delete(`/integrations/${provider}/resources/${encodeURIComponent(resourceKey)}`);
+  },
+
+  async listEndpoints(provider: string, resourceKey: string): Promise<IntegrationEndpoint[]> {
+    const { data } = await axiosClient.get<IntegrationEndpoint[]>(
+      `/integrations/${provider}/resources/${encodeURIComponent(resourceKey)}/endpoints`,
+    );
+    return data;
+  },
+
+  async createEndpoint(
+    provider: string,
+    resourceKey: string,
+    payload: CreateEndpointPayload,
+  ): Promise<IntegrationEndpoint> {
+    const { data } = await axiosClient.post<IntegrationEndpoint>(
+      `/integrations/${provider}/resources/${encodeURIComponent(resourceKey)}/endpoints`,
+      payload,
+    );
+    return data;
+  },
+
+  async deleteEndpoint(provider: string, resourceKey: string, endpointKey: string): Promise<void> {
+    await axiosClient.delete(
+      `/integrations/${provider}/resources/${encodeURIComponent(resourceKey)}/endpoints/${encodeURIComponent(endpointKey)}`,
+    );
+  },
+
+  async testEndpoint(
+    provider: string,
+    resourceKey: string,
+    endpointKey: string,
+    payload: { pathParams?: Record<string, string>; query?: Record<string, string>; body?: unknown },
+  ): Promise<EndpointTestResult> {
+    const { data } = await axiosClient.post<EndpointTestResult>(
+      `/integrations/${provider}/resources/${encodeURIComponent(resourceKey)}/endpoints/${encodeURIComponent(endpointKey)}/test`,
+      payload,
+    );
+    return data;
   },
 };

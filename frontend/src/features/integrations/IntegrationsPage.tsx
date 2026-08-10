@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiCheckCircle, FiDatabase, FiKey, FiLink, FiPlus, FiSettings, FiShield, FiTrash2 } from 'react-icons/fi';
+import { FiCheckCircle, FiDatabase, FiKey, FiLink, FiPlus, FiSettings, FiShield, FiSliders, FiTrash2 } from 'react-icons/fi';
 import { Card, Badge, Button, Input, Modal } from '@/components/ui';
 import {
   integrationsService,
@@ -16,6 +16,7 @@ import {
   type TestConnectionResult,
 } from '@/services/integrationsService';
 import { extractErrorMessage } from '@/utils/errors';
+import { ResourceEndpointBuilder } from './ResourceEndpointBuilder';
 import styles from './IntegrationsPage.module.css';
 
 type CardStatus = 'connected' | 'disconnected' | 'error' | 'loading';
@@ -93,6 +94,9 @@ export function IntegrationsPage() {
   // Smart provider detection (see provider-rules.ts) — null while unknown/
   // not yet looked up, in which case every auth type is offered.
   const [customProviderRule, setCustomProviderRule] = useState<ProviderRule | null>(null);
+  // API Integration Engine — which custom integration's resource/endpoint
+  // builder modal is open (see ResourceEndpointBuilder.tsx), null when closed.
+  const [builderProvider, setBuilderProvider] = useState<string | null>(null);
 
   const loadOutlookAccounts = () => {
     integrationsService
@@ -610,6 +614,14 @@ export function IntegrationsPage() {
                   </Badge>
                   <Button
                     size="sm"
+                    variant="secondary"
+                    leftIcon={<FiSliders />}
+                    onClick={() => setBuilderProvider(integration.provider)}
+                  >
+                    Manage Resources
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="ghost"
                     leftIcon={<FiTrash2 />}
                     onClick={() => handleDisconnectCustomIntegration(integration.provider)}
@@ -622,6 +634,10 @@ export function IntegrationsPage() {
           </div>
         )}
       </Card>
+
+      {builderProvider && (
+        <ResourceEndpointBuilder provider={builderProvider} open onClose={() => setBuilderProvider(null)} />
+      )}
 
       {customModalOpen && (
         <Modal

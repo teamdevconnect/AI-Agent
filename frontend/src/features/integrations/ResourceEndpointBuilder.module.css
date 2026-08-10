@@ -1,0 +1,98 @@
+.resourceCard {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-input);
+  overflow: hidden;
+}
+
+.resourceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  cursor: pointer;
+}
+
+.resourceName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.resourceMeta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.resourceBody {
+  padding: 0 var(--space-3) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.endpointRow {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.endpointHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.methodBadge {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
+}
+
+.pathText {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.paramRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.jsonTextarea {
+  width: 100%;
+  min-height: 72px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  resize: vertical;
+}
+
+.formGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.muted {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

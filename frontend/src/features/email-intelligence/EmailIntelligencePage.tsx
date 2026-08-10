@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { getSocket } from '@/api/socketClient';
 import { useAuthStore } from '@/stores/authStore';
 import { SectionCard, Tabs } from '@/components/ui';
 import { FiInbox } from 'react-icons/fi';
 import { emailIntelligenceService, type EmailIntelligenceItem } from '@/services/emailIntelligenceService';
+import { extractErrorMessage } from '@/utils/errors';
 import { EmailIntelligenceList } from './components/EmailIntelligenceList';
 import { EmailIntelligenceDetailModal } from './components/EmailIntelligenceDetailModal';
 import styles from './email-intelligence.module.css';
@@ -17,6 +20,7 @@ const STATUS_TABS = [
 
 export function EmailIntelligencePage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [selected, setSelected] = useState<EmailIntelligenceItem | null>(null);
 
@@ -25,6 +29,27 @@ export function EmailIntelligencePage() {
     queryFn: () => emailIntelligenceService.list(status),
     refetchInterval: 60_000,
   });
+
+  // Arrived here from a notification click (see
+  // frontend/src/utils/notificationTarget.ts) — fetched directly by id
+  // rather than found in `data` above, since the target email may not be
+  // in whichever status tab happens to be selected (e.g. it could already
+  // be approved while this page defaults to the Pending tab). Independent
+  // of the tab-scoped list query, so it opens immediately without waiting
+  // on or being limited by that query's status filter.
+  useEffect(() => {
+    const openEmailId = searchParams.get('openEmailId');
+    if (!openEmailId) return;
+    emailIntelligenceService
+      .getOne(openEmailId)
+      .then(setSelected)
+      .catch((error) => toast.error(extractErrorMessage(error)));
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('openEmailId');
+      return next;
+    }, { replace: true });
+  }, [searchParams]);
 
   // Real-time nudge: the scheduled poller notifies the mailbox owner via the
   // existing notification socket channel once a new item is analyzed — same

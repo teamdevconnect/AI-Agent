@@ -1,8 +1,9 @@
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
+import { assertPublicHttpUrl } from '../common/security/ssrf-guard';
 import { EncryptionService } from '../common/encryption/encryption.service';
 import { AuthCredentials, AuthType, buildAuthHeaders, requiredCredentialFields } from './auth-methods';
 import { ConnectIntegrationDto } from './dto/connect-integration.dto';
@@ -172,6 +173,13 @@ export class IntegrationsService {
     }
 
     const url = healthCheckPath ? `${baseUrl.replace(/\/$/, '')}/${healthCheckPath.replace(/^\//, '')}` : baseUrl;
+
+    try {
+      await assertPublicHttpUrl(url);
+    } catch (err) {
+      return { ok: false, message: (err as Error).message };
+    }
+
     const headers = buildAuthHeaders(authType, credentials ?? {});
 
     try {
@@ -180,6 +188,40 @@ export class IntegrationsService {
     } catch (err) {
       return { ok: false, message: this.friendlyErrorMessage(err) };
     }
+  }
+
+  /** The saved auth for (org, provider), normalized to one shape regardless
+   * of whether it used the legacy apiKey-only path or the newer multi-auth
+   * path — used by DynamicExecutorService so it doesn't need to duplicate
+   * this decrypt-and-fallback logic. Returns null if nothing is connected. */
+  async resolveAuth(
+    organizationId: string,
+    provider: string,
+  ): Promise<{ integrationId: Types.ObjectId; authType: AuthType; credentials: AuthCredentials; baseUrl?: string } | null> {
+    const doc = await this.credentialModel.findOne({ organizationId, provider });
+    if (!doc) return null;
+    if (doc.authType) {
+      return {
+        integrationId: doc._id,
+        authType: doc.authType,
+        credentials: JSON.parse(this.encryption.decrypt(doc.credentialsEncrypted!)) as AuthCredentials,
+        baseUrl: doc.baseUrl,
+      };
+    }
+    return {
+      integrationId: doc._id,
+      authType: 'apiKeyBaseUrl',
+      credentials: { apiKey: doc.apiKey },
+      baseUrl: doc.baseUrl,
+    };
+  }
+
+  /** Every connected integration for this org, id + provider only — used by
+   * DynamicExecutorService/capabilities discovery to enumerate without
+   * decrypting credentials that aren't needed for a listing. */
+  async listConnected(organizationId: string): Promise<{ integrationId: Types.ObjectId; provider: string }[]> {
+    const docs = await this.credentialModel.find({ organizationId }, { provider: 1 });
+    return docs.map((doc) => ({ integrationId: doc._id, provider: doc.provider }));
   }
 
   private friendlyErrorMessage(err: unknown): string {

@@ -8,6 +8,24 @@ export type NotificationDocument = Notification & Document<Types.ObjectId>;
 export const NOTIFICATION_KINDS = ['system', 'integration', 'warning', 'error'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
+// What kind of record entityId below points at — the frontend's click
+// dispatcher (frontend/src/utils/notificationTarget.ts) maps each of these
+// to a route + which query param to open it with. Deliberately a flat list
+// rather than per-module sub-schemas: every consumer only ever needs "what
+// type is this, what's its id", never anything richer, and a new entity
+// type is a one-line addition here plus one dispatcher-map entry, not a
+// schema migration.
+export const NOTIFICATION_ENTITY_TYPES = [
+  'email',
+  'financeDocument',
+  'deal',
+  'task',
+  'outlookAccount',
+  'workflowExecution',
+  'dailyReport',
+] as const;
+export type NotificationEntityType = (typeof NOTIFICATION_ENTITY_TYPES)[number];
+
 @Schema({ timestamps: true, collection: 'notifications' })
 export class Notification {
   @Prop({ required: true })
@@ -41,6 +59,20 @@ export class Notification {
   // live authenticated request.
   @Prop()
   source?: string;
+
+  // Which record this notification is *about* — lets the frontend jump
+  // straight to it instead of the user having to go find it themselves
+  // (see frontend/src/utils/notificationTarget.ts). Both optional and
+  // always set together: absent on any notification that isn't about one
+  // specific addressable record (e.g. "Achievement unlocked"), or on any
+  // older row written before this existed — the click handler already
+  // falls back to just marking read + showing the detail panel when
+  // there's no target to navigate to, so this is purely additive.
+  @Prop({ enum: NOTIFICATION_ENTITY_TYPES })
+  entityType?: NotificationEntityType;
+
+  @Prop()
+  entityId?: string;
 }
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
