@@ -59,6 +59,8 @@ exports.AppModule = AppModule = __decorate([
             }),
             schedule_1.ScheduleModule.forRoot(),
             throttler_1.ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
+            EncryptionModule,
+            MailModule,
             auth_module_1.AuthModule,
             organizations_module_1.OrganizationsModule,
             users_module_1.UsersModule,

@@ -1,16 +1,13 @@
 import { axiosClient } from '@/api/axiosClient';
-import { randomDelay } from './mock/delay';
 import type {
   AuthSession,
   ForgotPasswordPayload,
   LoginPayload,
+  OAuthProvider,
   RegisterPayload,
   ResetPasswordPayload,
   User,
 } from '@/types';
-
-/** Password reset has no backend endpoint yet (see forgotPassword/resetPassword below) — this code unlocks that mock flow. */
-export const MOCK_OTP = '123456';
 
 interface BackendTokenResponse {
   accessToken: string;
@@ -70,25 +67,36 @@ export const authService = {
     return { user: toUser(profile), accessToken: data.accessToken, refreshToken: '', expiresAt: '' };
   },
 
-  // The backend has no password-reset endpoint yet — kept mock so the UI
-  // flow stays demoable without pretending an email actually goes out.
   async forgotPassword(payload: ForgotPasswordPayload): Promise<{ maskedEmail: string }> {
-    await randomDelay();
-    const [name, domain] = payload.email.split('@');
-    const masked = name.length > 2 ? `${name.slice(0, 2)}${'*'.repeat(name.length - 2)}` : `${name[0] ?? ''}*`;
-    return { maskedEmail: `${masked}@${domain ?? 'example.com'}` };
+    const { data } = await axiosClient.post<{ maskedEmail: string }>('/auth/forgot-password', {
+      email: payload.email,
+    });
+    return data;
   },
 
   async resetPassword(payload: ResetPasswordPayload): Promise<{ success: true }> {
-    await randomDelay();
-    if (payload.otp !== MOCK_OTP) {
-      throw new Error(`This demo flow isn't wired to the backend yet — use the demo code ${MOCK_OTP}.`);
-    }
+    await axiosClient.post('/auth/reset-password', {
+      email: payload.email,
+      otp: payload.otp,
+      password: payload.password,
+    });
     return { success: true };
   },
 
   async fetchCurrentUser(accessToken: string): Promise<User> {
     return toUser(await fetchProfile(accessToken));
+  },
+
+  async getOAuthUrl(provider: OAuthProvider): Promise<string> {
+    const { data } = await axiosClient.get<{ url: string }>(`/auth/oauth/${provider}/url`);
+    return data.url;
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    // Authorization header is attached automatically by axiosClient's
+    // interceptor (reads the live session from authStore) — unlike
+    // fetchProfile/login/register above, which run before a session exists.
+    await axiosClient.post('/auth/change-password', { currentPassword, newPassword });
   },
 
   async logout(): Promise<void> {

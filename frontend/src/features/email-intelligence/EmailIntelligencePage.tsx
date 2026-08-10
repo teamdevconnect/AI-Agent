@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { getSocket } from '@/api/socketClient';
 import { useAuthStore } from '@/stores/authStore';
-import { DateRangeControl, MultiSelectDropdown, SectionCard, Tabs } from '@/components/ui';
-import type { DateRange } from '@/components/ui';
-import { FiClock, FiInbox } from 'react-icons/fi';
-import {
-  EMAIL_INTELLIGENCE_INTENTS,
-  emailIntelligenceService,
-  RELEVANT_EMAIL_INTENTS,
-  type EmailIntelligenceItem,
-} from '@/services/emailIntelligenceService';
+import { SectionCard, Tabs } from '@/components/ui';
+import { FiInbox } from 'react-icons/fi';
+import { emailIntelligenceService, type EmailIntelligenceItem } from '@/services/emailIntelligenceService';
+import { extractErrorMessage } from '@/utils/errors';
 import { EmailIntelligenceList } from './components/EmailIntelligenceList';
 import { EmailIntelligenceDetailModal } from './components/EmailIntelligenceDetailModal';
-import { FollowUpsSection } from './components/FollowUpsSection';
 import styles from './email-intelligence.module.css';
 
 const STATUS_TABS = [
@@ -22,38 +18,38 @@ const STATUS_TABS = [
   { id: 'rejected', label: 'Rejected' },
 ];
 
-function intentOptionLabel(intent: string): string {
-  return intent
-    .split('_')
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(' ');
-}
-
-// One real, visible filter control instead of the old unlabeled "Relevant/
-// All" tab pair — same underlying allow-list as the previous default
-// (customer/enquiry/vendor-type mail), but now user-adjustable per intent
-// rather than a fixed binary. An empty selection means "no filter" (show
-// everything), matching every other MultiSelectDropdown filter in this app
-// (Deal Performance/Finance/Timeline) — never "show nothing".
-const INTENT_FILTER_OPTIONS = EMAIL_INTELLIGENCE_INTENTS.map((intent) => ({ value: intent, label: intentOptionLabel(intent) }));
-
 export function EmailIntelligencePage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
-  const [intentFilter, setIntentFilter] = useState<string[]>([...RELEVANT_EMAIL_INTENTS]);
-  const [range, setRange] = useState<DateRange>({});
   const [selected, setSelected] = useState<EmailIntelligenceItem | null>(null);
 
-  // Date range is applied server-side (real receivedAt filtering, not just
-  // hiding rows from an already-fetched page); Mail Type stays client-side
-  // over that date-bounded set, same split TimelinePage.tsx already uses.
   const { data, isLoading } = useQuery({
-    queryKey: ['email-intelligence-items', status, range],
-    queryFn: () => emailIntelligenceService.list(status, { from: range.dateFrom, to: range.dateTo }),
+    queryKey: ['email-intelligence-items', status],
+    queryFn: () => emailIntelligenceService.list(status),
     refetchInterval: 60_000,
   });
 
-  const visibleItems = data?.filter((item) => intentFilter.length === 0 || intentFilter.includes(item.intent));
+  // Arrived here from a notification click (see
+  // frontend/src/utils/notificationTarget.ts) — fetched directly by id
+  // rather than found in `data` above, since the target email may not be
+  // in whichever status tab happens to be selected (e.g. it could already
+  // be approved while this page defaults to the Pending tab). Independent
+  // of the tab-scoped list query, so it opens immediately without waiting
+  // on or being limited by that query's status filter.
+  useEffect(() => {
+    const openEmailId = searchParams.get('openEmailId');
+    if (!openEmailId) return;
+    emailIntelligenceService
+      .getOne(openEmailId)
+      .then(setSelected)
+      .catch((error) => toast.error(extractErrorMessage(error)));
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('openEmailId');
+      return next;
+    }, { replace: true });
+  }, [searchParams]);
 
   // Real-time nudge: the scheduled poller notifies the mailbox owner via the
   // existing notification socket channel once a new item is analyzed — same
@@ -89,25 +85,8 @@ export function EmailIntelligencePage() {
         <Tabs items={STATUS_TABS} activeId={status} onChange={(id) => setStatus(id as typeof status)} />
       </div>
 
-      <div className={styles.filterRow}>
-        <DateRangeControl value={range} onChange={setRange} />
-        <MultiSelectDropdown label="Mail Type" options={INTENT_FILTER_OPTIONS} selected={intentFilter} onChange={setIntentFilter} />
-      </div>
-
-      <SectionCard
-        title="Email Queue"
-        icon={FiInbox}
-        action={
-          data && visibleItems && data.length > visibleItems.length ? (
-            <span className={styles.listItemMeta}>{visibleItems.length} of {data.length} shown</span>
-          ) : undefined
-        }
-      >
-        <EmailIntelligenceList items={visibleItems} isLoading={isLoading} onSelect={setSelected} />
-      </SectionCard>
-
-      <SectionCard title="Follow-ups" icon={FiClock}>
-        <FollowUpsSection />
+      <SectionCard title="Email Queue" icon={FiInbox}>
+        <EmailIntelligenceList items={data} isLoading={isLoading} onSelect={setSelected} />
       </SectionCard>
 
       <EmailIntelligenceDetailModal

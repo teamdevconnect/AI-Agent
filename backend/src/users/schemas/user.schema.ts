@@ -8,8 +8,13 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email: string;
 
-  @Prop({ required: true })
-  passwordHash: string;
+  // Optional now — an account created via "Sign in with Google/Microsoft/
+  // GitHub" (see AuthService.loginWithOAuth) has no password at all until
+  // the user explicitly sets one. Every password-path call site (login,
+  // reset-password) already has to check truthiness of this before
+  // bcrypt.compare, since bcrypt throws on a non-string hash.
+  @Prop()
+  passwordHash?: string;
 
   @Prop({ required: true, trim: true })
   name: string;
@@ -55,6 +60,38 @@ export class User {
 
   @Prop({ type: Object, default: {} })
   preferences: Record<string, unknown>;
+
+  // Informational only today — nothing currently gates login or feature
+  // access on this being true. Set once the user completes the OTP flow
+  // sent at registration (see AuthService.register/verifyEmail).
+  @Prop({ default: false })
+  emailVerified: boolean;
+
+  // bcrypt hash of the current outstanding OTP, never the raw code —
+  // same reasoning as passwordHash. Cleared (undefined) once consumed or
+  // superseded by a newer code. verify* is for the register-time
+  // email-verification flow; reset* is the separate forgot-password flow —
+  // kept as distinct pairs so verifying your email can never be used to
+  // reset your password or vice versa.
+  @Prop()
+  verifyOtpHash?: string;
+
+  @Prop()
+  verifyOtpExpiresAt?: Date;
+
+  @Prop()
+  resetOtpHash?: string;
+
+  @Prop()
+  resetOtpExpiresAt?: Date;
+
+  // Stable per-provider subject id (Google `sub`, Microsoft Graph `id`,
+  // GitHub numeric `id` as a string) — looked up first on OAuth login, ahead
+  // of matching by email, since a provider account's email can change while
+  // its id never does. A user can accumulate more than one linked provider
+  // (e.g. registered with a password, later added "Sign in with Google").
+  @Prop({ type: Object, default: {} })
+  oauthProviders: { google?: string; microsoft?: string; github?: string };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

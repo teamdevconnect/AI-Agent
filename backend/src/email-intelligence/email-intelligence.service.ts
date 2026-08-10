@@ -197,6 +197,8 @@ export class EmailIntelligenceService {
           title: `New ${intentLabel(result.intent as string).toLowerCase()} email needs review`,
           description: `${email.subject || '(no subject)'} — ${result.priority} priority`,
           source: 'email-intelligence',
+          entityType: 'email',
+          entityId: created._id.toString(),
         },
         organizationId,
       );

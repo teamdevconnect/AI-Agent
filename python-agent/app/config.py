@@ -7,6 +7,11 @@ load_dotenv()
 
 class Settings:
     jwt_secret: str = os.environ["JWT_SECRET"]
+    # Must match backend/.env's ENCRYPTION_KEY exactly (see
+    # backend/src/common/encryption/encryption.service.ts) — falls back to
+    # jwt_secret when unset, same fallback the Node side uses, so the two
+    # stay compatible even if only one side sets this explicitly.
+    encryption_key: str = os.environ.get("ENCRYPTION_KEY", "")
 
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     anthropic_model: str = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
@@ -68,6 +73,40 @@ class Settings:
     smtp_password: str = os.environ.get("SMTP_PASSWORD", "")
 
     search_api_key: str = os.environ.get("SEARCH_API_KEY", "")
+
+    # --- Response-completeness / truncation controls ---
+    # Was a hardcoded 1024 in anthropic_client.call() — the main planner/
+    # chat-reply function, used for every ordinary turn. 1024 tokens
+    # (~700-800 words) is small for an end-of-day report or multi-part CRM
+    # analysis; raised default plus automatic bounded continuation (below)
+    # directly addresses replies stopping mid-sentence. Configurable so a
+    # deployment can tune cost vs. completeness without a code change.
+    anthropic_max_output_tokens: int = int(os.environ.get("ANTHROPIC_MAX_OUTPUT_TOKENS", "4096"))
+    # How many extra "continue where you left off" calls call() may make
+    # when Claude's stop_reason is "max_tokens" (see anthropic_client.py).
+    # 0 disables continuation entirely, restoring the exact old behavior of
+    # returning whatever fit in one call.
+    anthropic_max_continuations: int = int(os.environ.get("ANTHROPIC_MAX_CONTINUATIONS", "2"))
+
+    # Was a hardcoded module constant (5) in graph.py — how many tool-calling
+    # rounds one turn may make before the planner is forced to answer with
+    # whatever it has. Raised modestly: each extra round only ever *permits*
+    # more thorough multi-step lookups (e.g. paging through more CRM
+    # records); it never forces more rounds for turns that already finish
+    # in fewer.
+    max_tool_rounds: int = int(os.environ.get("MAX_TOOL_ROUNDS", "8"))
+
+    # Was a hardcoded default (limit=20) in conversation_store.get_recent_messages.
+    # Same default kept — raising this grows every prompt's size regardless
+    # of whether a given conversation needs the extra history, so it's made
+    # configurable rather than changed, unlike the two above.
+    conversation_history_limit: int = int(os.environ.get("CONVERSATION_HISTORY_LIMIT", "20"))
+
+    # Were hardcoded function-default parameters in rag/hybrid_search.py.
+    # Same defaults kept for the same reason as conversation_history_limit —
+    # this governs prompt size, not just completeness.
+    rag_top_k: int = int(os.environ.get("RAG_TOP_K", "5"))
+    rag_candidate_pool_size: int = int(os.environ.get("RAG_CANDIDATE_POOL_SIZE", "20"))
 
 
 settings = Settings()

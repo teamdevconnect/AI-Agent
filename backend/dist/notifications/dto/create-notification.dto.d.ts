@@ -1,7 +1,9 @@
-import { NotificationKind } from '../schemas/notification.schema';
+import { NotificationEntityType, NotificationKind } from '../schemas/notification.schema';
 export declare class CreateNotificationDto {
     title: string;
     description: string;
     kind: NotificationKind;
     source?: string;
+    entityType?: NotificationEntityType;
+    entityId?: string;
 }

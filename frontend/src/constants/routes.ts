@@ -2,6 +2,7 @@ export const ROUTES = {
   login: '/login',
   register: '/register',
   forgotPassword: '/forgot-password',
+  oauthCallback: '/oauth/callback',
 
   dashboard: '/dashboard',
   agentActivity: '/agent-activity',

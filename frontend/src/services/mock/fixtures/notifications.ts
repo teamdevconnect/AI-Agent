@@ -1,5 +1,16 @@
 export type NotificationKind = 'system' | 'integration' | 'warning' | 'error';
 
+// Mirrors backend/src/notifications/schemas/notification.schema.ts's
+// NOTIFICATION_ENTITY_TYPES exactly.
+export type NotificationEntityType =
+  | 'email'
+  | 'financeDocument'
+  | 'deal'
+  | 'task'
+  | 'outlookAccount'
+  | 'workflowExecution'
+  | 'dailyReport';
+
 export interface AppNotification {
   id: string;
   kind: NotificationKind;
@@ -7,6 +18,15 @@ export interface AppNotification {
   description: string;
   timestamp: string;
   read: boolean;
+  // Set when created proactively by a workflow/the Planner with no live
+  // user turn behind it (e.g. "workflow:crm_follow_up_check") — see
+  // backend/src/notifications/schemas/notification.schema.ts. Absent for
+  // anything created via a live authenticated request.
+  source?: string;
+  // Which record this is about, if any — see utils/notificationTarget.ts,
+  // which maps this pair to a route+query-param to jump straight to it.
+  entityType?: NotificationEntityType;
+  entityId?: string;
 }
 
 export const mockNotifications: AppNotification[] = [

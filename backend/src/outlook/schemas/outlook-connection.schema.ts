@@ -8,6 +8,14 @@ export class OutlookConnection {
   @Prop({ required: true, index: true })
   userId: string;
 
+  // Optional — absent on every connection made before org-level account
+  // visibility existed. Backfilled going forward at connect time
+  // (OutlookService.handleCallback); existing rows keep working unchanged
+  // for every userId-scoped query (getStatus/listAccounts/setActive/
+  // disconnect), which never filter on this field.
+  @Prop({ index: true })
+  organizationId?: string;
+
   @Prop({ required: true })
   email: string;
 
@@ -28,6 +36,16 @@ export class OutlookConnection {
   // is active at a time. See OutlookService.setActive.
   @Prop({ default: false })
   isActive: boolean;
+
+  // Set to 'needs_reauth' by python-agent (see outlook_store.py's _refresh)
+  // the moment a refresh attempt comes back invalid_grant — the user
+  // revoked access or changed their Microsoft password, and no amount of
+  // retrying fixes it without them reconnecting through the consent screen
+  // again. Absent/'connected' on every row written before this existed;
+  // isActive is untouched either way, so which mailbox is "the active one"
+  // keeps meaning what it always did.
+  @Prop({ default: 'connected' })
+  status?: 'connected' | 'needs_reauth';
 }
 
 export const OutlookConnectionSchema = SchemaFactory.createForClass(OutlookConnection);

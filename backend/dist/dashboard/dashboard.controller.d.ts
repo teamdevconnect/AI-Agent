@@ -11,7 +11,7 @@ export declare class DashboardController {
             id: string;
             name: string;
             avatarColor: string;
-            status: "reported" | "pending";
+            status: "pending" | "reported";
             todaysTaskCount: number;
             lastReportType: "morning" | "eod" | undefined;
             lastReportAt: Date | undefined;

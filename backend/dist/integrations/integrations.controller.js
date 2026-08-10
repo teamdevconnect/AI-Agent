@@ -19,13 +19,23 @@ const roles_decorator_1 = require("../common/decorators/roles.decorator");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const roles_guard_1 = require("../common/guards/roles.guard");
 const connect_integration_dto_1 = require("./dto/connect-integration.dto");
+const test_connection_dto_1 = require("./dto/test-connection.dto");
 const integrations_service_1 = require("./integrations.service");
 let IntegrationsController = class IntegrationsController {
     constructor(integrationsService) {
         this.integrationsService = integrationsService;
     }
+    listCustom(user) {
+        return this.integrationsService.listCustom(user.organizationId);
+    }
+    getProviderRule(provider) {
+        return this.integrationsService.getProviderRule(provider);
+    }
     connect(user, provider, dto) {
-        return this.integrationsService.connect(user.organizationId, provider, dto.apiKey, dto.baseUrl);
+        return this.integrationsService.connectFromDto(user.organizationId, provider, dto);
+    }
+    testConnection(user, provider, dto) {
+        return this.integrationsService.testConnection(user.organizationId, provider, dto);
     }
     status(user, provider) {
         return this.integrationsService.status(user.organizationId, provider);
@@ -35,6 +45,20 @@ let IntegrationsController = class IntegrationsController {
     }
 };
 exports.IntegrationsController = IntegrationsController;
+__decorate([
+    (0, common_1.Get)(),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], IntegrationsController.prototype, "listCustom", null);
+__decorate([
+    (0, common_1.Get)('provider-rules/:provider'),
+    __param(0, (0, common_1.Param)('provider')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], IntegrationsController.prototype, "getProviderRule", null);
 __decorate([
     (0, common_1.Post)(':provider/connect'),
     (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
@@ -46,6 +70,17 @@ __decorate([
     __metadata("design:paramtypes", [Object, String, connect_integration_dto_1.ConnectIntegrationDto]),
     __metadata("design:returntype", void 0)
 ], IntegrationsController.prototype, "connect", null);
+__decorate([
+    (0, common_1.Post)(':provider/test'),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('admin'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('provider')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, test_connection_dto_1.TestConnectionDto]),
+    __metadata("design:returntype", void 0)
+], IntegrationsController.prototype, "testConnection", null);
 __decorate([
     (0, common_1.Get)(':provider/status'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),

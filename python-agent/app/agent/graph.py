@@ -1,4 +1,5 @@
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from langgraph.graph import END, START, StateGraph
@@ -6,10 +7,17 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.llm_client import call_llm
 from app.agent.router import choose_model, choose_provider
 from app.agent.state import AgentState
+from app.config import settings
 from app.memory.working_memory import cached_execute_tool
 from app.tools.registry import get_tool_definitions
 
-MAX_TOOL_ROUNDS = 5
+logger = logging.getLogger(__name__)
+
+# Was a hardcoded 5 — now settings.max_tool_rounds (default raised to 8, see
+# config.py). Read once at import time like the old constant; if a
+# deployment needs to change it, restarting the process (which reloads env
+# vars) already picks up the new value, same as every other setting here.
+MAX_TOOL_ROUNDS = settings.max_tool_rounds
 
 
 def planner_node(state: AgentState) -> dict:
@@ -72,6 +80,19 @@ def should_continue(state: AgentState) -> str:
         return END
     if state["pending_calls"] and state.get("rounds", 0) < MAX_TOOL_ROUNDS:
         return "tools"
+    if state["pending_calls"]:
+        # Hit the round cap with more tool calls still queued — the model
+        # wanted to keep investigating (e.g. paging through more CRM
+        # records) but was cut off here. Silent otherwise: the turn still
+        # "succeeds" with whatever's been gathered so far, just possibly
+        # incomplete — this is the one place that's visible in logs.
+        logger.warning(
+            "Hit MAX_TOOL_ROUNDS (%d) with %d tool call(s) still pending for conversation_id=%s — "
+            "answering with partial data instead of continuing to investigate",
+            MAX_TOOL_ROUNDS,
+            len(state["pending_calls"]),
+            state.get("conversation_id", ""),
+        )
     return END
 
 

@@ -8,6 +8,9 @@ export interface BackendNotification {
   description: string;
   read: boolean;
   createdAt: string;
+  source?: string;
+  entityType?: AppNotification['entityType'];
+  entityId?: string;
 }
 
 export function toNotification(n: BackendNotification): AppNotification {
@@ -18,6 +21,9 @@ export function toNotification(n: BackendNotification): AppNotification {
     description: n.description,
     timestamp: n.createdAt,
     read: n.read,
+    source: n.source,
+    entityType: n.entityType,
+    entityId: n.entityId,
   };
 }
 

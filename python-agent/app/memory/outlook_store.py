@@ -3,11 +3,14 @@ from datetime import datetime, timedelta
 import requests
 
 from app.config import settings
+from app.encryption import decrypt_token, encrypt
 from app.memory.mongo_client import get_db
 
 # "organizations" (not a specific tenant ID) so any franchise business's
 # Microsoft 365 tenant can connect — this app is registered as multi-tenant
-# in Azure AD, matching backend/src/outlook/outlook.service.ts.
+# in Azure AD, matching backend/src/outlook/outlook.service.ts. One
+# platform-owned Azure App Registration for every organization; customers
+# never provide their own OAuth credentials.
 TOKEN_ENDPOINT = "https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
 GRAPH_SCOPES = "offline_access User.Read Mail.Read Calendars.Read Contacts.Read"
 
@@ -16,8 +19,12 @@ def get_connection(user_id: str) -> dict | None:
     # A user may have several connected mailboxes; the backend's Outlook
     # Account Management UI lets them pick which one is active (see
     # backend/src/outlook/outlook.service.ts setActive) — that's the one
-    # the agent acts as.
-    return get_db().outlook_connections.find_one({"userId": user_id, "isActive": True})
+    # the agent acts as. needs_reauth connections are excluded — a prior
+    # refresh already established the grant is dead; don't keep retrying it
+    # every call (see _refresh's failure path below).
+    return get_db().outlook_connections.find_one(
+        {"userId": user_id, "isActive": True, "status": {"$ne": "needs_reauth"}}
+    )
 
 
 def get_valid_access_token(user_id: str) -> str | None:
@@ -25,7 +32,9 @@ def get_valid_access_token(user_id: str) -> str | None:
 
     Tokens are written by the NestJS backend after the OAuth callback; this
     only reads/refreshes them (backend owns the initial exchange since it
-    holds the redirect flow).
+    holds the redirect flow). Returns None if there's no connection, or if
+    the connection's refresh grant has been revoked (see _refresh) — either
+    way the caller should treat this exactly like "not connected".
     """
     connection = get_connection(user_id)
     if not connection:
@@ -33,40 +42,59 @@ def get_valid_access_token(user_id: str) -> str | None:
 
     if datetime.utcnow() >= connection["expiresAt"] - timedelta(seconds=60):
         connection = _refresh(connection)
+        if connection is None:
+            return None
 
-    return connection["accessToken"]
+    return decrypt_token(connection["accessToken"])
 
 
-def _refresh(connection: dict) -> dict:
+def _refresh(connection: dict) -> dict | None:
     response = requests.post(
         TOKEN_ENDPOINT,
         data={
             "client_id": settings.ms_graph_client_id,
             "client_secret": settings.ms_graph_client_secret,
             "grant_type": "refresh_token",
-            "refresh_token": connection["refreshToken"],
+            "refresh_token": decrypt_token(connection["refreshToken"]),
             "scope": GRAPH_SCOPES,
         },
         timeout=10,
     )
+
+    if response.status_code == 400 and response.json().get("error") == "invalid_grant":
+        # Refresh token expired or revoked (user changed their Microsoft
+        # password, removed the app's consent, etc.) — no amount of retrying
+        # fixes this; only reconnecting through the consent screen again
+        # will. Mark it so get_connection stops selecting this row, and the
+        # Outlook Account Management UI can show "needs reconnecting"
+        # instead of silently failing every tool call.
+        get_db().outlook_connections.update_one(
+            {"userId": connection["userId"], "email": connection["email"]},
+            {"$set": {"status": "needs_reauth"}},
+        )
+        return None
+
     response.raise_for_status()
     payload = response.json()
 
     new_access_token = payload["access_token"]
-    new_refresh_token = payload.get("refresh_token", connection["refreshToken"])
+    new_refresh_token = payload.get("refresh_token", decrypt_token(connection["refreshToken"]))
     new_expires_at = datetime.utcnow() + timedelta(seconds=payload.get("expires_in", 3600))
+    encrypted_access_token = encrypt(new_access_token)
+    encrypted_refresh_token = encrypt(new_refresh_token)
 
     get_db().outlook_connections.update_one(
         {"userId": connection["userId"], "email": connection["email"]},
         {
             "$set": {
-                "accessToken": new_access_token,
-                "refreshToken": new_refresh_token,
+                "accessToken": encrypted_access_token,
+                "refreshToken": encrypted_refresh_token,
                 "expiresAt": new_expires_at,
+                "status": "connected",
             }
         },
     )
-    connection["accessToken"] = new_access_token
-    connection["refreshToken"] = new_refresh_token
+    connection["accessToken"] = encrypted_access_token
+    connection["refreshToken"] = encrypted_refresh_token
     connection["expiresAt"] = new_expires_at
     return connection

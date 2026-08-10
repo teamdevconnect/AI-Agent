@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -66,11 +67,30 @@ interface DrillDown {
 // pipeline data (see Phase 10a plan notes).
 export function FinancePage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<FinanceFilters>({});
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
   const [reviewDoc, setReviewDoc] = useState<FinanceDocument | null>(null);
+
+  // Arrived here from a notification click (see
+  // frontend/src/utils/notificationTarget.ts) — fetched directly by id
+  // rather than relying on it being present in whatever page/filter of
+  // `data` below happens to be loaded.
+  useEffect(() => {
+    const openDocumentId = searchParams.get('openDocumentId');
+    if (!openDocumentId) return;
+    financeDocumentsService
+      .getOne(openDocumentId)
+      .then(setReviewDoc)
+      .catch((error) => toast.error(extractErrorMessage(error)));
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('openDocumentId');
+      return next;
+    }, { replace: true });
+  }, [searchParams]);
 
   // Real-time nudge: the upload pipeline notifies owners/admins via the
   // existing notification socket channel once extraction completes: a

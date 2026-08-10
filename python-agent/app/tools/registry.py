@@ -18,6 +18,8 @@ from app.tools import (
     email_tool,
     employee_tool,
     gmail_tool,
+    integration_capabilities_tool,
+    integration_execute_tool,
     memory_tool,
     outlook_tool,
     search_tool,
@@ -43,6 +45,8 @@ _MODULES = [
     document_tool,
     business_search_tool,
     memory_tool,
+    integration_capabilities_tool,
+    integration_execute_tool,
 ]
 
 TOOL_DEFINITIONS = [m.SPEC for m in _MODULES]
