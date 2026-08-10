@@ -935,19 +935,7 @@ def call(
             try:
                 with _client(api_key).messages.stream(
                     model=resolved_model,
-<<<<<<< HEAD
-                    # Was 1024 — too small for a genuinely detailed answer (a
-                    # thorough sales-coaching response, a multi-part investigative
-                    # summary, etc.): the stream would hit max_tokens mid-sentence
-                    # and stop, and should_continue() in graph.py only checks for
-                    # pending tool calls, not stop_reason, so a truncated answer
-                    # was silently returned as if it were complete. Matches this
-                    # file's own ceiling for other "may need real length" calls
-                    # (_run_forced_tool_extraction already uses 8192).
-                    max_tokens=8192,
-=======
                     max_tokens=settings.anthropic_max_output_tokens,
->>>>>>> abishake
                     system=[
                         {
                             "type": "text",
@@ -995,9 +983,6 @@ def call(
                     continue
                 raise
 
-<<<<<<< HEAD
-    return _normalize_response(response)
-=======
     normalized = _normalize_response(response)
 
     is_truncated_text_reply = (
@@ -1037,7 +1022,6 @@ def call(
         _continuation_depth=_continuation_depth + 1,
     )
     return _merge_continuation(normalized, continuation)
->>>>>>> abishake
 
 
 CUSTOMER_ACTIVITY_TOOL = {

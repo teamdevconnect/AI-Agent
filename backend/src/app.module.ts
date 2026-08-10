@@ -26,15 +26,12 @@ import { WorkflowsModule } from './workflows/workflows.module';
 import { FinanceModule } from './finance/finance.module';
 import { BusinessKnowledgeModule } from './business-knowledge/business-knowledge.module';
 import { EmailIntelligenceModule } from './email-intelligence/email-intelligence.module';
-<<<<<<< HEAD
 import { HomeDashboardModule } from './home-dashboard/home-dashboard.module';
 import { AnalyticsDashboardModule } from './analytics-dashboard/analytics-dashboard.module';
 import { RoyaltyModule } from './royalty/royalty.module';
 import { ReportingModule } from './reporting/reporting.module';
-=======
 import { MailModule } from './mail/mail.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
->>>>>>> abishake
 import { HealthController } from './health/health.controller';
 
 @Module({

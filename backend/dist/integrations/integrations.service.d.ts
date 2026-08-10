@@ -33,11 +33,11 @@ export declare class IntegrationsService {
     }>;
     connectFromDto(organizationId: string, provider: string, dto: ConnectIntegrationDto): Promise<{
         connected: true;
-        authType: AuthType;
+        maskedKey: string;
         baseUrl?: string;
     }> | Promise<{
         connected: true;
-        maskedKey: string;
+        authType: AuthType;
         baseUrl?: string;
     }>;
     status(organizationId: string, provider: string): Promise<IntegrationStatus>;

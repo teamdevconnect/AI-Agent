@@ -9,11 +9,11 @@ export declare class IntegrationsController {
     getProviderRule(provider: string): import("./provider-rules").ProviderRule;
     connect(user: JwtPayload, provider: string, dto: ConnectIntegrationDto): Promise<{
         connected: true;
-        authType: import("./auth-methods").AuthType;
+        maskedKey: string;
         baseUrl?: string;
     }> | Promise<{
         connected: true;
-        maskedKey: string;
+        authType: import("./auth-methods").AuthType;
         baseUrl?: string;
     }>;
     testConnection(user: JwtPayload, provider: string, dto: TestConnectionDto): Promise<{

@@ -207,7 +207,6 @@ export class OutlookService {
     return { email };
   }
 
-<<<<<<< HEAD
   // canSend surfaces whether the currently-active connection's own granted
   // scope actually includes Mail.Send — a token issued before Phase 14d
   // widened GRAPH_SCOPES never picks it up automatically (OAuth grants don't
@@ -216,15 +215,6 @@ export class OutlookService {
   async getStatus(userId: string): Promise<{ connected: boolean; email?: string; canSend: boolean }> {
     const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1, scope: 1 });
     return { connected: Boolean(active), email: active?.email, canSend: !!active?.scope?.includes('Mail.Send') };
-=======
-  async getStatus(userId: string): Promise<{ connected: boolean; email?: string; needsReauth?: boolean }> {
-    const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1, status: 1 });
-    return {
-      connected: Boolean(active) && active?.status !== 'needs_reauth',
-      email: active?.email,
-      needsReauth: active?.status === 'needs_reauth',
-    };
->>>>>>> abishake
   }
 
   async listAccounts(userId: string): Promise<OutlookAccountSummary[]> {

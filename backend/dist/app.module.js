@@ -42,6 +42,8 @@ const home_dashboard_module_1 = require("./home-dashboard/home-dashboard.module"
 const analytics_dashboard_module_1 = require("./analytics-dashboard/analytics-dashboard.module");
 const royalty_module_1 = require("./royalty/royalty.module");
 const reporting_module_1 = require("./reporting/reporting.module");
+const mail_module_1 = require("./mail/mail.module");
+const encryption_module_1 = require("./common/encryption/encryption.module");
 const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
@@ -59,8 +61,8 @@ exports.AppModule = AppModule = __decorate([
             }),
             schedule_1.ScheduleModule.forRoot(),
             throttler_1.ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
-            EncryptionModule,
-            MailModule,
+            encryption_module_1.EncryptionModule,
+            mail_module_1.MailModule,
             auth_module_1.AuthModule,
             organizations_module_1.OrganizationsModule,
             users_module_1.UsersModule,
