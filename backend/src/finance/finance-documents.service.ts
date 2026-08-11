@@ -142,6 +142,8 @@ export class FinanceDocumentsService {
             title: 'New finance document processed',
             description: `${doc.vendorName ?? 'Unknown vendor'} — ${doc.paymentAmount} ${doc.currency} (${doc.originalFilename})`,
             source: 'finance-document-processed',
+            entityType: 'financeDocument',
+            entityId: doc._id.toString(),
           },
           organizationId,
         ),

@@ -3,6 +3,10 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 python-dotenv==1.0.1
 pyjwt==2.10.1
+# Was already present transitively (via pyjwt's crypto extra) — pinned
+# explicitly now that app/encryption.py imports it directly (per-org Azure
+# app client secrets, see outlook_store.py).
+cryptography==49.0.0
 
 langchain==0.3.13
 langchain-text-splitters==0.3.4

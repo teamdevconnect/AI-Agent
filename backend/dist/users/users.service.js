@@ -79,6 +79,14 @@ let UsersService = class UsersService {
     create(data) {
         return this.userModel.create(data);
     }
+    findByOAuthId(provider, providerId) {
+        return this.userModel.findOne({ [`oauthProviders.${provider}`]: providerId }).exec();
+    }
+    linkOAuthProvider(userId, provider, providerId) {
+        return this.userModel
+            .findByIdAndUpdate(userId, { [`oauthProviders.${provider}`]: providerId }, { new: true })
+            .exec();
+    }
     async createByAdmin(dto, organizationId) {
         if (dto.role === 'agent_user') {
             if (!dto.assignedAgentId) {
@@ -140,6 +148,27 @@ let UsersService = class UsersService {
             department: user.department,
             active: user.active,
         };
+    }
+    setVerifyOtp(userId, otpHash, expiresAt) {
+        return this.userModel
+            .findByIdAndUpdate(userId, { verifyOtpHash: otpHash, verifyOtpExpiresAt: expiresAt })
+            .exec();
+    }
+    markEmailVerified(userId) {
+        return this.userModel
+            .findByIdAndUpdate(userId, {
+            emailVerified: true,
+            $unset: { verifyOtpHash: '', verifyOtpExpiresAt: '' },
+        })
+            .exec();
+    }
+    setResetOtp(userId, otpHash, expiresAt) {
+        return this.userModel.findByIdAndUpdate(userId, { resetOtpHash: otpHash, resetOtpExpiresAt: expiresAt }).exec();
+    }
+    resetPassword(userId, passwordHash) {
+        return this.userModel
+            .findByIdAndUpdate(userId, { passwordHash, $unset: { resetOtpHash: '', resetOtpExpiresAt: '' } })
+            .exec();
     }
     async resolveValidAgentIds(organizationId) {
         const dynamic = await this.agentRoleModel

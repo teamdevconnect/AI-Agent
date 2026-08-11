@@ -196,7 +196,14 @@ let ChatService = ChatService_1 = class ChatService {
                         buffer = buffer.slice(boundary + 2);
                         if (!frame.startsWith('data: '))
                             continue;
-                        const event = JSON.parse(frame.slice(6));
+                        let event;
+                        try {
+                            event = JSON.parse(frame.slice(6));
+                        }
+                        catch (parseErr) {
+                            this.logger.warn(`Skipping malformed SSE frame: ${parseErr.message}`);
+                            continue;
+                        }
                         if (event.type === 'delta' ||
                             event.type === 'progress' ||
                             event.type === 'reasoning' ||

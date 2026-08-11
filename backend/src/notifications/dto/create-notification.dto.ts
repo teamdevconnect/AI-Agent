@@ -1,5 +1,10 @@
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
-import { NOTIFICATION_KINDS, NotificationKind } from '../schemas/notification.schema';
+import {
+  NOTIFICATION_ENTITY_TYPES,
+  NOTIFICATION_KINDS,
+  NotificationEntityType,
+  NotificationKind,
+} from '../schemas/notification.schema';
 
 export class CreateNotificationDto {
   @IsString()
@@ -16,4 +21,12 @@ export class CreateNotificationDto {
   @IsOptional()
   @IsString()
   source?: string;
+
+  @IsOptional()
+  @IsIn(NOTIFICATION_ENTITY_TYPES)
+  entityType?: NotificationEntityType;
+
+  @IsOptional()
+  @IsString()
+  entityId?: string;
 }

@@ -7,12 +7,18 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IntegrationsModule = void 0;
+const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const auth_module_1 = require("../auth/auth.module");
+const dynamic_executor_service_1 = require("./dynamic-executor.service");
+const integration_resources_service_1 = require("./integration-resources.service");
 const integrations_controller_1 = require("./integrations.controller");
 const integrations_service_1 = require("./integrations.service");
+const resources_controller_1 = require("./resources.controller");
 const integration_credential_schema_1 = require("./schemas/integration-credential.schema");
+const integration_endpoint_schema_1 = require("./schemas/integration-endpoint.schema");
+const integration_resource_schema_1 = require("./schemas/integration-resource.schema");
 let IntegrationsModule = class IntegrationsModule {
 };
 exports.IntegrationsModule = IntegrationsModule;
@@ -21,11 +27,14 @@ exports.IntegrationsModule = IntegrationsModule = __decorate([
         imports: [
             mongoose_1.MongooseModule.forFeature([
                 { name: integration_credential_schema_1.IntegrationCredential.name, schema: integration_credential_schema_1.IntegrationCredentialSchema },
+                { name: integration_resource_schema_1.IntegrationResource.name, schema: integration_resource_schema_1.IntegrationResourceSchema },
+                { name: integration_endpoint_schema_1.IntegrationEndpoint.name, schema: integration_endpoint_schema_1.IntegrationEndpointSchema },
             ]),
+            axios_1.HttpModule.register({ timeout: 15_000 }),
             auth_module_1.AuthModule,
         ],
-        controllers: [integrations_controller_1.IntegrationsController],
-        providers: [integrations_service_1.IntegrationsService],
+        controllers: [integrations_controller_1.IntegrationsController, resources_controller_1.ResourcesController],
+        providers: [integrations_service_1.IntegrationsService, integration_resources_service_1.IntegrationResourcesService, dynamic_executor_service_1.DynamicExecutorService],
     })
 ], IntegrationsModule);
 //# sourceMappingURL=integrations.module.js.map

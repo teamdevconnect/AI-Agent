@@ -30,6 +30,8 @@ import { HomeDashboardModule } from './home-dashboard/home-dashboard.module';
 import { AnalyticsDashboardModule } from './analytics-dashboard/analytics-dashboard.module';
 import { RoyaltyModule } from './royalty/royalty.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { MailModule } from './mail/mail.module';
+import { EncryptionModule } from './common/encryption/encryption.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -47,6 +49,8 @@ import { HealthController } from './health/health.controller';
     // @Throttle() (see AuthController's tighter login/register limit) or
     // @SkipThrottle() (see HealthController).
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
+    EncryptionModule,
+    MailModule,
     AuthModule,
     OrganizationsModule,
     UsersModule,

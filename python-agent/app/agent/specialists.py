@@ -12,14 +12,17 @@ directly and never hits that restriction.
 Tool scopes are a strict partition of the domain tools in app.tools.registry
 — every domain tool belongs to exactly one specialist, so delegating never
 loses capability relative to the single-loop path. "remember" (long-term
-memory, app.tools.memory_tool) is the one deliberate exception: it's
-cross-cutting rather than domain-specific, so every specialist gets it —
-any of them might learn something durable worth saving mid-task.
+memory, app.tools.memory_tool) and the two integration_* tools
+(app.tools.integration_capabilities_tool / integration_execute_tool) are the
+deliberate exceptions: cross-cutting rather than domain-specific — a
+connected integration might be CRM-flavored, calendar-flavored, or neither,
+so every specialist gets discovery+execution rather than guessing which one
+domain it belongs to.
 """
 
 from app.prompts.registry import render
 
-_SHARED_TOOLS = ["remember"]
+_SHARED_TOOLS = ["remember", "integration_capabilities", "integration_execute"]
 
 
 def _tools(*domain_tools: str) -> list[str]:

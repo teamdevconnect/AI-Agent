@@ -11,10 +11,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConnectIntegrationDto = void 0;
 const class_validator_1 = require("class-validator");
+const auth_methods_1 = require("../auth-methods");
 class ConnectIntegrationDto {
 }
 exports.ConnectIntegrationDto = ConnectIntegrationDto;
 __decorate([
+    (0, class_validator_1.ValidateIf)((dto) => !dto.authType),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.MinLength)(10),
     __metadata("design:type", String)
@@ -24,4 +26,19 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], ConnectIntegrationDto.prototype, "baseUrl", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(auth_methods_1.AUTH_TYPES),
+    __metadata("design:type", String)
+], ConnectIntegrationDto.prototype, "authType", void 0);
+__decorate([
+    (0, class_validator_1.ValidateIf)((dto) => Boolean(dto.authType)),
+    (0, class_validator_1.IsObject)(),
+    __metadata("design:type", Object)
+], ConnectIntegrationDto.prototype, "credentials", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], ConnectIntegrationDto.prototype, "healthCheckPath", void 0);
 //# sourceMappingURL=connect-integration.dto.js.map

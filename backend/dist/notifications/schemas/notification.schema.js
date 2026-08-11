@@ -9,9 +9,18 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NotificationSchema = exports.Notification = exports.NOTIFICATION_KINDS = void 0;
+exports.NotificationSchema = exports.Notification = exports.NOTIFICATION_ENTITY_TYPES = exports.NOTIFICATION_KINDS = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
 exports.NOTIFICATION_KINDS = ['system', 'integration', 'warning', 'error'];
+exports.NOTIFICATION_ENTITY_TYPES = [
+    'email',
+    'financeDocument',
+    'deal',
+    'task',
+    'outlookAccount',
+    'workflowExecution',
+    'dailyReport',
+];
 let Notification = class Notification {
 };
 exports.Notification = Notification;
@@ -43,6 +52,14 @@ __decorate([
     (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
 ], Notification.prototype, "source", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ enum: exports.NOTIFICATION_ENTITY_TYPES }),
+    __metadata("design:type", String)
+], Notification.prototype, "entityType", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], Notification.prototype, "entityId", void 0);
 exports.Notification = Notification = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'notifications' })
 ], Notification);

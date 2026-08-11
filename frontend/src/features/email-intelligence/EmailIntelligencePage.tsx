@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -47,6 +48,7 @@ const INTENT_FILTER_OPTIONS = EMAIL_INTELLIGENCE_INTENTS.map((intent) => ({ valu
 
 export function EmailIntelligencePage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [intentFilter, setIntentFilter] = useState<string[]>([...RELEVANT_EMAIL_INTENTS]);
   const [range, setRange] = useState<DateRange>({});
@@ -76,6 +78,27 @@ export function EmailIntelligencePage() {
   });
 
   const visibleItems = data?.filter((item) => intentFilter.length === 0 || intentFilter.includes(item.intent));
+
+  // Arrived here from a notification click (see
+  // frontend/src/utils/notificationTarget.ts) — fetched directly by id
+  // rather than found in `data` above, since the target email may not be
+  // in whichever status tab happens to be selected (e.g. it could already
+  // be approved while this page defaults to the Pending tab). Independent
+  // of the tab-scoped list query, so it opens immediately without waiting
+  // on or being limited by that query's status filter.
+  useEffect(() => {
+    const openEmailId = searchParams.get('openEmailId');
+    if (!openEmailId) return;
+    emailIntelligenceService
+      .getOne(openEmailId)
+      .then(setSelected)
+      .catch((error) => toast.error(extractErrorMessage(error)));
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('openEmailId');
+      return next;
+    }, { replace: true });
+  }, [searchParams]);
 
   // The only place this page spends an LLM call — nothing runs in the
   // background anymore (see emailIntelligenceService.sync's own comment).

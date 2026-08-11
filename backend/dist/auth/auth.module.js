@@ -7,6 +7,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthModule = void 0;
+const axios_1 = require("@nestjs/axios");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const jwt_1 = require("@nestjs/jwt");
@@ -15,6 +16,8 @@ const organizations_module_1 = require("../organizations/organizations.module");
 const users_module_1 = require("../users/users.module");
 const auth_controller_1 = require("./auth.controller");
 const auth_service_1 = require("./auth.service");
+const oauth_controller_1 = require("./oauth.controller");
+const oauth_service_1 = require("./oauth.service");
 const jwt_strategy_1 = require("./strategies/jwt.strategy");
 let AuthModule = class AuthModule {
 };
@@ -25,6 +28,7 @@ exports.AuthModule = AuthModule = __decorate([
             users_module_1.UsersModule,
             organizations_module_1.OrganizationsModule,
             passport_1.PassportModule.register({ defaultStrategy: 'jwt' }),
+            axios_1.HttpModule.register({ timeout: 15_000 }),
             jwt_1.JwtModule.registerAsync({
                 imports: [config_1.ConfigModule],
                 inject: [config_1.ConfigService],
@@ -34,8 +38,8 @@ exports.AuthModule = AuthModule = __decorate([
                 }),
             }),
         ],
-        controllers: [auth_controller_1.AuthController],
-        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy],
+        controllers: [auth_controller_1.AuthController, oauth_controller_1.OAuthController],
+        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, oauth_service_1.OAuthService],
         exports: [jwt_1.JwtModule, passport_1.PassportModule],
     })
 ], AuthModule);
