@@ -32,6 +32,7 @@ import { RoyaltyModule } from './royalty/royalty.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { MailModule } from './mail/mail.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
+import { BillingModule } from './billing/billing.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -75,6 +76,7 @@ import { HealthController } from './health/health.controller';
     AnalyticsDashboardModule,
     RoyaltyModule,
     ReportingModule,
+    BillingModule,
     // Registers a global audit-logging interceptor (see AuditModule) in
     // addition to its own admin-only GET /audit-logs viewer.
     AuditModule,

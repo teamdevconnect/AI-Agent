@@ -8,5 +8,8 @@ import { CommandCenterService } from './command-center.service';
   imports: [MongooseModule.forFeature([{ name: AgentExecution.name, schema: AgentExecutionSchema }])],
   controllers: [CommandCenterController],
   providers: [CommandCenterService],
+  // BillingAdminService reuses getSummary() for its per-organization
+  // breakdown rather than re-deriving the same agent_executions aggregation.
+  exports: [CommandCenterService],
 })
 export class CommandCenterModule {}

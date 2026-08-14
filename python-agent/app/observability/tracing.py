@@ -60,6 +60,7 @@ def traced_llm_call(
     conversation_id: str = "",
     provider: str = "anthropic",
     model: str = "",
+    request_id: str = "",
     **attributes,
 ):
     """Wraps one LLM API call. Usage: `with traced_llm_call("classify",
@@ -70,6 +71,12 @@ def traced_llm_call(
     before getting a response) still records latency/success/error, never
     breaks the call itself (the original exception always re-raises
     unchanged).
+
+    request_id correlates this call back to the billing reservation for the
+    chat turn it belongs to (see backend/src/billing/reservation.service.ts)
+    — threaded in from app.routes.chat, through orchestrator/graph/
+    llm_client, down to every call site. Empty string for call sites that
+    don't thread it (yet), which is fine — settle() just won't find rows.
     """
     start = time.monotonic()
     with tracer.start_as_current_span(f"llm.{name}") as span:
@@ -113,6 +120,7 @@ def traced_llm_call(
                     latency_ms=latency_ms,
                     success=success,
                     error=error,
+                    request_id=request_id,
                 )
             except Exception:
                 pass  # persistence must never break the actual LLM call

@@ -1,12 +1,11 @@
-from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
-import jwt
 import requests
 
 from app.cache import cache
 from app.config import settings
 from app.memory import integration_store
+from app.service_token import mint_service_token
 
 # Known-read endpoints, safe to cache. Deliberately excludes /contact/upsert
 # (the only write path through this module) by simply not listing it here —
@@ -22,23 +21,6 @@ _CACHEABLE_PATHS = {
 }
 
 
-def _mint_service_token(user_id: str, organization_id: str) -> str:
-    """A short-lived JWT this process signs itself (shared JWT_SECRET with the
-    NestJS backend) so the native CRM fallback below can call back into the
-    backend's own JwtAuthGuard-protected /crm/* routes — the same
-    bridge-token pattern the backend already uses for its own internal calls
-    (e.g. dashboard.service.ts's `this.jwt.sign({sub: userId}, {expiresIn:
-    '5m'})`), just minted from this side instead.
-    """
-    payload = {
-        "sub": user_id or "system",
-        "organizationId": organization_id,
-        "roles": ["service"],
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
-    }
-    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
-
-
 def resolve_credentials(organization_id: str | None = None, user_id: str = "") -> tuple[str, str]:
     """Returns (api_root, api_key) for wherever this org's CRM data lives.
 
@@ -51,7 +33,7 @@ def resolve_credentials(organization_id: str | None = None, user_id: str = "") -
     3. **Native fallback**: if organization_id is known and neither of the
        above is configured, target this app's own backend at
        `{backend_url}/crm`, authenticating with a short-lived self-signed
-       JWT (see _mint_service_token) instead of a static api_key — every org
+       JWT (see app.service_token.mint_service_token) instead of a static api_key — every org
        gets a working CRM without connecting anything external. The `api_key`
        returned here is the literal `Authorization` header value (see
        post_json/post below, which send it unprefixed) — for this tier it's
@@ -70,7 +52,7 @@ def resolve_credentials(organization_id: str | None = None, user_id: str = "") -
         return base_url, api_key
 
     if organization_id:
-        token = _mint_service_token(user_id, organization_id)
+        token = mint_service_token(user_id, organization_id)
         return f"{settings.backend_url}/crm", f"Bearer {token}"
 
     return "", ""

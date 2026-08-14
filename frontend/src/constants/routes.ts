@@ -18,6 +18,7 @@ export const ROUTES = {
   chat: '/chat',
   chatConversation: (id: string) => `/chat/${id}`,
   integrations: '/integrations',
+  billing: '/billing',
   notifications: '/notifications',
 
   settings: '/settings',
@@ -32,4 +33,8 @@ export const ROUTES = {
   settingsRoyaltyRules: '/settings/royalty-rules',
 
   profile: '/profile',
+
+  // Haive-internal only — never added to PRIMARY_NAV_ITEMS. Reached by
+  // direct URL by a user holding the manually-granted platform_admin role.
+  platformAdminBilling: '/platform-admin/billing',
 } as const;

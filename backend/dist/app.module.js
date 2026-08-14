@@ -44,6 +44,7 @@ const royalty_module_1 = require("./royalty/royalty.module");
 const reporting_module_1 = require("./reporting/reporting.module");
 const mail_module_1 = require("./mail/mail.module");
 const encryption_module_1 = require("./common/encryption/encryption.module");
+const billing_module_1 = require("./billing/billing.module");
 const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
@@ -87,6 +88,7 @@ exports.AppModule = AppModule = __decorate([
             analytics_dashboard_module_1.AnalyticsDashboardModule,
             royalty_module_1.RoyaltyModule,
             reporting_module_1.ReportingModule,
+            billing_module_1.BillingModule,
             audit_module_1.AuditModule,
         ],
         controllers: [health_controller_1.HealthController],

@@ -434,7 +434,18 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     native vision/PDF path needs them. Generalized from the original
     finance-only _run_finance_extraction once Business Knowledge document
     extraction (Phase 14a) became a second real consumer of the identical
-    shape — pure DRY, zero behavior change for Finance's existing calls."""
+    shape — pure DRY, zero behavior change for Finance's existing calls.
+
+    Wrapped in traced_llm_call so this cost is no longer invisible to the
+    admin billing console (see backend/src/billing) — deliberately without
+    organization_id/user_id/conversation_id/request_id, since none of this
+    function's many callers (finance/business-knowledge document extraction,
+    email analysis, ...) currently thread tenant context this deep; the rows
+    still count toward the platform-wide provider-cost total, just not
+    per-org. Full per-org attribution for these one-shot extraction calls is
+    a deliberate fast-follow, not done in this pass (see the billing plan's
+    scope cuts).
+    """
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
@@ -442,18 +453,21 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     last_error: Exception | None = None
     for _ in range(2):
         try:
-            response = _client(api_key).messages.create(
-                model=settings.anthropic_model,
-                max_tokens=8192,
-                system=system_prompt,
-                tools=[tool],
-                tool_choice={"type": "tool", "name": tool["name"]},
-                messages=[{"role": "user", "content": user_content}],
-            )
-            block = next((b for b in response.content if b.type == "tool_use"), None)
-            if block is None:
-                raise ValueError("Model did not return a tool_use block")
-            return block.input
+            with traced_llm_call("extraction", provider="anthropic", model=settings.anthropic_model) as usage:
+                response = _client(api_key).messages.create(
+                    model=settings.anthropic_model,
+                    max_tokens=8192,
+                    system=system_prompt,
+                    tools=[tool],
+                    tool_choice={"type": "tool", "name": tool["name"]},
+                    messages=[{"role": "user", "content": user_content}],
+                )
+                usage["input_tokens"] = response.usage.input_tokens
+                usage["output_tokens"] = response.usage.output_tokens
+                block = next((b for b in response.content if b.type == "tool_use"), None)
+                if block is None:
+                    raise ValueError("Model did not return a tool_use block")
+                return block.input
         except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
             last_error = exc
     raise RuntimeError(f"{tool['name']} extraction failed after retry: {last_error}")
@@ -768,6 +782,7 @@ def classify_request(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
 ) -> dict:
     """One-shot forced-tool-choice routing pass, run by app.agent.orchestrator
     before every chat turn — same pattern as extract_role/extract_report_structure.
@@ -785,6 +800,7 @@ def classify_request(
         conversation_id=conversation_id,
         provider="anthropic",
         model=settings.anthropic_routing_model,
+        request_id=request_id,
     ) as usage:
         response = _client(api_key).messages.create(
             model=settings.anthropic_routing_model,
@@ -835,6 +851,7 @@ def critique_response(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
 ) -> dict:
     """One-shot forced-tool-choice reflection pass, run by app.agent.orchestrator
     after every reply. Same pattern as classify_request. Raises rather than
@@ -852,6 +869,7 @@ def critique_response(
         conversation_id=conversation_id,
         provider="anthropic",
         model=settings.anthropic_routing_model,
+        request_id=request_id,
     ) as usage:
         response = _client(api_key).messages.create(
             model=settings.anthropic_routing_model,
@@ -880,6 +898,7 @@ def call(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
     _continuation_depth: int = 0,
 ) -> list[dict]:
     """Runs one planner round. If on_event is given, streams two kinds of
@@ -929,6 +948,7 @@ def call(
         conversation_id=conversation_id,
         provider="anthropic",
         model=resolved_model,
+        request_id=request_id,
     ) as usage:
         for attempt in range(_MAX_CALL_ATTEMPTS):
             emitted_any = False
@@ -1019,6 +1039,7 @@ def call(
         organization_id=organization_id,
         user_id=user_id,
         conversation_id=conversation_id,
+        request_id=request_id,
         _continuation_depth=_continuation_depth + 1,
     )
     return _merge_continuation(normalized, continuation)

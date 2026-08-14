@@ -30,12 +30,20 @@ def record_llm_execution(
     latency_ms: float,
     success: bool,
     error: str | None,
+    request_id: str = "",
 ) -> None:
     get_db().agent_executions.insert_one(
         {
             "organizationId": organization_id,
             "userId": user_id,
             "conversationId": conversation_id,
+            # Correlates this row back to the billing reservation that
+            # pre-authorized the chat turn it belongs to (see
+            # backend/src/billing/reservation.service.ts's settle()) — empty
+            # string for call sites that don't thread a request_id through
+            # yet (e.g. the scheduled report crew), which settle() simply
+            # won't find any rows for.
+            "requestId": request_id,
             "kind": "llm",
             "name": name,
             "provider": provider,

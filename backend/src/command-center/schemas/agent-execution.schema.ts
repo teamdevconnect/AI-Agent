@@ -22,6 +22,17 @@ export class AgentExecution {
   @Prop({ index: true })
   conversationId?: string;
 
+  // Correlates every LLM call made during one chat turn back to the billing
+  // reservation that pre-authorized it (see billing/reservation.service.ts)
+  // — python-agent mints this once per turn (routes/chat.py) and threads it
+  // through every traced_llm_call site touched. Settlement sums this
+  // collection's rows by requestId; nothing billing-derived (credits
+  // charged, margin) is ever written back onto this schema — this remains
+  // python-agent's exclusive internal-accounting write, billing detail
+  // lives in wallet_transactions instead.
+  @Prop({ index: true })
+  requestId?: string;
+
   @Prop({ enum: ['llm', 'tool'], index: true })
   kind: 'llm' | 'tool';
 

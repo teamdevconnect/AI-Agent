@@ -19,6 +19,7 @@ def call_llm(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
 ) -> tuple[list[dict], str]:
     """Returns (output_items, provider_actually_used). This app's main
     planner/tool-calling graph is Anthropic-only regardless of `provider` —
@@ -42,4 +43,5 @@ def call_llm(
         organization_id=organization_id,
         user_id=user_id,
         conversation_id=conversation_id,
+        request_id=request_id,
     ), "anthropic"

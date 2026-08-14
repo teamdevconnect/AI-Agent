@@ -1,4 +1,4 @@
-import { FiActivity, FiBarChart2, FiBookOpen, FiCheckSquare, FiClock, FiDollarSign, FiInbox, FiLink2, FiPieChart, FiSettings, FiTerminal } from 'react-icons/fi';
+import { FiActivity, FiBarChart2, FiBookOpen, FiCheckSquare, FiClock, FiCreditCard, FiDollarSign, FiInbox, FiLink2, FiPieChart, FiSettings, FiTerminal } from 'react-icons/fi';
 import { ROUTES } from './routes';
 import type { NavItem } from '@/types';
 
@@ -71,6 +71,17 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     path: ROUTES.integrations,
     icon: FiLink2,
     section: 'Operations',
+    hideForRoles: ['agent_user'],
+  },
+  {
+    id: 'billing',
+    label: 'Billing',
+    path: ROUTES.billing,
+    icon: FiCreditCard,
+    section: 'Operations',
+    // Same tier as Integrations — balance/low-balance state is relevant to
+    // any real user chatting with the AI, not just admins; purchase/AutoPay
+    // configuration inside the page is further gated to owner/admin.
     hideForRoles: ['agent_user'],
   },
 ];

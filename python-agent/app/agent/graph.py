@@ -34,6 +34,7 @@ def planner_node(state: AgentState) -> dict:
         organization_id=state.get("organization_id"),
         user_id=state["user_id"],
         conversation_id=state["conversation_id"],
+        request_id=state.get("request_id", ""),
     )
     pending_calls = [item for item in output_items if item.get("type") == "function_call"]
     return {"messages": output_items, "pending_calls": pending_calls, "provider": used_provider}

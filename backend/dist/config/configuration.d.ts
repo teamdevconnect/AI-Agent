@@ -52,5 +52,54 @@ declare const _default: () => {
             redirectUri: string;
         };
     };
+    billing: {
+        creditValueUsd: number;
+        targetGrossMargin: number;
+        reservationCeilingCredits: number;
+        reservationTimeoutMinutes: number;
+        lowBalanceThresholdCredits: number;
+        currency: string;
+        usdToCurrencyRate: number;
+        autoPayMaxConsecutiveFailures: number;
+        paymentMode: string;
+        activePaymentProvider: string;
+        razorpay: {
+            live: {
+                keyId: string;
+                keySecret: string;
+                webhookSecret: string;
+            };
+            test: {
+                keyId: string;
+                keySecret: string;
+                webhookSecret: string;
+            };
+        };
+        stripe: {
+            live: {
+                secretKey: string;
+                publishableKey: string;
+                webhookSecret: string;
+            };
+            test: {
+                secretKey: string;
+                publishableKey: string;
+                webhookSecret: string;
+            };
+        };
+        cashfree: {
+            live: {
+                clientId: string;
+                clientSecret: string;
+                webhookSecret: string;
+            };
+            test: {
+                clientId: string;
+                clientSecret: string;
+                webhookSecret: string;
+            };
+            env: string;
+        };
+    };
 };
 export default _default;
