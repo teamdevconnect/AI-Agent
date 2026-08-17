@@ -292,6 +292,7 @@ export function Sidebar() {
         <Dropdown
           align="left"
           placement="top"
+          usePortal
           trigger={
             <button type="button" className={styles.userRow}>
               <Avatar name={user ? `${user.firstName} ${user.lastName}` : 'User'} size="sm" />
