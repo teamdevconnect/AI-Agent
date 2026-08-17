@@ -243,10 +243,7 @@ export function Sidebar() {
                               icon: <FiTrash2 />,
                               danger: true,
                               separatorBefore: true,
-                              onSelect: () => {
-                                if (!window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) return;
-                                void deleteConversation(conversation.id);
-                              },
+                              onSelect: () => void deleteConversation(conversation.id),
                             },
                           ]}
                         />
@@ -292,7 +289,6 @@ export function Sidebar() {
         <Dropdown
           align="left"
           placement="top"
-          usePortal
           trigger={
             <button type="button" className={styles.userRow}>
               <Avatar name={user ? `${user.firstName} ${user.lastName}` : 'User'} size="sm" />
