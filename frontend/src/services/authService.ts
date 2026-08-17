@@ -13,6 +13,20 @@ interface BackendTokenResponse {
   accessToken: string;
 }
 
+// Discriminated union: 'ok' means a real session was issued (unchanged
+// behavior); '2fa_required' means credentials were valid but the account
+// has 2FA enabled — no session exists yet, only a short-lived challengeToken
+// that must be exchanged via twoFactorService.verifyLoginChallenge before a
+// real accessToken is issued. Matches AuthService.LoginResult on the backend
+// exactly (backend/src/auth/auth.service.ts).
+export type LoginResult = { status: 'ok'; session: AuthSession } | { status: '2fa_required'; challengeToken: string };
+
+interface BackendLoginResponse {
+  status: 'ok' | '2fa_required';
+  accessToken?: string;
+  challengeToken?: string;
+}
+
 interface BackendUserProfile {
   id: string;
   email: string;
@@ -44,13 +58,19 @@ async function fetchProfile(accessToken: string): Promise<BackendUserProfile> {
 }
 
 export const authService = {
-  async login(payload: LoginPayload): Promise<AuthSession> {
-    const { data } = await axiosClient.post<BackendTokenResponse>('/auth/login', {
+  async login(payload: LoginPayload): Promise<LoginResult> {
+    const { data } = await axiosClient.post<BackendLoginResponse>('/auth/login', {
       email: payload.email,
       password: payload.password,
     });
-    const profile = await fetchProfile(data.accessToken);
-    return { user: toUser(profile), accessToken: data.accessToken, refreshToken: '', expiresAt: '' };
+    if (data.status === '2fa_required') {
+      return { status: '2fa_required', challengeToken: data.challengeToken! };
+    }
+    const profile = await fetchProfile(data.accessToken!);
+    return {
+      status: 'ok',
+      session: { user: toUser(profile), accessToken: data.accessToken!, refreshToken: '', expiresAt: '' },
+    };
   },
 
   async register(payload: RegisterPayload): Promise<AuthSession> {
@@ -100,6 +120,15 @@ export const authService = {
   },
 
   async logout(): Promise<void> {
-    // Stateless JWT — nothing to invalidate server-side.
+    // Best-effort — the local session is cleared by authStore.logout()
+    // regardless of this call's outcome (same resilience spirit the rest of
+    // this app already applies to non-critical calls), so a network hiccup
+    // on the way out never traps a user in a "can't log out" state. Revokes
+    // the real session server-side (see POST /auth/logout) when it succeeds.
+    try {
+      await axiosClient.post('/auth/logout');
+    } catch {
+      // swallowed — see comment above.
+    }
   },
 };

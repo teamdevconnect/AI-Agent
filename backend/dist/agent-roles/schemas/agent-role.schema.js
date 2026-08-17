@@ -52,6 +52,10 @@ __decorate([
 __decorate([
     (0, mongoose_1.Prop)({ type: [String], default: [] }),
     __metadata("design:type", Array)
+], AgentRole.prototype, "goals", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [String], default: [] }),
+    __metadata("design:type", Array)
 ], AgentRole.prototype, "responsibilities", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ type: [String], default: [] }),
@@ -70,11 +74,11 @@ __decorate([
     __metadata("design:type", String)
 ], AgentRole.prototype, "systemPrompt", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: true }),
+    (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
 ], AgentRole.prototype, "sourceDocumentName", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ required: true }),
+    (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
 ], AgentRole.prototype, "sourceDocumentId", void 0);
 __decorate([

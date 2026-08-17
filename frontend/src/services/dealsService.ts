@@ -39,6 +39,11 @@ export const REGIONS = ['north', 'south', 'east', 'west', 'central', 'internatio
 export interface DealFilters {
   dateFrom?: string;
   dateTo?: string;
+  // Which field dateFrom/dateTo range against — defaults server-side to
+  // createdAt. Pass 'expectedClosingDate' when reconciling against a figure
+  // computed from expectedClosingDate (e.g. the achievement/"Total Revenue"
+  // number), so the drill-down list matches what was actually summed.
+  dateField?: 'createdAt' | 'expectedClosingDate';
   ownerId?: string[];
   storeId?: string[];
   dealStatus?: ('open' | 'won' | 'lost')[];
@@ -76,6 +81,24 @@ export interface ListDealsResult {
   total: number;
   page: number;
   pageSize: number;
+}
+
+// Provider-agnostic external CRM owner mapping — one row per distinct raw
+// owner id seen across this org's synced deals (see backend deal.schema.ts's
+// comment on externalOwnerRef). `mapping` is null until an admin maps it.
+export interface ExternalOwnerRow {
+  provider: string;
+  externalOwnerRef: string;
+  externalOwnerLabel?: string;
+  dealCount: number;
+  mapping: { id: string; ownerId: string; ownerName?: string } | null;
+}
+
+export interface UpsertOwnerMappingPayload {
+  provider: string;
+  externalOwnerRef: string;
+  externalOwnerLabel?: string;
+  ownerId: string;
 }
 
 // Arrays are sent as a single comma-separated query param (matches
@@ -121,6 +144,20 @@ export const dealsService = {
   async assign(dealId: string, ownerId: string | null): Promise<Deal> {
     const { data } = await axiosClient.patch<Deal>(`/crm/deals/${dealId}/assign`, { ownerId });
     return data;
+  },
+
+  async listOwnerMappings(): Promise<ExternalOwnerRow[]> {
+    const { data } = await axiosClient.get<ExternalOwnerRow[]>('/crm/deals/owner-mappings');
+    return data;
+  },
+
+  async upsertOwnerMapping(payload: UpsertOwnerMappingPayload): Promise<ExternalOwnerRow> {
+    const { data } = await axiosClient.post<ExternalOwnerRow>('/crm/deals/owner-mappings', payload);
+    return data;
+  },
+
+  async deleteOwnerMapping(mappingId: string): Promise<void> {
+    await axiosClient.delete(`/crm/deals/owner-mappings/${mappingId}`);
   },
 
   async downloadExport(format: 'csv' | 'xlsx' | 'pdf', filters: DealFilters): Promise<void> {

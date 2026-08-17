@@ -11,6 +11,9 @@ export interface AgentRole {
   name: string;
   department?: string;
   description: string;
+  // Agent Builder Phase 1 — outcome-shaped ("what success means"), distinct
+  // from responsibilities/dailyTasks/weeklyTasks below (task-shaped).
+  goals?: string[];
   responsibilities?: string[];
   dailyTasks?: string[];
   weeklyTasks?: string[];
@@ -31,28 +34,38 @@ export interface AgentRole {
   modelTier?: 'fast' | 'standard' | null;
 }
 
-export type UpdateAgentRolePayload = Partial<
-  Pick<
-    AgentRole,
-    | 'name'
-    | 'department'
-    | 'description'
-    | 'responsibilities'
-    | 'dailyTasks'
-    | 'weeklyTasks'
-    | 'kpis'
-    | 'systemPrompt'
-    | 'status'
-    | 'assignedDepartments'
-    | 'assignedUserIds'
-    | 'allowedTools'
-  >
-> & {
+type AgentRoleConfigFields = Pick<
+  AgentRole,
+  | 'name'
+  | 'department'
+  | 'description'
+  | 'goals'
+  | 'responsibilities'
+  | 'dailyTasks'
+  | 'weeklyTasks'
+  | 'kpis'
+  | 'systemPrompt'
+  | 'assignedDepartments'
+  | 'assignedUserIds'
+  | 'allowedTools'
+>;
+
+export type UpdateAgentRolePayload = Partial<AgentRoleConfigFields> & {
+  status?: 'draft' | 'active';
   // null explicitly clears back to "Default (auto)" — omitting the field
   // entirely (undefined) means "don't touch", same convention as every
   // other optional field in this app's PATCH payloads.
   modelTier?: 'fast' | 'standard' | null;
 };
+
+// Agent Builder Phase 1 — Manual and Template methods (Template just
+// pre-fills this same shape client-side from a constant before submitting).
+// Always creates as a draft server-side, same "review before activating"
+// step every creation method goes through.
+export type CreateAgentRolePayload = Partial<AgentRoleConfigFields> &
+  Pick<AgentRoleConfigFields, 'name' | 'systemPrompt'> & {
+    modelTier?: 'fast' | 'standard' | null;
+  };
 
 export const agentRolesService = {
   async list(): Promise<AgentRole[]> {
@@ -64,6 +77,20 @@ export const agentRolesService = {
     const form = new FormData();
     form.append('file', file);
     const { data } = await axiosClient.post<AgentRole>('/agent-roles/generate', form);
+    return data;
+  },
+
+  // Agent Builder Phase 1 — Describe method: same structured-review flow as
+  // generate() above, sourced from a short typed description instead of a
+  // file.
+  async generateFromDescription(description: string): Promise<AgentRole> {
+    const { data } = await axiosClient.post<AgentRole>('/agent-roles/generate-from-description', { description });
+    return data;
+  },
+
+  // Agent Builder Phase 1 — Manual/Template methods: no AI call, no file.
+  async create(payload: CreateAgentRolePayload): Promise<AgentRole> {
+    const { data } = await axiosClient.post<AgentRole>('/agent-roles', payload);
     return data;
   },
 

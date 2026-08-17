@@ -10,6 +10,11 @@ import { JwtPayload } from '../auth/jwt-payload.interface';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
+import {
+  EmailIntelligenceItem,
+  EmailIntelligenceItemDocument,
+} from '../email-intelligence/schemas/email-intelligence-item.schema';
+import { RELEVANT_EMAIL_INTENTS } from '../email-intelligence/email-intelligence.service';
 import { Deal, DealDocument } from './schemas/deal.schema';
 import { SalesAnalyticsService } from './sales-analytics.service';
 
@@ -51,6 +56,19 @@ function lastNPeriods(n: number): string[] {
   return periods;
 }
 
+// [start, end) — end is the 1st of the *next* month, an exclusive upper
+// bound, so a $lt comparison never needs its own end-of-month math. Built
+// with Date.UTC (not the local-timezone Date constructor) so `.toISOString()
+// .slice(0, 10)` round-trips back to the same "YYYY-MM-DD" on any server
+// timezone — this app's date-only fields (todayStamp() above, DailyReport
+// .date) are already all UTC-sliced by convention; a local-timezone
+// construction here would silently shift the boundary by a day on an IST
+// (or any UTC+) server.
+function periodToDateRange(period: string): { start: Date; end: Date } {
+  const [year, month] = period.split('-').map(Number);
+  return { start: new Date(Date.UTC(year, month - 1, 1)), end: new Date(Date.UTC(year, month, 1)) };
+}
+
 // Per-individual task tracking has no backing data model yet — shipped as
 // an explicit "not yet available" marker rather than faked data or a
 // throwaway stopgap (see Phase 4 plan notes). Calendar (teamCalendar/
@@ -65,6 +83,7 @@ export class BusinessDashboardService {
 
   constructor(
     @InjectModel(Deal.name) private dealModel: Model<DealDocument>,
+    @InjectModel(EmailIntelligenceItem.name) private emailItemModel: Model<EmailIntelligenceItemDocument>,
     private salesAnalyticsService: SalesAnalyticsService,
     private organizationsService: OrganizationsService,
     private usersService: UsersService,
@@ -78,40 +97,52 @@ export class BusinessDashboardService {
 
   async getOwnerOverview(caller: JwtPayload, period = currentPeriod()) {
     const organizationId = caller.organizationId;
+    const { start: periodStart, end: periodEnd } = periodToDateRange(period);
 
-    const [achievement, revenueTrend, storeRankings, employeeLeaderboard, riskAlerts, workforceOverview, stores, users, calendar] =
-      await Promise.all([
-        this.salesAnalyticsService.getAchievement(organizationId, 'org', undefined, period),
-        this.getRevenueTrend(organizationId, 6),
-        this.dealModel
-          .aggregate<{ _id: string; revenue: number }>([
-            { $match: { organizationId, dealStatus: 'won', storeId: { $exists: true, $ne: null } } },
-            { $group: { _id: '$storeId', revenue: { $sum: '$monetaryValue' } } },
-            { $sort: { revenue: -1 } },
-          ])
-          .exec(),
-        this.dealModel
-          .aggregate<{ _id: string; revenue: number; wonCount: number }>([
-            { $match: { organizationId, dealStatus: 'won', ownerId: { $exists: true, $ne: null } } },
-            { $group: { _id: '$ownerId', revenue: { $sum: '$monetaryValue' }, wonCount: { $sum: 1 } } },
-            { $sort: { revenue: -1 } },
-          ])
-          .exec(),
-        this.dealModel
-          .find({ organizationId, dealStatus: 'open', expectedClosingDate: { $lt: todayStamp() } })
-          .sort({ expectedClosingDate: 1 })
-          .limit(20)
-          .exec(),
-        this.dashboardService.getOverview(caller),
-        this.organizationsService.listStores(organizationId),
-        this.usersService.findAll(organizationId),
-        // Phase 16 — Owner previously had no calendar data at all (only
-        // Manager/Consultant did). Reuses the exact same personal-calendar
-        // helper Consultant's todaysMeetings already calls, scoped to the
-        // owner's own connected account — for the new Home Dashboard's
-        // Today's Meetings add-on.
-        this.getUserCalendarEvents(caller.sub, 1),
-      ]);
+    const [
+      achievement,
+      revenueTrend,
+      storeRankings,
+      employeeLeaderboard,
+      riskAlerts,
+      workforceOverview,
+      stores,
+      users,
+      calendar,
+      emailActivityByUser,
+    ] = await Promise.all([
+      this.salesAnalyticsService.getAchievement(organizationId, 'org', undefined, period),
+      this.getRevenueTrend(organizationId, 6),
+      this.dealModel
+        .aggregate<{ _id: string; revenue: number }>([
+          { $match: { organizationId, dealStatus: 'won', storeId: { $exists: true, $ne: null } } },
+          { $group: { _id: '$storeId', revenue: { $sum: '$monetaryValue' } } },
+          { $sort: { revenue: -1 } },
+        ])
+        .exec(),
+      this.dealModel
+        .aggregate<{ _id: string; revenue: number; wonCount: number }>([
+          { $match: { organizationId, dealStatus: 'won', ownerId: { $exists: true, $ne: null } } },
+          { $group: { _id: '$ownerId', revenue: { $sum: '$monetaryValue' }, wonCount: { $sum: 1 } } },
+          { $sort: { revenue: -1 } },
+        ])
+        .exec(),
+      this.dealModel
+        .find({ organizationId, dealStatus: 'open', expectedClosingDate: { $lt: todayStamp() } })
+        .sort({ expectedClosingDate: 1 })
+        .limit(20)
+        .exec(),
+      this.dashboardService.getOverview(caller),
+      this.organizationsService.listStores(organizationId),
+      this.usersService.findAll(organizationId),
+      // Phase 16 — Owner previously had no calendar data at all (only
+      // Manager/Consultant did). Reuses the exact same personal-calendar
+      // helper Consultant's todaysMeetings already calls, scoped to the
+      // owner's own connected account — for the new Home Dashboard's
+      // Today's Meetings add-on.
+      this.getUserCalendarEvents(caller.sub, 1),
+      this.getEmailActivityByUser(organizationId, periodStart, periodEnd),
+    ]);
 
     const storeNameById = new Map(stores.map((s) => [s._id.toString(), s.name]));
 
@@ -135,7 +166,7 @@ export class BusinessDashboardService {
         storeName: storeNameById.get(r._id) ?? 'Unknown store',
         revenue: r.revenue,
       })),
-      employeeLeaderboard: this.buildEmployeeLeaderboard(users, employeeLeaderboard),
+      employeeLeaderboard: this.buildEmployeeLeaderboard(users, employeeLeaderboard, emailActivityByUser),
       businessHealthScore,
       missedTasks: workforceOverview.stats.overdueCount,
       pendingApprovals: [] as unknown[],
@@ -306,16 +337,90 @@ export class BusinessDashboardService {
   // account that owned it was since deleted/recreated — a real case hit in
   // production) is simply not attributed to anyone, rather than rendering as
   // a fake "Unknown user" row.
-  private buildEmployeeLeaderboard(employees: UserDocument[], revenueRows: RevenueRow[]) {
+  //
+  // activityByUser is optional (defaults to empty) — only the Owner
+  // Dashboard's org-wide leaderboard passes it (see getOwnerOverview);
+  // Manager's store-scoped teamPerformance call reuses this same builder
+  // without it, so those columns are simply absent there rather than
+  // duplicated at a narrower scope the user didn't ask for.
+  //
+  // No task-completion-% column: DailyReport.tasks[] is keyed by a shared AI
+  // persona slug (e.g. "store_manager"), never an individual employee's
+  // userId — confirmed against real data, not assumed — so there is no
+  // existing way to attribute a task to one specific person. Flagged rather
+  // than shipped as a column that would always read "—".
+  private buildEmployeeLeaderboard(
+    employees: UserDocument[],
+    revenueRows: RevenueRow[],
+    activityByUser: Map<string, { emailsSent: number; emailsMissed: number }> = new Map(),
+  ) {
     const revenueByOwnerId = new Map(revenueRows.map((r) => [r._id, { revenue: r.revenue, wonCount: r.wonCount }]));
     return employees
       .filter((u) => u.roles.some((r) => SALES_ROLES.has(r)))
       .map((u) => {
         const id = u._id.toString();
         const stats = revenueByOwnerId.get(id);
-        return { userId: id, userName: u.name, revenue: stats?.revenue ?? 0, wonCount: stats?.wonCount ?? 0 };
+        const activity = activityByUser.get(id);
+        return {
+          userId: id,
+          userName: u.name,
+          revenue: stats?.revenue ?? 0,
+          wonCount: stats?.wonCount ?? 0,
+          emailsSent: activity?.emailsSent ?? 0,
+          emailsMissed: activity?.emailsMissed ?? 0,
+        };
       })
       .sort((a, b) => b.revenue - a.revenue);
+  }
+
+  // Sent/missed counts per user for the Owner Dashboard's Employee
+  // Leaderboard — same definitions EmailIntelligenceService's own dashboard
+  // stat tiles use (buildActivityKindMatch's 'sent'/'missed' cases), just
+  // grouped by userId across everyone in the org in one pass instead of one
+  // person/store at a time. Deliberately duplicated rather than calling into
+  // EmailIntelligenceService directly: CrmModule can never import
+  // EmailIntelligenceModule (see the schema-reuse comment in crm.module.ts).
+  // "Sent" only covers replies dispatched through the AI Email Inbox's
+  // approval queue (EmailIntelligenceItem.sentAt) — not every email a person
+  // sends manually in Outlook, since that's the only sent-email record this
+  // app persists with a userId attached.
+  private async getEmailActivityByUser(
+    organizationId: string,
+    start: Date,
+    end: Date,
+  ): Promise<Map<string, { emailsSent: number; emailsMissed: number }>> {
+    const relevantIntent = { intent: { $in: RELEVANT_EMAIL_INTENTS } };
+    const missedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [sentRows, missedRows] = await Promise.all([
+      this.emailItemModel
+        .aggregate<{ _id: string; count: number }>([
+          { $match: { organizationId, ...relevantIntent, sentAt: { $gte: start, $lt: end } } },
+          { $group: { _id: '$userId', count: { $sum: 1 } } },
+        ])
+        .exec(),
+      this.emailItemModel
+        .aggregate<{ _id: string; count: number }>([
+          {
+            $match: {
+              organizationId,
+              ...relevantIntent,
+              status: 'pending',
+              receivedAt: { $gte: start, $lt: end, $lte: missedCutoff },
+            },
+          },
+          { $group: { _id: '$userId', count: { $sum: 1 } } },
+        ])
+        .exec(),
+    ]);
+
+    const stats = new Map<string, { emailsSent: number; emailsMissed: number }>();
+    for (const r of sentRows) stats.set(r._id, { emailsSent: r.count, emailsMissed: 0 });
+    for (const r of missedRows) {
+      const existing = stats.get(r._id) ?? { emailsSent: 0, emailsMissed: 0 };
+      stats.set(r._id, { ...existing, emailsMissed: r.count });
+    }
+    return stats;
   }
 
   // Bridge-token pattern used throughout this codebase for backend->

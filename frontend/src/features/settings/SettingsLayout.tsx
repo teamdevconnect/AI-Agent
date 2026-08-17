@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { FiSettings, FiBell, FiShield, FiUsers, FiUserPlus, FiTarget, FiUserCheck, FiZap, FiPercent } from 'react-icons/fi';
+import { FiSettings, FiBell, FiShield, FiUsers, FiUserPlus, FiTarget, FiUserCheck, FiPercent } from 'react-icons/fi';
 import { Tabs } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { useAuthStore } from '@/stores/authStore';
@@ -24,13 +24,6 @@ const TAB_ITEMS = [
     label: 'Deal Assignment',
     icon: <FiUserCheck />,
     path: ROUTES.settingsDealAssignment,
-    requireRoles: ['admin'],
-  },
-  {
-    id: 'workflows',
-    label: 'Workflows',
-    icon: <FiZap />,
-    path: ROUTES.settingsWorkflows,
     requireRoles: ['admin'],
   },
   {

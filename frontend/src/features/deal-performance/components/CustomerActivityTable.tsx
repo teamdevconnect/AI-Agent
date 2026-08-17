@@ -40,7 +40,22 @@ export function CustomerActivityTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.key} onClick={onSelectRow ? () => onSelectRow(row) : undefined} style={onSelectRow ? { cursor: 'pointer' } : undefined}>
+            <tr
+              key={row.key}
+              onClick={onSelectRow ? () => onSelectRow(row) : undefined}
+              onKeyDown={
+                onSelectRow
+                  ? (e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      onSelectRow(row);
+                    }
+                  : undefined
+              }
+              role={onSelectRow ? 'button' : undefined}
+              tabIndex={onSelectRow ? 0 : undefined}
+              style={onSelectRow ? { cursor: 'pointer' } : undefined}
+            >
               <td>
                 <div className={styles.listItemMain}>
                   <span className={styles.listItemTitle}>{row.businessName}</span>

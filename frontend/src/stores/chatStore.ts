@@ -24,6 +24,11 @@ interface ChatState {
   loadConversations: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
   startNewConversation: () => void;
+  // "Test Agent" deep-link (Agent Builder Phase 1) — pre-selects a persona
+  // for a brand-new conversation without the user manually @mentioning it.
+  // sendMessage's own `agentId ?? activeAgentId ?? undefined` fallback picks
+  // this up on the very next message, identical to a real @mention.
+  setPendingAgent: (agentId: string) => void;
   sendMessage: (text: string, agentId?: string) => Promise<void>;
   stopGeneration: () => void;
   regenerate: () => Promise<void>;
@@ -179,6 +184,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   startNewConversation() {
     set({ activeConversationId: null, activeAgentId: null });
+  },
+
+  setPendingAgent(agentId) {
+    set({ activeAgentId: agentId });
   },
 
   async sendMessage(text, agentId) {

@@ -34,6 +34,18 @@ export class AuditLog {
 
   @Prop()
   ip?: string;
+
+  // Optional, only ever set by the small number of explicit
+  // AuditService.log() calls made directly from application code (e.g.
+  // AuthService.changePassword, TwoFactorService.enable/disable) for
+  // actions that live under /auth and are therefore skipped by the
+  // interceptor below — every interceptor-auto-logged entry omits these,
+  // exactly as before this field existed.
+  @Prop()
+  action?: string;
+
+  @Prop({ type: Object })
+  metadata?: Record<string, unknown>;
 }
 
 export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);

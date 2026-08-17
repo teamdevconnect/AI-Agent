@@ -15,9 +15,8 @@ export interface RoyaltyRule {
   capType: RoyaltyCapType;
   capValue?: number;
   slidingTiers: RoyaltySlidingTier[];
-  adminFeePercentage?: number;
-  techFeePercentage?: number;
-  marketingFeePercentage?: number;
+  marketingFeeAmount?: number;
+  otherFeeAmount?: number;
   excludeTax: boolean;
   excludeShipping: boolean;
   excludeDiscount: boolean;
@@ -32,9 +31,8 @@ export interface UpsertRoyaltyRulePayload {
   capType: RoyaltyCapType;
   capValue?: number;
   slidingTiers?: RoyaltySlidingTier[];
-  adminFeePercentage?: number;
-  techFeePercentage?: number;
-  marketingFeePercentage?: number;
+  marketingFeeAmount?: number;
+  otherFeeAmount?: number;
   excludeTax?: boolean;
   excludeShipping?: boolean;
   excludeDiscount?: boolean;

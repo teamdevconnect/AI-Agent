@@ -70,9 +70,6 @@ const SalesTargetsSettings = lazy(() =>
 const DealAssignmentSettings = lazy(() =>
   import('@/features/settings/tabs/DealAssignmentSettings').then((m) => ({ default: m.DealAssignmentSettings })),
 );
-const WorkflowsSettings = lazy(() =>
-  import('@/features/settings/tabs/WorkflowsSettings').then((m) => ({ default: m.WorkflowsSettings })),
-);
 const RoyaltyRulesSettings = lazy(() =>
   import('@/features/settings/tabs/RoyaltyRulesSettings').then((m) => ({ default: m.RoyaltyRulesSettings })),
 );
@@ -158,7 +155,6 @@ export function AppRoutes() {
                   <Route path="users" element={<UsersSettings />} />
                   <Route path="sales-targets" element={<SalesTargetsSettings />} />
                   <Route path="deal-assignment" element={<DealAssignmentSettings />} />
-                  <Route path="workflows" element={<WorkflowsSettings />} />
                 </Route>
                 <Route element={<RequireRole role={['owner', 'admin']} />}>
                   <Route path="royalty-rules" element={<RoyaltyRulesSettings />} />

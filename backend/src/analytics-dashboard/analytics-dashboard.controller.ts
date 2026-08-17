@@ -4,7 +4,6 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
-import { currentPeriod } from '../common/period.util';
 import { AnalyticsDashboardService } from './analytics-dashboard.service';
 import { ScopeInfo } from './analytics-dashboard.types';
 import { GetAnalyticsOverviewQueryDto } from './dto/get-analytics-overview-query.dto';
@@ -23,7 +22,6 @@ export class AnalyticsDashboardController {
   @Get('overview')
   @Roles('owner', 'admin', 'manager', 'consultant')
   overview(@CurrentUser() user: JwtPayload, @Query() query: GetAnalyticsOverviewQueryDto) {
-    const period = query.period ?? currentPeriod();
     const canOverride = user.roles.includes('admin') || user.roles.includes('owner');
 
     let scope: ScopeInfo;
@@ -36,6 +34,6 @@ export class AnalyticsDashboardController {
       scope = { level: 'user', userId: user.sub };
     }
 
-    return this.analyticsDashboardService.getOverview(user, scope, period);
+    return this.analyticsDashboardService.getOverview(user, scope, query.dateFrom, query.dateTo);
   }
 }

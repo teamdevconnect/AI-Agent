@@ -34,7 +34,6 @@ const gamification_module_1 = require("./gamification/gamification.module");
 const notifications_module_1 = require("./notifications/notifications.module");
 const timeline_module_1 = require("./timeline/timeline.module");
 const command_center_module_1 = require("./command-center/command-center.module");
-const workflows_module_1 = require("./workflows/workflows.module");
 const finance_module_1 = require("./finance/finance.module");
 const business_knowledge_module_1 = require("./business-knowledge/business-knowledge.module");
 const email_intelligence_module_1 = require("./email-intelligence/email-intelligence.module");
@@ -42,8 +41,12 @@ const home_dashboard_module_1 = require("./home-dashboard/home-dashboard.module"
 const analytics_dashboard_module_1 = require("./analytics-dashboard/analytics-dashboard.module");
 const royalty_module_1 = require("./royalty/royalty.module");
 const reporting_module_1 = require("./reporting/reporting.module");
+const vendors_module_1 = require("./vendors/vendors.module");
+const business_intelligence_module_1 = require("./business-intelligence/business-intelligence.module");
 const mail_module_1 = require("./mail/mail.module");
 const encryption_module_1 = require("./common/encryption/encryption.module");
+const sessions_module_1 = require("./sessions/sessions.module");
+const api_tokens_module_1 = require("./api-tokens/api-tokens.module");
 const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
@@ -79,7 +82,6 @@ exports.AppModule = AppModule = __decorate([
             gamification_module_1.GamificationModule,
             timeline_module_1.TimelineModule,
             command_center_module_1.CommandCenterModule,
-            workflows_module_1.WorkflowsModule,
             finance_module_1.FinanceModule,
             business_knowledge_module_1.BusinessKnowledgeModule,
             email_intelligence_module_1.EmailIntelligenceModule,
@@ -87,7 +89,11 @@ exports.AppModule = AppModule = __decorate([
             analytics_dashboard_module_1.AnalyticsDashboardModule,
             royalty_module_1.RoyaltyModule,
             reporting_module_1.ReportingModule,
+            vendors_module_1.VendorsModule,
+            business_intelligence_module_1.BusinessIntelligenceModule,
             audit_module_1.AuditModule,
+            sessions_module_1.SessionsModule,
+            api_tokens_module_1.ApiTokensModule,
         ],
         controllers: [health_controller_1.HealthController],
         providers: [{ provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard }],

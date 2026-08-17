@@ -56,14 +56,14 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
         }));
-        const slug = await this.uniqueSlug(data.name, organizationId);
-        const avatarColor = AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
+        const { slug, avatarColor } = await this.newRoleDefaults(data.name, organizationId);
         const created = await this.roleModel.create({
             organizationId,
             slug,
             name: data.name,
             department: data.department,
             description: data.description,
+            goals: data.goals,
             responsibilities: data.responsibilities,
             dailyTasks: data.dailyTasks,
             weeklyTasks: data.weeklyTasks,
@@ -71,6 +71,54 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
             systemPrompt: data.systemPrompt,
             sourceDocumentName: data.sourceDocumentName,
             sourceDocumentId: data.documentId,
+            status: 'draft',
+            avatarColor,
+            createdBy: userId,
+        });
+        return { ...created.toObject(), builtin: false };
+    }
+    async generateFromDescription(userId, organizationId, description) {
+        const { data } = await (0, rxjs_1.firstValueFrom)(this.http.post(`${this.agentUrl}/roles/generate-from-description`, {
+            description,
+            user_id: userId,
+        }));
+        const { slug, avatarColor } = await this.newRoleDefaults(data.name, organizationId);
+        const created = await this.roleModel.create({
+            organizationId,
+            slug,
+            name: data.name,
+            department: data.department,
+            description: data.description,
+            goals: data.goals,
+            responsibilities: data.responsibilities,
+            dailyTasks: data.dailyTasks,
+            weeklyTasks: data.weeklyTasks,
+            kpis: data.kpis,
+            systemPrompt: data.systemPrompt,
+            status: 'draft',
+            avatarColor,
+            createdBy: userId,
+        });
+        return { ...created.toObject(), builtin: false };
+    }
+    async createManual(userId, organizationId, dto) {
+        const { slug, avatarColor } = await this.newRoleDefaults(dto.name, organizationId);
+        const created = await this.roleModel.create({
+            organizationId,
+            slug,
+            name: dto.name,
+            department: dto.department ?? '',
+            description: dto.description ?? '',
+            goals: dto.goals ?? [],
+            responsibilities: dto.responsibilities ?? [],
+            dailyTasks: dto.dailyTasks ?? [],
+            weeklyTasks: dto.weeklyTasks ?? [],
+            kpis: dto.kpis ?? [],
+            systemPrompt: dto.systemPrompt,
+            assignedDepartments: dto.assignedDepartments ?? [],
+            assignedUserIds: dto.assignedUserIds ?? [],
+            allowedTools: dto.allowedTools ?? [],
+            modelTier: dto.modelTier ?? undefined,
             status: 'draft',
             avatarColor,
             createdBy: userId,
@@ -87,7 +135,7 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
                 existing[key] = value;
         }
         await existing.save();
-        if (activating) {
+        if (activating && existing.sourceDocumentId) {
             await (0, rxjs_1.firstValueFrom)(this.http
                 .post(`${this.agentUrl}/roles/publish-source`, { documentId: existing.sourceDocumentId }, { headers: { Authorization: `Bearer ${userJwt}` } })
                 .pipe((0, rxjs_1.catchError)((err) => {
@@ -101,14 +149,21 @@ let AgentRolesService = AgentRolesService_1 = class AgentRolesService {
         const existing = await this.roleModel.findOne({ _id: id, organizationId }).exec();
         if (!existing)
             throw new common_1.NotFoundException('Role not found');
-        await (0, rxjs_1.firstValueFrom)(this.http
-            .post(`${this.agentUrl}/roles/discard-source`, { documentId: existing.sourceDocumentId }, { headers: { Authorization: `Bearer ${userJwt}` } })
-            .pipe((0, rxjs_1.catchError)((err) => {
-            this.logger.error(`Failed to discard source document for role ${id}: ${err.message}`);
-            return (0, rxjs_1.of)(null);
-        })));
+        if (existing.sourceDocumentId) {
+            await (0, rxjs_1.firstValueFrom)(this.http
+                .post(`${this.agentUrl}/roles/discard-source`, { documentId: existing.sourceDocumentId }, { headers: { Authorization: `Bearer ${userJwt}` } })
+                .pipe((0, rxjs_1.catchError)((err) => {
+                this.logger.error(`Failed to discard source document for role ${id}: ${err.message}`);
+                return (0, rxjs_1.of)(null);
+            })));
+        }
         await existing.deleteOne();
         return { deleted: true };
+    }
+    async newRoleDefaults(name, organizationId) {
+        const slug = await this.uniqueSlug(name, organizationId);
+        const avatarColor = AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
+        return { slug, avatarColor };
     }
     async uniqueSlug(name, organizationId) {
         const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'role';

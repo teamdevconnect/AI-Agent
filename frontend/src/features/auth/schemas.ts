@@ -30,6 +30,19 @@ export const forgotPasswordSchema = z.object({
 });
 export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
 
+// Accepts either a 6-digit TOTP code or a backup code (XXXX-XXXX, hyphen
+// optional — TwoFactorService.normalizeCode on the backend strips it either
+// way) — same widened-acceptance the backend's own verifyCode already does.
+export const twoFactorChallengeSchema = z.object({
+  code: z
+    .string()
+    .min(1, 'Enter your code')
+    .refine((value) => /^\d{6}$/.test(value) || /^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$/.test(value), {
+      message: 'Enter the 6-digit code from your authenticator app, or a backup code',
+    }),
+});
+export type TwoFactorChallengeFormValues = z.infer<typeof twoFactorChallengeSchema>;
+
 export const resetPasswordSchema = z
   .object({
     otp: z.string().length(6, 'Enter the 6-digit code'),

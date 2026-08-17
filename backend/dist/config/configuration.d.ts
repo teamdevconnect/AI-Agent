@@ -17,6 +17,11 @@ declare const _default: () => {
         password: string;
         from: string;
     };
+    webPush: {
+        publicKey: string;
+        privateKey: string;
+        subject: string;
+    };
     integrations: {
         crm: {
             baseUrl: string;

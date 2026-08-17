@@ -34,11 +34,14 @@ export function buildInvoiceMatchStage(
   // invoiceDate is a real Date field (unlike Deal's string-based
   // expectedClosingDate) — dateTo is pushed to end-of-day so a date-only
   // value doesn't mean midnight and silently exclude that entire day's own
-  // invoices, matching deal-filter.util.ts's identical convention.
+  // invoices, matching deal-filter.util.ts's identical convention. Explicit
+  // 'Z' (UTC), not `.setHours()` — that mutates in the server process's
+  // local timezone, which drifts hours off this boundary on any server not
+  // running in UTC.
   if (filters.dateFrom || filters.dateTo) {
     match.invoiceDate = {
       ...(filters.dateFrom ? { $gte: new Date(filters.dateFrom) } : {}),
-      ...(filters.dateTo ? { $lte: new Date(new Date(filters.dateTo).setHours(23, 59, 59, 999)) } : {}),
+      ...(filters.dateTo ? { $lte: new Date(`${filters.dateTo}T23:59:59.999Z`) } : {}),
     };
   }
 

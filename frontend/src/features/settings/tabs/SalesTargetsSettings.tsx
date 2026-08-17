@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Badge, Button, Input } from '@/components/ui';
+import { Button, Input } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { dayjs } from '@/utils/date';
 import { organizationsService, type Store } from '@/services/organizationsService';
@@ -14,11 +14,6 @@ type RowKey = string;
 function rowKey(scope: TargetScope, id?: string): RowKey {
   return `${scope}:${id ?? ''}`;
 }
-
-const ROLE_LABEL: Record<string, string> = {
-  manager: 'Manager',
-  consultant: 'Consultant',
-};
 
 export function SalesTargetsSettings() {
   const [period, setPeriod] = useState(() => dayjs().format('YYYY-MM'));
@@ -58,10 +53,12 @@ export function SalesTargetsSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
 
-  const employees = useMemo(
-    () => users.filter((u) => u.roles.includes('manager') || u.roles.includes('consultant')),
-    [users],
-  );
+  // Managers don't get a personal target here — their dashboard's
+  // achievement % is store-scoped (SalesAnalyticsService.getAchievement
+  // ('store', ...)), not user-scoped, so a manager never actually reads a
+  // 'user'-scope target the way a consultant does. Only consultants are
+  // assignable.
+  const employees = useMemo(() => users.filter((u) => u.roles.includes('consultant')), [users]);
 
   const currentValue = (scope: TargetScope, id?: string): string => drafts[rowKey(scope, id)] ?? '';
   const existingTarget = (scope: TargetScope, id?: string): SalesTarget | undefined =>
@@ -106,7 +103,7 @@ export function SalesTargetsSettings() {
     <>
       <SettingsSection
         title="Sales Targets"
-        description="Set the monthly sales target (in ₹) for the whole organization, each store, and each manager/consultant. Dashboards compute achievement % and forecasts against these."
+        description="Set the monthly sales target (in ₹) for each store and each consultant. Dashboards compute achievement % and forecasts against these."
       >
         <SettingsField label="Month">
           <input
@@ -124,30 +121,6 @@ export function SalesTargetsSettings() {
         </SettingsSection>
       ) : (
         <>
-          <SettingsSection title="Organization Target" description={`Org-wide target for ${period}.`}>
-            <div className={styles.targetRow}>
-              <span className={styles.targetName}>Whole Organization</span>
-              <div className={styles.amountField}>
-                <Input
-                  type="number"
-                  min={0}
-                  leftIcon="₹"
-                  value={currentValue('org')}
-                  onChange={(e) => setDrafts((prev) => ({ ...prev, [rowKey('org')]: e.target.value }))}
-                  placeholder="Target amount"
-                />
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                disabled={saving[rowKey('org')] || !isDirty('org')}
-                onClick={() => void handleSave('org', undefined)}
-              >
-                {saving[rowKey('org')] ? 'Saving…' : 'Save'}
-              </Button>
-            </div>
-          </SettingsSection>
-
           <SettingsSection title="Store Targets" description="Target per store for this month.">
             {stores.length === 0 ? (
               <p>No stores yet.</p>
@@ -184,18 +157,15 @@ export function SalesTargetsSettings() {
 
           <SettingsSection
             title="Employee Targets"
-            description="Target per manager/consultant for this month — this drives their personal dashboard."
+            description="Target per consultant for this month — this drives their personal dashboard."
           >
             {employees.length === 0 ? (
-              <p>No managers or consultants yet — create one from the Users tab first.</p>
+              <p>No consultants yet — create one from the Users tab first.</p>
             ) : (
               <div className={styles.targetList}>
                 {employees.map((u) => (
                   <div key={u.id} className={styles.targetRow}>
-                    <div className={styles.targetInfo}>
-                      <span className={styles.targetName}>{u.name}</span>
-                      {u.roles.map((r) => ROLE_LABEL[r] && <Badge key={r} variant="success">{ROLE_LABEL[r]}</Badge>)}
-                    </div>
+                    <span className={styles.targetName}>{u.name}</span>
                     <div className={styles.amountField}>
                       <Input
                         type="number"

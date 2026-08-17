@@ -63,3 +63,23 @@ export function passwordResetOtp(code: string): { subject: string; html: string 
     ),
   };
 }
+
+export function notificationEmail(title: string, description: string): { subject: string; html: string } {
+  return {
+    subject: title,
+    html: shell(
+      title,
+      `<p>${description}</p><p style="margin-top:24px;color:#9a9aa0;font-size:13px;">You're receiving this because email notifications are enabled in your HaiVE Settings — you can turn them off any time under Settings &rsaquo; Notifications.</p>`,
+    ),
+  };
+}
+
+export function twoFactorEnabledEmail(): { subject: string; html: string } {
+  return {
+    subject: 'Two-factor authentication enabled — HaiVE',
+    html: shell(
+      'Two-factor authentication is now on',
+      `<p>Your account now requires a code from your authenticator app to sign in, in addition to your password.</p><p>If you didn't make this change, secure your account immediately: sign in, change your password, and disable two-factor authentication under Settings &rsaquo; Security.</p>`,
+    ),
+  };
+}

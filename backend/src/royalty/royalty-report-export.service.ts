@@ -38,9 +38,8 @@ export class RoyaltyReportExportService {
         value: report.effectiveRoyaltyPct !== null ? `${report.effectiveRoyaltyPct}%` : '—',
       },
     ];
-    if (report.adminFeeAmount !== null) rows.push({ item: 'Admin Fee', value: money(report.adminFeeAmount) });
-    if (report.techFeeAmount !== null) rows.push({ item: 'Tech Fee', value: money(report.techFeeAmount) });
     if (report.marketingFeeAmount !== null) rows.push({ item: 'Marketing Fee', value: money(report.marketingFeeAmount) });
+    if (report.otherFeeAmount !== null) rows.push({ item: 'Other Fee', value: money(report.otherFeeAmount) });
     return rows;
   }
 

@@ -8,7 +8,8 @@ export interface AnalyticsScopeInfo {
 }
 
 export interface AnalyticsDashboardOverview {
-  period: string;
+  dateFrom: string;
+  dateTo: string;
   scope: AnalyticsScopeInfo;
   emailActivity: {
     totalRelevantCount: number;
@@ -46,9 +47,9 @@ export interface AnalyticsDashboardOverview {
 }
 
 export const analyticsDashboardService = {
-  async getOverview(period: string, storeId?: string): Promise<AnalyticsDashboardOverview> {
+  async getOverview(dateFrom: string, dateTo: string, storeId?: string): Promise<AnalyticsDashboardOverview> {
     const { data } = await axiosClient.get<AnalyticsDashboardOverview>('/analytics-dashboard/overview', {
-      params: { period, ...(storeId ? { storeId } : {}) },
+      params: { dateFrom, dateTo, ...(storeId ? { storeId } : {}) },
     });
     return data;
   },

@@ -71,9 +71,8 @@ export interface RoyaltyReportSummary {
   royaltyFeeBeforeCap: number;
   totalDue: number;
   effectiveRoyaltyPct: number | null;
-  adminFeeAmount: number | null;
-  techFeeAmount: number | null;
   marketingFeeAmount: number | null;
+  otherFeeAmount: number | null;
   dataSourceNote: string;
   deals: RoyaltyReportDealLine[];
   dealsSummary: RoyaltyReportLineSummary;

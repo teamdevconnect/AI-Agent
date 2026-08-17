@@ -47,21 +47,24 @@ const crypto_1 = require("crypto");
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = __importStar(require("bcrypt"));
+const audit_service_1 = require("../audit/audit.service");
 const mail_service_1 = require("../mail/mail.service");
 const organizations_service_1 = require("../organizations/organizations.service");
 const users_service_1 = require("../users/users.service");
+const session_meta_util_1 = require("./session-meta.util");
 const SALT_ROUNDS = 12;
 const VERIFY_OTP_TTL_MS = 10 * 60 * 1000;
 const RESET_OTP_TTL_MS = 15 * 60 * 1000;
 const GENERIC_OTP_ERROR = 'Invalid or expired code';
 let AuthService = class AuthService {
-    constructor(usersService, organizationsService, jwtService, mailService) {
+    constructor(usersService, organizationsService, jwtService, mailService, auditService) {
         this.usersService = usersService;
         this.organizationsService = organizationsService;
         this.jwtService = jwtService;
         this.mailService = mailService;
+        this.auditService = auditService;
     }
-    async register(email, password, name, organizationName) {
+    async register(email, password, name, organizationName, meta = {}) {
         const existing = await this.usersService.findByEmail(email);
         if (existing) {
             throw new common_1.ConflictException('An account with this email already exists');
@@ -78,7 +81,7 @@ let AuthService = class AuthService {
         });
         void this.sendVerificationOtp(user);
         void this.mailService.sendWelcomeEmail(user.email, user.name);
-        return this.issueToken(user);
+        return this.issueSessionToken(user, meta);
     }
     async sendVerificationOtp(user) {
         const otp = generateOtp();
@@ -123,7 +126,7 @@ let AuthService = class AuthService {
         const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await this.usersService.resetPassword(user._id.toString(), passwordHash);
     }
-    async changePassword(userId, currentPassword, newPassword) {
+    async changePassword(userId, currentPassword, newPassword, currentJti, ip) {
         const user = await this.usersService.findById(userId);
         if (!user) {
             throw new common_1.UnauthorizedException('Invalid session');
@@ -136,8 +139,19 @@ let AuthService = class AuthService {
         }
         const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await this.usersService.resetPassword(userId, passwordHash);
+        await this.usersService.revokeAllOtherSessions(userId, currentJti);
+        void this.auditService.log({
+            userId,
+            organizationId: user.organizationId,
+            method: 'POST',
+            route: '/auth/change-password',
+            statusCode: 200,
+            durationMs: 0,
+            ip,
+            action: 'password.change',
+        });
     }
-    async login(email, password) {
+    async login(email, password, meta = {}) {
         const user = await this.usersService.findByEmail(email);
         if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
             throw new common_1.UnauthorizedException('Invalid credentials');
@@ -145,9 +159,9 @@ let AuthService = class AuthService {
         if (user.active === false) {
             throw new common_1.UnauthorizedException('Account disabled');
         }
-        return this.issueToken(user);
+        return this.issueTokenOrChallenge(user, meta);
     }
-    async loginWithOAuth(provider, profile) {
+    async loginWithOAuth(provider, profile, meta = {}) {
         let user = await this.usersService.findByOAuthId(provider, profile.providerId);
         if (!user) {
             const existing = await this.usersService.findByEmail(profile.email);
@@ -162,7 +176,7 @@ let AuthService = class AuthService {
         if (user.active === false) {
             throw new common_1.UnauthorizedException('Account disabled');
         }
-        return this.issueToken(user);
+        return this.issueTokenOrChallenge(user, meta);
     }
     async registerOAuthUser(provider, profile) {
         const { organization, store } = await this.organizationsService.createOrganizationWithOwner(`${profile.name}'s Workspace`);
@@ -178,7 +192,18 @@ let AuthService = class AuthService {
         void this.mailService.sendWelcomeEmail(user.email, user.name);
         return user;
     }
-    issueToken(user) {
+    async issueSessionToken(user, meta) {
+        const jti = (0, crypto_1.randomUUID)();
+        const now = new Date();
+        await this.usersService.addSession(user._id.toString(), {
+            jti,
+            device: (0, session_meta_util_1.parseDeviceLabel)(meta.userAgent),
+            userAgent: meta.userAgent,
+            ip: meta.ip,
+            location: (0, session_meta_util_1.lookupLocation)(meta.ip),
+            createdAt: now,
+            lastSeenAt: now,
+        });
         const payload = {
             sub: user._id.toString(),
             email: user.email,
@@ -187,8 +212,22 @@ let AuthService = class AuthService {
             storeId: user.storeId,
             assignedAgentId: user.assignedAgentId,
             department: user.department,
+            jti,
         };
         return { accessToken: this.jwtService.sign(payload) };
+    }
+    buildChallengeToken(user) {
+        return this.jwtService.sign({ sub: user._id.toString(), purpose: 'login-2fa-challenge' }, { expiresIn: '5m' });
+    }
+    async issueTokenOrChallenge(user, meta = {}) {
+        if (user.twoFactorEnabled) {
+            return { status: '2fa_required', challengeToken: this.buildChallengeToken(user) };
+        }
+        const { accessToken } = await this.issueSessionToken(user, meta);
+        return { status: 'ok', accessToken };
+    }
+    logout(userId, jti) {
+        return this.usersService.revokeSession(userId, jti);
     }
 };
 exports.AuthService = AuthService;
@@ -197,7 +236,8 @@ exports.AuthService = AuthService = __decorate([
     __metadata("design:paramtypes", [users_service_1.UsersService,
         organizations_service_1.OrganizationsService,
         jwt_1.JwtService,
-        mail_service_1.MailService])
+        mail_service_1.MailService,
+        audit_service_1.AuditService])
 ], AuthService);
 function generateOtp() {
     return String((0, crypto_1.randomInt)(100_000, 1_000_000));

@@ -22,7 +22,6 @@ import { GamificationModule } from './gamification/gamification.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { TimelineModule } from './timeline/timeline.module';
 import { CommandCenterModule } from './command-center/command-center.module';
-import { WorkflowsModule } from './workflows/workflows.module';
 import { FinanceModule } from './finance/finance.module';
 import { BusinessKnowledgeModule } from './business-knowledge/business-knowledge.module';
 import { EmailIntelligenceModule } from './email-intelligence/email-intelligence.module';
@@ -30,8 +29,12 @@ import { HomeDashboardModule } from './home-dashboard/home-dashboard.module';
 import { AnalyticsDashboardModule } from './analytics-dashboard/analytics-dashboard.module';
 import { RoyaltyModule } from './royalty/royalty.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { VendorsModule } from './vendors/vendors.module';
+import { BusinessIntelligenceModule } from './business-intelligence/business-intelligence.module';
 import { MailModule } from './mail/mail.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
+import { SessionsModule } from './sessions/sessions.module';
+import { ApiTokensModule } from './api-tokens/api-tokens.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -67,7 +70,6 @@ import { HealthController } from './health/health.controller';
     GamificationModule,
     TimelineModule,
     CommandCenterModule,
-    WorkflowsModule,
     FinanceModule,
     BusinessKnowledgeModule,
     EmailIntelligenceModule,
@@ -75,9 +77,13 @@ import { HealthController } from './health/health.controller';
     AnalyticsDashboardModule,
     RoyaltyModule,
     ReportingModule,
+    VendorsModule,
+    BusinessIntelligenceModule,
     // Registers a global audit-logging interceptor (see AuditModule) in
     // addition to its own admin-only GET /audit-logs viewer.
     AuditModule,
+    SessionsModule,
+    ApiTokensModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

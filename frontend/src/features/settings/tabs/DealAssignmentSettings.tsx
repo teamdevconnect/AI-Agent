@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { formatINR } from '@/utils/currency';
 import { usersService, type AdminUser } from '@/services/usersService';
-import { dealsService, type Deal } from '@/services/dealsService';
+import { dealsService, type Deal, type ExternalOwnerRow } from '@/services/dealsService';
 import { SettingsSection } from '../components/SettingsSection';
 import styles from './DealAssignmentSettings.module.css';
 
@@ -17,16 +17,23 @@ const STATUS_VARIANT: Record<Deal['dealStatus'], 'success' | 'danger' | 'neutral
 export function DealAssignmentSettings() {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [employees, setEmployees] = useState<AdminUser[]>([]);
+  const [ownerRows, setOwnerRows] = useState<ExternalOwnerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [assigning, setAssigning] = useState<Record<string, boolean>>({});
+  const [mappingSaving, setMappingSaving] = useState<Record<string, boolean>>({});
 
   const load = async () => {
     setLoading(true);
     try {
-      const [dealList, userList] = await Promise.all([dealsService.list(), usersService.list()]);
+      const [dealList, userList, mappingRows] = await Promise.all([
+        dealsService.list(),
+        usersService.list(),
+        dealsService.listOwnerMappings(),
+      ]);
       setDeals(dealList);
       setEmployees(userList.filter((u) => u.roles.includes('manager') || u.roles.includes('consultant')));
+      setOwnerRows(mappingRows);
     } catch (err) {
       toast.error(extractErrorMessage(err));
     } finally {
@@ -58,11 +65,71 @@ export function DealAssignmentSettings() {
     }
   };
 
+  const handleMapOwner = async (row: ExternalOwnerRow, ownerId: string) => {
+    if (!ownerId) return;
+    const key = `${row.provider}::${row.externalOwnerRef}`;
+    setMappingSaving((prev) => ({ ...prev, [key]: true }));
+    try {
+      await dealsService.upsertOwnerMapping({
+        provider: row.provider,
+        externalOwnerRef: row.externalOwnerRef,
+        externalOwnerLabel: row.externalOwnerLabel,
+        ownerId,
+      });
+      toast.success(
+        `Mapped to ${employeeName(ownerId) ?? 'employee'} — ${row.dealCount} deal${row.dealCount === 1 ? '' : 's'} updated`,
+      );
+      await load();
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    } finally {
+      setMappingSaving((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
   return (
     <SettingsSection
       title="Deal Assignment"
-      description="Assign each deal to the employee who owns it — this is what drives real numbers on that person's individual dashboard. Deals synced from an external CRM arrive unassigned since it doesn't track this."
+      description="Assign each deal to the employee who owns it — this is what drives real numbers on that person's individual dashboard. Deals synced from an external CRM carry their own owner automatically once you map that CRM's salesperson to a real employee below."
     >
+      {ownerRows.length > 0 && (
+        <div className={styles.mappingSection}>
+          <h4 className={styles.mappingHeading}>External CRM Owner Mapping</h4>
+          <p className={styles.mappingHint}>
+            Each row is a distinct salesperson id seen on your synced deals. Map it to a real employee once — every
+            matching deal (including future syncs) is updated automatically, regardless of which CRM it came from.
+          </p>
+          <div className={styles.dealList}>
+            {ownerRows.map((row) => {
+              const key = `${row.provider}::${row.externalOwnerRef}`;
+              return (
+                <div key={key} className={styles.dealRow}>
+                  <div className={styles.dealInfo}>
+                    <span className={styles.dealName}>{row.externalOwnerLabel || row.externalOwnerRef}</span>
+                    <span className={styles.dealMeta}>
+                      {row.provider} · {row.dealCount} deal{row.dealCount === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <select
+                    className={styles.select}
+                    value={row.mapping?.ownerId ?? ''}
+                    disabled={mappingSaving[key]}
+                    onChange={(e) => void handleMapOwner(row, e.target.value)}
+                  >
+                    <option value="">Not mapped</option>
+                    {employees.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <label className={styles.filterRow}>
         <input type="checkbox" checked={unassignedOnly} onChange={(e) => setUnassignedOnly(e.target.checked)} />
         Show unassigned only

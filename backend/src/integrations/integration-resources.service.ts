@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CreateEndpointDto } from './dto/create-endpoint.dto';
 import { CreateResourceDto } from './dto/create-resource.dto';
+import { ManifestModuleDto } from './dto/import-connector-manifest.dto';
 import { IntegrationsService } from './integrations.service';
 import { IntegrationEndpoint, IntegrationEndpointDocument } from './schemas/integration-endpoint.schema';
 import { IntegrationResource, IntegrationResourceDocument } from './schemas/integration-resource.schema';
@@ -97,6 +98,74 @@ export class IntegrationResourcesService {
     const { resource } = await this.requireResource(organizationId, provider, resourceKey);
     const result = await this.endpointModel.deleteOne({ resourceId: resource._id, key: endpointKey });
     if (result.deletedCount === 0) throw new NotFoundException(`Endpoint "${endpointKey}" not found.`);
+  }
+
+  /** Bulk-creates one IntegrationResource per manifest module and one
+   * IntegrationEndpoint per module's action — the single-shot alternative to
+   * clicking through createResource/createEndpoint one at a time via the
+   * builder UI above. Assumes the credential (IntegrationCredential) for
+   * `provider` already exists — the import route always connects it first.
+   * An honest pass-through of whatever method/path/description the manifest
+   * specifies; never reshapes or "corrects" it. */
+  async importManifestModules(
+    organizationId: string,
+    provider: string,
+    modules: ManifestModuleDto[],
+  ): Promise<{ resourcesCreated: number; endpointsCreated: number }> {
+    const auth = await this.requireIntegration(organizationId, provider);
+
+    let resourcesCreated = 0;
+    let endpointsCreated = 0;
+
+    for (const mod of modules) {
+      let resource: IntegrationResourceDocument;
+      try {
+        resource = await this.resourceModel.create({
+          organizationId,
+          integrationId: auth.integrationId,
+          name: mod.module,
+          key: mod.module,
+        });
+      } catch (err) {
+        if (this.isDuplicateKeyError(err)) {
+          throw new ConflictException(
+            `Module "${mod.module}" already exists for "${provider}" — disconnect it first to re-import, or ` +
+              'choose a different integration name.',
+          );
+        }
+        throw err;
+      }
+      resourcesCreated++;
+
+      if (mod.actions.length > 0) {
+        try {
+          await this.endpointModel.insertMany(
+            mod.actions.map((action) => ({
+              organizationId,
+              integrationId: auth.integrationId,
+              resourceId: resource._id,
+              name: action.name,
+              key: action.name,
+              method: action.method,
+              path: action.path,
+              description: action.description,
+            })),
+          );
+        } catch (err) {
+          if (this.isDuplicateKeyError(err)) {
+            throw new ConflictException(`Duplicate action name(s) within module "${mod.module}".`);
+          }
+          throw err;
+        }
+        endpointsCreated += mod.actions.length;
+      }
+    }
+
+    return { resourcesCreated, endpointsCreated };
+  }
+
+  private isDuplicateKeyError(err: unknown): boolean {
+    return typeof err === 'object' && err !== null && (err as { code?: number }).code === 11000;
   }
 
   /** Everything connected for this org, with its resources/endpoints —

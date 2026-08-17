@@ -8,13 +8,19 @@ Deliberately separate from app.rag.business_sync (which indexes CRM data into
 Qdrant for semantic search, is not org-aware, and never touches these
 collections) — different concern, different write target.
 
-Known limitation, not a bug: the external CRM (ProspectConnect/GHL-shaped)
-carries no per-salesperson assignment on a deal (its `team_id` field is
-consistently blank on real data) — synced deals get `organizationId` and,
-when the org has exactly one store, `storeId`, but never `ownerId`. Org- and
-store-level dashboards (Owner, Manager) get real numbers; per-employee
-(Consultant) numbers stay driven by natively-created deals only, until the
-external CRM starts tracking assignment.
+Deal-owner mapping: ProspectConnect DOES carry a per-salesperson assignment
+on a deal — the raw `sales_person` field (confirmed live against production
+data), not `team_id` (which is indeed always blank on real data, and was
+previously mistaken for the only assignment signal this CRM exposes). Every
+deal's raw `sales_person` id is mirrored into `externalOwnerRef` below
+(provider-agnostic — see backend/src/crm/schemas/deal.schema.ts's own
+comment). It is a foreign id space belonging to ProspectConnect, not this
+app's own User._id, so it can only become a trustworthy native `ownerId` via
+an admin-configured mapping (backend/src/crm/schemas/deal-owner-mapping.schema.ts,
+resolved here at sync time via `crm_deal_owner_mappings`). Deals whose
+`sales_person` has no mapping yet keep whatever `ownerId` they already had
+(never wiped) until an admin maps that salesperson in Settings → Deal
+Assignment.
 """
 
 import logging
@@ -32,16 +38,20 @@ logger = logging.getLogger(__name__)
 # decide whether to bump lastActivityAt (see the comment on that field
 # below). Deliberately excludes things like a re-fetched but byte-identical
 # clientDetails object; only the fields customer-activity.service.ts's
-# "actioned today" logic actually cares about.
-_DEAL_ACTIVITY_FIELDS = ("dealStatus", "monetaryValue", "expectedClosingDate", "stageId")
+# "actioned today" logic actually cares about. externalOwnerRef is included —
+# a reassigned salesperson is real activity too.
+_DEAL_ACTIVITY_FIELDS = ("dealStatus", "monetaryValue", "expectedClosingDate", "stageId", "externalOwnerRef")
 _QUOTE_ACTIVITY_FIELDS = ("quoteStatus", "clientApprovalStatus", "quoteAmount", "quoteNumber")
 
 # "value", not "monetary_value" — see crm_deal_tool._LIST_DEFAULT_FIELDS's
 # comment for the external API quirk this works around; the response still
-# comes back keyed as "monetary_value" either way.
-_SYNC_FIELDS = ["name", "value", "deal_status", "expected_closing_date", "stage_id", "pipeline_id"]
+# comes back keyed as "monetary_value" either way. "sales_person" is the raw
+# per-deal owner id (confirmed live) — see this module's own docstring on why
+# "team_id" was previously (wrongly) assumed to be the only signal.
+_SYNC_FIELDS = ["name", "value", "deal_status", "expected_closing_date", "stage_id", "pipeline_id", "sales_person"]
 _PAGE_SIZE = 100
 _MAX_PAGES = 50
+_OWNER_PROVIDER = "prospectconnect"
 
 
 def _map_deal_status(raw: str | None) -> str:
@@ -61,7 +71,13 @@ def _default_store_id(organization_id: str) -> str | None:
     return str(stores[0]["_id"]) if len(stores) == 1 else None
 
 
-def _to_native_update(organization_id: str, store_id: str | None, raw: dict, existing_by_external_id: dict[str, dict]) -> UpdateOne | None:
+def _to_native_update(
+    organization_id: str,
+    store_id: str | None,
+    raw: dict,
+    existing_by_external_id: dict[str, dict],
+    owner_mapping_by_ref: dict[str, str],
+) -> UpdateOne | None:
     external_id = raw.get("id")
     if not external_id:
         return None
@@ -77,6 +93,22 @@ def _to_native_update(organization_id: str, store_id: str | None, raw: dict, exi
     }
     if store_id:
         fields["storeId"] = store_id
+
+    # sales_person is a raw ProspectConnect user id, not a native User._id —
+    # always mirrored as-is so it's visible in Settings → Deal Assignment's
+    # mapping UI even before an admin maps it. ownerId itself is only ever
+    # set here when a real admin-configured mapping already resolves this
+    # exact ref (deal-owner-mapping.service.ts's upsertMapping applies to
+    # already-synced deals immediately; this covers deals synced/re-synced
+    # AFTER a mapping already exists). No mapping yet -> ownerId is left
+    # untouched, never wiped, so a prior manual per-deal assignment survives.
+    sales_person = raw.get("sales_person")
+    if sales_person:
+        fields["externalOwnerRef"] = str(sales_person)
+        fields["externalOwnerProvider"] = _OWNER_PROVIDER
+        mapped_owner_id = owner_mapping_by_ref.get(str(sales_person))
+        if mapped_owner_id:
+            fields["ownerId"] = mapped_owner_id
 
     # This sync writes via raw pymongo, bypassing Mongoose entirely — its
     # {timestamps: true} plugin (and the updatedAt bump it normally provides
@@ -117,6 +149,17 @@ def sync_deals_for_org(organization_id: str) -> int:
             {"externalId": 1, **{f: 1 for f in _DEAL_ACTIVITY_FIELDS}},
         )
     }
+    # Built once per run — see deal-owner-mapping.service.ts for the write
+    # side (admin maps a salesperson, service bulk-applies to already-synced
+    # deals immediately); this is the read side that keeps NEWLY/RE-synced
+    # deals resolved too, without a second admin action per poll.
+    owner_mapping_by_ref = {
+        m["externalOwnerRef"]: m["ownerId"]
+        for m in db.crm_deal_owner_mappings.find(
+            {"organizationId": organization_id, "provider": _OWNER_PROVIDER},
+            {"externalOwnerRef": 1, "ownerId": 1},
+        )
+    }
 
     for page in range(_MAX_PAGES):
         body = crm_deal_tool._fetch_raw_deals(
@@ -130,7 +173,12 @@ def sync_deals_for_org(organization_id: str) -> int:
             break
 
         operations = [
-            op for op in (_to_native_update(organization_id, store_id, d, existing_by_external_id) for d in raw_deals) if op
+            op
+            for op in (
+                _to_native_update(organization_id, store_id, d, existing_by_external_id, owner_mapping_by_ref)
+                for d in raw_deals
+            )
+            if op
         ]
         if operations:
             result = db.crm_deals.bulk_write(operations, ordered=False)

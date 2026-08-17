@@ -48,6 +48,21 @@ export function ChatPage() {
   const activeAgentId = useChatStore((state) => state.activeAgentId);
   const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewConversation = useChatStore((state) => state.startNewConversation);
+  const setPendingAgent = useChatStore((state) => state.setPendingAgent);
+
+  // "Test Agent" deep-link from the Agent Builder (AgentConfigurationForm.tsx)
+  // — same query-param-then-strip pattern as the outlook result above.
+  // Always starts a brand-new conversation (never repurposes whatever was
+  // already open) so testing a persona never overwrites in-progress work.
+  useEffect(() => {
+    const testAgentId = searchParams.get('testAgentId');
+    if (!testAgentId) return;
+    startNewConversation();
+    setPendingAgent(testAgentId);
+    searchParams.delete('testAgentId');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
   const messages = useChatStore((state) =>
     state.activeConversationId ? (state.messages[state.activeConversationId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,

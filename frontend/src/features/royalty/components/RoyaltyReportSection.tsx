@@ -68,9 +68,8 @@ function buildReportLines(report: RoyaltyReportSummary): ReportLine[] {
       value: report.effectiveRoyaltyPct !== null ? `${report.effectiveRoyaltyPct}%` : '—',
     },
   ];
-  if (report.adminFeeAmount !== null) lines.push({ label: 'Admin Fee', value: money(report.adminFeeAmount) });
-  if (report.techFeeAmount !== null) lines.push({ label: 'Tech Fee', value: money(report.techFeeAmount) });
   if (report.marketingFeeAmount !== null) lines.push({ label: 'Marketing Fee', value: money(report.marketingFeeAmount) });
+  if (report.otherFeeAmount !== null) lines.push({ label: 'Other Fee', value: money(report.otherFeeAmount) });
   return lines;
 }
 
@@ -127,7 +126,7 @@ export function RoyaltyReportSection() {
   };
 
   const lines = useMemo(() => (report ? buildReportLines(report) : []), [report]);
-  const hasFees = report && (report.adminFeeAmount !== null || report.techFeeAmount !== null || report.marketingFeeAmount !== null);
+  const hasFees = report && (report.marketingFeeAmount !== null || report.otherFeeAmount !== null);
 
   return (
     <div className={styles.section}>
@@ -212,9 +211,8 @@ export function RoyaltyReportSection() {
           {hasFees && view === 'card' && (
             <SectionCard title="Additional Fees" icon={FiPercent}>
               <div className={styles.statsGrid}>
-                {report.adminFeeAmount !== null && <StatTile value={money(report.adminFeeAmount)} label="Admin Fee" />}
-                {report.techFeeAmount !== null && <StatTile value={money(report.techFeeAmount)} label="Tech Fee" />}
                 {report.marketingFeeAmount !== null && <StatTile value={money(report.marketingFeeAmount)} label="Marketing Fee" />}
+                {report.otherFeeAmount !== null && <StatTile value={money(report.otherFeeAmount)} label="Other Fee" />}
               </div>
             </SectionCard>
           )}

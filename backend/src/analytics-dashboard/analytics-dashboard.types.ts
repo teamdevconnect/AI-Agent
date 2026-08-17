@@ -8,7 +8,8 @@ export interface ScopeInfo {
 }
 
 export interface AnalyticsDashboardOverview {
-  period: string;
+  dateFrom: string;
+  dateTo: string;
   scope: ScopeInfo;
   emailActivity: {
     totalRelevantCount: number;

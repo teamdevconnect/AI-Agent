@@ -33,6 +33,12 @@ export class AgentRole {
   @Prop({ default: '' }) department: string;
   @Prop({ default: '' }) description: string;
 
+  // Agent Builder Phase 1 — outcome-shaped ("what success means"), distinct
+  // from responsibilities/dailyTasks/weeklyTasks below (which are task-
+  // shaped) and from kpis (measurement, not yet computed against anything).
+  // Empty default keeps every pre-Phase-1 role valid with no migration.
+  @Prop({ type: [String], default: [] }) goals: string[];
+
   @Prop({ type: [String], default: [] }) responsibilities: string[];
   @Prop({ type: [String], default: [] }) dailyTasks: string[];
   @Prop({ type: [String], default: [] }) weeklyTasks: string[];
@@ -40,11 +46,15 @@ export class AgentRole {
 
   @Prop({ required: true }) systemPrompt: string;
 
-  @Prop({ required: true }) sourceDocumentName: string;
+  // Both unset for a role created via Template/Describe/Manual (Agent
+  // Builder Phase 1) — those creation methods have no uploaded document at
+  // all. AgentRolesService.update()/remove() must skip the publish-source/
+  // discard-source calls to python-agent when sourceDocumentId is absent.
+  @Prop() sourceDocumentName?: string;
   // Qdrant document_id for the embedded source doc — used to call
   // python-agent's /roles/publish-source (on activate) and
   // /roles/discard-source (on delete).
-  @Prop({ required: true }) sourceDocumentId: string;
+  @Prop() sourceDocumentId?: string;
 
   @Prop({ enum: ['draft', 'active'], default: 'draft', index: true })
   status: 'draft' | 'active';

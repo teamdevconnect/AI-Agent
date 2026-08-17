@@ -18,21 +18,32 @@ const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const websockets_1 = require("@nestjs/websockets");
 const socket_io_1 = require("socket.io");
+const users_service_1 = require("../users/users.service");
 const chat_service_1 = require("./chat.service");
 let ChatGateway = ChatGateway_1 = class ChatGateway {
-    constructor(chatService, jwtService) {
+    constructor(chatService, jwtService, usersService) {
         this.chatService = chatService;
         this.jwtService = jwtService;
+        this.usersService = usersService;
         this.logger = new common_1.Logger(ChatGateway_1.name);
     }
-    handleConnection(client) {
+    async handleConnection(client) {
         const token = client.handshake.auth?.token ??
             (client.handshake.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
         try {
             const payload = this.jwtService.verify(token);
+            if (payload.purpose)
+                throw new Error('special-purpose token');
+            const user = await this.usersService.findById(payload.sub);
+            if (!user || user.active === false)
+                throw new Error('inactive or missing user');
+            if (!payload.jti || !user.sessions.some((s) => s.jti === payload.jti)) {
+                throw new Error('revoked or missing session');
+            }
             client.data.user = payload;
             client.data.token = token;
             client.join(payload.sub);
+            client.join(`session:${payload.jti}`);
         }
         catch {
             this.logger.warn(`Rejected unauthenticated socket ${client.id}`);
@@ -45,6 +56,11 @@ let ChatGateway = ChatGateway_1 = class ChatGateway {
     }
     emitToUser(userId, event, payload) {
         this.server.to(userId).emit(event, payload);
+    }
+    disconnectSession(jti) {
+        const room = `session:${jti}`;
+        this.server.to(room).emit('session-revoked');
+        this.server.in(room).disconnectSockets(true);
     }
     async onMessage(client, body) {
         const user = client.data.user;
@@ -120,6 +136,7 @@ __decorate([
 exports.ChatGateway = ChatGateway = ChatGateway_1 = __decorate([
     (0, websockets_1.WebSocketGateway)({ namespace: '/chat', cors: { origin: true, credentials: true } }),
     __metadata("design:paramtypes", [chat_service_1.ChatService,
-        jwt_1.JwtService])
+        jwt_1.JwtService,
+        users_service_1.UsersService])
 ], ChatGateway);
 //# sourceMappingURL=chat.gateway.js.map

@@ -19,6 +19,18 @@ export class OutlookConnection {
   @Prop({ required: true })
   email: string;
 
+  // The customer's own Azure AD tenant and the connecting user's own
+  // Microsoft object id — decoded from the access token's `tid`/`oid`
+  // claims (standard Graph v2.0 access-token claims, present without
+  // requesting any extra scope). What makes a connection attributable to
+  // a specific customer tenant rather than just "an email + a token" —
+  // needed now that connect-url/callback accept any org via /organizations/.
+  @Prop()
+  microsoftTenantId?: string;
+
+  @Prop()
+  microsoftUserId?: string;
+
   @Prop({ required: true })
   accessToken: string;
 

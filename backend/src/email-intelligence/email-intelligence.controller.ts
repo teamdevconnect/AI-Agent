@@ -121,7 +121,10 @@ export class EmailIntelligenceController {
   private resolveActivityRange(from: string, to: string): [Date, Date] {
     if (!from || !to) throw new BadRequestException('from and to are required');
     const start = new Date(from);
-    const end = new Date(new Date(to).setHours(23, 59, 59, 999));
+    // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the server
+    // process's local timezone, which drifts hours off this boundary on any
+    // server not running in UTC.
+    const end = new Date(`${to}T23:59:59.999Z`);
     return [start, end];
   }
 

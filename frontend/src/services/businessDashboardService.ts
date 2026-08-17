@@ -16,6 +16,12 @@ export interface EmployeeLeaderboardEntry {
   userName: string;
   revenue: number;
   wonCount: number;
+  // Owner-scoped only (org-wide) — Manager's teamPerformance entries always
+  // carry these as 0, since that narrower scope wasn't asked for.
+  // emailsSent only covers replies dispatched through the AI Email Inbox's
+  // approval queue, not every email sent manually in Outlook.
+  emailsSent: number;
+  emailsMissed: number;
 }
 
 export interface DealSummary {

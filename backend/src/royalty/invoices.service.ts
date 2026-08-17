@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Invoice, InvoiceDocument } from './schemas/invoice.schema';
 import { InvoiceCounter, InvoiceCounterDocument } from './schemas/invoice-counter.schema';
+import { Quote, QuoteDocument } from '../crm/schemas/quote.schema';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { VoidInvoiceDto } from './dto/void-invoice.dto';
@@ -25,7 +26,26 @@ export class InvoicesService {
   constructor(
     @InjectModel(Invoice.name) private invoiceModel: Model<InvoiceDocument>,
     @InjectModel(InvoiceCounter.name) private counterModel: Model<InvoiceCounterDocument>,
+    @InjectModel(Quote.name) private quoteModel: Model<QuoteDocument>,
   ) {}
+
+  // Quote.paidAmount's single source of truth, replacing the old manual
+  // "Record a Payment" popup on the Dashboard's Pipeline & Quotes tab (users
+  // don't want to type in a payment figure by hand — they want it to follow
+  // whatever finance already marks the real Invoice as). A quote is only
+  // ever "paid" when its linked Invoice's own status says so, and a voided
+  // invoice can never count even if its status happens to still say 'paid'.
+  // currentValue (not quoteAmount) is used so a revised invoice amount is
+  // what actually gets reflected as collected. Fires from every write path
+  // below that can change invoiceStatus/currentValue/voidStatus, so it can
+  // never drift out of sync with what's actually stored.
+  private async syncQuotePaidAmount(organizationId: string, invoice: Pick<Invoice, 'quoteId' | 'invoiceStatus' | 'currentValue' | 'voidStatus'>): Promise<void> {
+    if (!invoice.quoteId) return;
+    const isPaid = invoice.invoiceStatus === 'paid' && !invoice.voidStatus;
+    await this.quoteModel
+      .updateOne({ _id: invoice.quoteId, organizationId }, { $set: { paidAmount: isPaid ? invoice.currentValue : 0 } })
+      .exec();
+  }
 
   list(organizationId: string, storeConstraint?: string) {
     return this.invoiceModel
@@ -63,7 +83,7 @@ export class InvoicesService {
   async create(organizationId: string, dto: CreateInvoiceDto, storeConstraint: string | undefined, createdBy: string) {
     const invoiceNumber = await this.nextInvoiceNumber(organizationId);
     const { value, invoiceDate, storeId, ...rest } = dto;
-    return this.invoiceModel.create({
+    const invoice = await this.invoiceModel.create({
       organizationId,
       ...rest,
       storeId: storeConstraint ?? storeId,
@@ -77,6 +97,8 @@ export class InvoicesService {
       source: 'manual',
       createdBy,
     });
+    await this.syncQuotePaidAmount(organizationId, invoice);
+    return invoice;
   }
 
   // storeConstraint, when passed, scopes the match itself (not just the
@@ -103,6 +125,7 @@ export class InvoicesService {
       updated = await this.invoiceModel.findOneAndUpdate(filter, { $set: staticSet }, { new: true }).exec();
     }
     if (!updated) throw new NotFoundException('Invoice not found');
+    await this.syncQuotePaidAmount(organizationId, updated);
     return updated;
   }
 
@@ -116,6 +139,7 @@ export class InvoicesService {
       )
       .exec();
     if (!updated) throw new NotFoundException('Invoice not found');
+    await this.syncQuotePaidAmount(organizationId, updated);
     return updated;
   }
 
@@ -128,7 +152,7 @@ export class InvoicesService {
   // sync_quotes_for_org / _draft_invoice_for_approved_quote).
   async createDraftFromQuote(organizationId: string, input: CreateDraftInvoiceFromQuoteInput) {
     const invoiceNumber = await this.nextInvoiceNumber(organizationId);
-    return this.invoiceModel.create({
+    const invoice = await this.invoiceModel.create({
       organizationId,
       storeId: input.storeId,
       dealId: input.dealId,
@@ -145,6 +169,8 @@ export class InvoicesService {
       source: 'auto_from_quote',
       createdBy: input.createdBy,
     });
+    await this.syncQuotePaidAmount(organizationId, invoice);
+    return invoice;
   }
 
   private async nextInvoiceNumber(organizationId: string): Promise<string> {

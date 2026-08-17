@@ -1,14 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiCheckCircle, FiDatabase, FiKey, FiLink, FiPlus, FiSettings, FiShield, FiSliders, FiTrash2 } from 'react-icons/fi';
+import {
+  FiCheckCircle,
+  FiDatabase,
+  FiKey,
+  FiLink,
+  FiPlus,
+  FiSettings,
+  FiShield,
+  FiSliders,
+  FiTrash2,
+  FiUploadCloud,
+} from 'react-icons/fi';
 import { Card, Badge, Button, Input, Modal } from '@/components/ui';
 import {
   integrationsService,
+  resolveManifestAuthType,
   type AuthCredentials,
   type AuthType,
+  type ConnectorManifest,
   type CustomIntegration,
   type GmailAccount,
+  type ImportConnectorManifestSecrets,
   type OutlookAccount,
   type OutlookOrgAccount,
   type ProviderRule,
@@ -98,6 +112,18 @@ export function IntegrationsPage() {
   // builder modal is open (see ResourceEndpointBuilder.tsx), null when closed.
   const [builderProvider, setBuilderProvider] = useState<string | null>(null);
 
+  // Bulk connector import — pastes a whole manifest JSON (base URL + an auth
+  // template + modules[].actions[]) and creates the credential plus every
+  // resource/endpoint from it in one shot (see integrationsService.ts's
+  // importConnectorManifest), instead of building one integration by hand
+  // via the Add Integration modal above.
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importManifestText, setImportManifestText] = useState('');
+  const [importManifest, setImportManifest] = useState<ConnectorManifest | null>(null);
+  const [importManifestError, setImportManifestError] = useState<string | null>(null);
+  const [importSecrets, setImportSecrets] = useState<ImportConnectorManifestSecrets>({});
+  const [importing, setImporting] = useState(false);
+
   const loadOutlookAccounts = () => {
     integrationsService
       .getOutlookAccounts()
@@ -125,14 +151,23 @@ export function IntegrationsPage() {
     integrationsService
       .getOutlookTenantAuthorizationStatus()
       .then(setTenantAuthStatus)
-      .catch(() => setTenantAuthStatus(null));
+      .catch((error) => {
+        // Falls back to null (same as "not yet checked") so the rest of the
+        // page still renders, but a genuine load failure now surfaces
+        // instead of looking identical to "nothing to show yet".
+        setTenantAuthStatus(null);
+        toast.error(`Couldn't load tenant authorization status: ${extractErrorMessage(error)}`);
+      });
   };
 
   const loadCustomIntegrations = () => {
     integrationsService
       .listCustomIntegrations()
       .then(setCustomIntegrations)
-      .catch(() => setCustomIntegrations([]));
+      .catch((error) => {
+        setCustomIntegrations([]);
+        toast.error(`Couldn't load custom integrations: ${extractErrorMessage(error)}`);
+      });
   };
 
   const loadGmailAccounts = () => {
@@ -365,6 +400,65 @@ export function IntegrationsPage() {
     }
   };
 
+  const openImportModal = () => {
+    setImportManifestText('');
+    setImportManifest(null);
+    setImportManifestError(null);
+    setImportSecrets({});
+    setImportModalOpen(true);
+  };
+
+  // Live-parses the pasted JSON as the user types/pastes it, so the preview,
+  // detected auth type, and matching credential input all appear before
+  // Import is clicked — no network round trip needed, this is pure client-
+  // side JSON.parse + shape checking.
+  const handleManifestTextChange = (text: string) => {
+    setImportManifestText(text);
+    setImportSecrets({});
+    if (!text.trim()) {
+      setImportManifest(null);
+      setImportManifestError(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text) as ConnectorManifest;
+      if (!parsed.connector_id || !parsed.base_url || !Array.isArray(parsed.modules)) {
+        setImportManifest(null);
+        setImportManifestError('Missing connector_id, base_url, or modules — check the manifest shape.');
+        return;
+      }
+      setImportManifest(parsed);
+      setImportManifestError(null);
+    } catch {
+      setImportManifest(null);
+      setImportManifestError('Not valid JSON yet.');
+    }
+  };
+
+  const importActionCount = (manifest: ConnectorManifest) =>
+    manifest.modules.reduce((sum, m) => sum + m.actions.length, 0);
+
+  const handleImportConnector = async () => {
+    if (!importManifest) return;
+    setImporting(true);
+    try {
+      const result = await integrationsService.importConnectorManifest(importManifest, importSecrets);
+      toast.success(
+        `${importManifest.display_name || result.provider} imported — ${result.resourcesCreated} module(s), ${result.endpointsCreated} action(s)`,
+      );
+      setImportModalOpen(false);
+      loadCustomIntegrations();
+      // Land the user straight inside their newly-imported actions so they
+      // can spot-check/Test any of them right away, rather than just a
+      // success toast.
+      setBuilderProvider(result.provider);
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleConnectOutlook = async () => {
     try {
       const url = await integrationsService.getOutlookConnectUrl();
@@ -588,9 +682,14 @@ export function IntegrationsPage() {
       <Card className={styles.customSection}>
         <div className={styles.customHeader}>
           <span className={styles.sectionTitle}>Custom Integrations</span>
-          <Button size="sm" leftIcon={<FiLink />} onClick={openCustomModal}>
-            Add Integration
-          </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button size="sm" variant="secondary" leftIcon={<FiUploadCloud />} onClick={openImportModal}>
+              Import Connector Config
+            </Button>
+            <Button size="sm" leftIcon={<FiLink />} onClick={openCustomModal}>
+              Add Integration
+            </Button>
+          </div>
         </div>
         {customIntegrations.length === 0 ? (
           <p className={styles.cardDescription}>
@@ -767,6 +866,85 @@ export function IntegrationsPage() {
                 Close
               </Button>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {importModalOpen && (
+        <Modal
+          open
+          onClose={() => setImportModalOpen(false)}
+          title="Import Connector Config"
+          description="Paste a connector manifest — base URL, auth template, and modules/actions — to create the integration and every configured action in one shot, instead of building it by hand."
+        >
+          <div className={styles.accountList}>
+            <div>
+              <span className={styles.fieldLabel}>Connector manifest (JSON)</span>
+              <textarea
+                className={styles.select}
+                style={{ height: 200, paddingTop: 'var(--space-2)', paddingBottom: 'var(--space-2)', fontFamily: 'monospace', fontSize: '12px' }}
+                placeholder='{"connector_id": "my_crm", "base_url": "https://api...", "auth": {...}, "modules": [...]}'
+                value={importManifestText}
+                onChange={(e) => handleManifestTextChange(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            {importManifestError && <div className={styles.testResultFail}>{importManifestError}</div>}
+
+            {importManifest && (
+              <>
+                <div className={styles.testResultOk}>
+                  {importManifest.display_name || importManifest.connector_id} — {importManifest.base_url} ·{' '}
+                  {importManifest.modules.length} module(s), {importActionCount(importManifest)} action(s)
+                </div>
+
+                {(() => {
+                  const detectedAuthType = resolveManifestAuthType(importManifest.auth);
+                  return (
+                    <>
+                      <div className={styles.testResultFail} style={{ background: 'transparent' }}>
+                        Detected auth type: {AUTH_TYPE_LABELS[detectedAuthType]}
+                        {importManifest.auth.note ? ` — ${importManifest.auth.note}` : ''}
+                      </div>
+
+                      {detectedAuthType === 'basic' ? (
+                        <>
+                          <Input
+                            label="Username"
+                            value={importSecrets.username ?? ''}
+                            onChange={(e) => setImportSecrets((s) => ({ ...s, username: e.target.value }))}
+                          />
+                          <Input
+                            label="Password"
+                            type="password"
+                            value={importSecrets.password ?? ''}
+                            onChange={(e) => setImportSecrets((s) => ({ ...s, password: e.target.value }))}
+                          />
+                        </>
+                      ) : (
+                        <Input
+                          label="API key / token"
+                          type="password"
+                          placeholder="Your CRM's API key"
+                          value={importSecrets.apiKeyValue ?? ''}
+                          onChange={(e) => setImportSecrets((s) => ({ ...s, apiKeyValue: e.target.value }))}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+              <Button variant="ghost" onClick={() => setImportModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button loading={importing} disabled={!importManifest} onClick={handleImportConnector}>
+                Import
+              </Button>
+            </div>
           </div>
         </Modal>
       )}

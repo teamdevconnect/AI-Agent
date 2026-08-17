@@ -61,4 +61,5 @@ export declare class IntegrationsService {
     getProviderRule(provider: string): ProviderRule;
     private assertAllowed;
     private mask;
+    private decryptStoredApiKey;
 }

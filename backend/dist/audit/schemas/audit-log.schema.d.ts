@@ -8,6 +8,8 @@ export declare class AuditLog {
     statusCode: number;
     durationMs: number;
     ip?: string;
+    action?: string;
+    metadata?: Record<string, unknown>;
 }
 export declare const AuditLogSchema: import("mongoose").Schema<AuditLog, import("mongoose").Model<AuditLog, any, any, any, Document<unknown, any, AuditLog, any, {}> & AuditLog & {
     _id: import("mongoose").Types.ObjectId;

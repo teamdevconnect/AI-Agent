@@ -138,6 +138,75 @@ export interface EndpointTestResult {
   data?: unknown;
 }
 
+// Bulk connector import — pastes a whole connector manifest (base URL + an
+// auth template + modules[].actions[]) and the backend creates the
+// credential plus every resource/endpoint in one call. Mirrors backend/src/
+// integrations/dto/import-connector-manifest.dto.ts field-for-field so a
+// real connector spec (like ProspectConnect's) can be pasted with no
+// reshaping. The manifest itself never carries a live secret — see
+// ImportConnectorManifestSecrets below.
+export interface ManifestAction {
+  name: string;
+  method: HttpMethod;
+  path: string;
+  description?: string;
+}
+
+export interface ManifestModule {
+  module: string;
+  actions: ManifestAction[];
+}
+
+export interface ManifestAuth {
+  type?: string;
+  location?: string;
+  header_name?: string;
+  value_template?: string;
+  note?: string;
+}
+
+export interface ConnectorManifest {
+  connector_id: string;
+  display_name?: string;
+  version?: string;
+  base_url: string;
+  auth: ManifestAuth;
+  test_connection_action?: string;
+  modules: ManifestModule[];
+}
+
+// Supplied separately from the pasted manifest — never embedded in it, so a
+// manifest stays safe to copy/paste/share.
+export interface ImportConnectorManifestSecrets {
+  apiKeyValue?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface ImportConnectorManifestResult {
+  provider: string;
+  authType: AuthType;
+  resourcesCreated: number;
+  endpointsCreated: number;
+}
+
+const BEARER_TEMPLATE = /^Bearer\s*\{\{\s*api_key\s*\}\}$/i;
+const BARE_TOKEN_TEMPLATE = /^\{\{\s*api_key\s*\}\}$/i;
+
+// Client-side mirror of backend/src/integrations/connector-manifest.util.ts's
+// resolveManifestAuthType — used only for the Import Connector modal's live
+// "Detected auth type" preview, so the right credential input shows before
+// the user submits. The backend re-derives this itself on import and is the
+// actual authority; if the two ever disagree, the backend's result wins.
+export function resolveManifestAuthType(auth: ManifestAuth): AuthType {
+  if (auth.type === 'basic') return 'basic';
+  const headerName = (auth.header_name || 'Authorization').trim();
+  const template = (auth.value_template || '{{api_key}}').trim();
+  if (headerName.toLowerCase() === 'authorization' && BEARER_TEMPLATE.test(template)) return 'bearer';
+  if (headerName.toLowerCase() !== 'authorization' && BARE_TOKEN_TEMPLATE.test(template)) return 'apiKey';
+  return 'customHeaders';
+}
+
 export const integrationsService = {
   // Generic API-key-backed integrations (Anthropic, CRM) — backed by the
   // NestJS /integrations module, which stores the credential in Mongo for
@@ -310,6 +379,17 @@ export const integrationsService = {
       `/integrations/${provider}/resources/${encodeURIComponent(resourceKey)}/endpoints/${encodeURIComponent(endpointKey)}/test`,
       payload,
     );
+    return data;
+  },
+
+  async importConnectorManifest(
+    manifest: ConnectorManifest,
+    secrets: ImportConnectorManifestSecrets,
+  ): Promise<ImportConnectorManifestResult> {
+    const { data } = await axiosClient.post<ImportConnectorManifestResult>('/integrations/import-connector', {
+      ...manifest,
+      ...secrets,
+    });
     return data;
   },
 };

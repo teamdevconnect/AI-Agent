@@ -19,13 +19,20 @@ export function DrillDownModal({
   title,
   isLoading,
   rows,
+  formatValue,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   isLoading: boolean;
   rows: DrillDownRow[];
+  // Additive, backward-compatible — Business Intelligence needs percentage/
+  // count formatting for several sections, not just this component's
+  // original hardcoded INR currency. Omitted (the default) keeps every
+  // existing call site's money() formatting unchanged.
+  formatValue?: (n: number) => string;
 }) {
+  const renderValue = formatValue ?? money;
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth={640}>
       <div className={styles.drillDownList}>
@@ -50,7 +57,7 @@ export function DrillDownModal({
                   </span>
                 )}
               </div>
-              {r.value !== undefined && <strong>{money(r.value)}</strong>}
+              {r.value !== undefined && <strong>{renderValue(r.value)}</strong>}
             </div>
           ))
         )}

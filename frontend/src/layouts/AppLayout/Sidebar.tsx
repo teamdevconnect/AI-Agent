@@ -243,7 +243,10 @@ export function Sidebar() {
                               icon: <FiTrash2 />,
                               danger: true,
                               separatorBefore: true,
-                              onSelect: () => void deleteConversation(conversation.id),
+                              onSelect: () => {
+                                if (!window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) return;
+                                void deleteConversation(conversation.id);
+                              },
                             },
                           ]}
                         />

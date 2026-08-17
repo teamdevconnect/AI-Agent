@@ -21,6 +21,16 @@ export default () => ({
     // to match (or be an alias of) the authenticated account anyway.
     from: process.env.MAIL_FROM || process.env.SMTP_USER || '',
   },
+  // Web Push (Settings > Notifications' Desktop/Mobile toggles) — one-time
+  // generated via web-push's generateVAPIDKeys(), see backend/.env's own
+  // comment. Unset publicKey/privateKey makes WebPushService fail open
+  // (warns once, no-ops forever), same convention as MailService with no
+  // SMTP_HOST configured.
+  webPush: {
+    publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+    subject: process.env.VAPID_SUBJECT ?? '',
+  },
   integrations: {
     crm: {
       baseUrl: process.env.CRM_BASE_URL ?? '',

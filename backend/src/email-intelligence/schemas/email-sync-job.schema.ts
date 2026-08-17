@@ -3,9 +3,8 @@ import { Document, Types } from 'mongoose';
 
 export type EmailSyncJobDocument = EmailSyncJob & Document<Types.ObjectId>;
 
-// A history collection for the sync button's own audit trail — same spirit
-// as workflows/schemas/workflow-execution.schema.ts, not a queryable
-// business object. One doc per real (non-preview) POST /email-intelligence/
+// A history collection for the sync button's own audit trail — not a
+// queryable business object. One doc per real (non-preview) POST /email-intelligence/
 // sync execution. Written best-effort at the end of
 // EmailIntelligenceSyncService.syncMyMailbox — a failure to write this doc
 // must never fail the sync response itself (see that method's own comment).

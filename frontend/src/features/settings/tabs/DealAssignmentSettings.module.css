@@ -58,3 +58,22 @@
   color: var(--color-text-primary);
   font-size: var(--text-md);
 }
+
+.mappingSection {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mappingHeading {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-1);
+}
+
+.mappingHint {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-3);
+}

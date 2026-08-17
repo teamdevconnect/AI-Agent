@@ -181,6 +181,7 @@ export class OutlookService {
   async handleCallback(code: string, userId: string, organizationId?: string): Promise<{ email: string }> {
     const tokens = await this.exchangeCode(code);
     const email = await this.fetchUserEmail(tokens.access_token);
+    const { tenantId: microsoftTenantId, userId: microsoftUserId } = this.decodeAccessTokenClaims(tokens.access_token);
 
     // Newly connected/reconnected account becomes the active one; every
     // other account for this user is demoted (but stays connected).
@@ -191,6 +192,8 @@ export class OutlookService {
         userId,
         organizationId,
         email,
+        microsoftTenantId,
+        microsoftUserId,
         // Encrypted at rest (see common/encryption/encryption.service.ts).
         // A fresh reconnect through this same callback is also how a
         // needs_reauth row recovers — this upsert overwrites status back to
@@ -205,6 +208,23 @@ export class OutlookService {
       { upsert: true },
     );
     return { email };
+  }
+
+  // Reads the `tid`/`oid` claims straight out of the access token's JWT
+  // payload without verifying its signature — there's nothing to
+  // authenticate here, this token was just received directly from
+  // Microsoft's own token endpoint over TLS (see exchangeCode above), not
+  // supplied by an untrusted caller. Both claims are part of every Microsoft
+  // identity platform v2.0 Graph access token by default, so this needs no
+  // extra scope beyond what GRAPH_SCOPES already requests.
+  private decodeAccessTokenClaims(accessToken: string): { tenantId?: string; userId?: string } {
+    try {
+      const payload = accessToken.split('.')[1];
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { tid?: string; oid?: string };
+      return { tenantId: claims.tid, userId: claims.oid };
+    } catch {
+      return {};
+    }
   }
 
   // canSend surfaces whether the currently-active connection's own granted

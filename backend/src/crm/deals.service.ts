@@ -39,7 +39,20 @@ export class DealsService {
     // lostReasonSource is never client-settable (see UpdateDealDto's
     // comment) — server-stamped 'rep_reported' the moment a real reason
     // arrives, reserving 'ai_inferred' for a future inference job only.
-    const update = dto.lostReason?.trim() ? { ...dto, lostReasonSource: 'rep_reported' as const } : dto;
+    let update: Record<string, unknown> = dto.lostReason?.trim() ? { ...dto, lostReasonSource: 'rep_reported' as const } : { ...dto };
+
+    // expectedClosingDate is the only "closed date" this app has (see
+    // sales-analytics.service.ts's own comment — every revenue/achievement
+    // widget attributes a won deal to a month via this field's "YYYY-MM"
+    // prefix). Left alone, a deal marked won/lost today keeps whatever
+    // forecast date it had at creation, silently misattributing or hiding
+    // real revenue from the month it actually closed in. Only stamps
+    // "today" when the caller didn't already send an explicit new date in
+    // this same request — an explicit correction is always respected.
+    if ((dto.dealStatus === 'won' || dto.dealStatus === 'lost') && dto.expectedClosingDate === undefined) {
+      update = { ...update, expectedClosingDate: new Date().toISOString().slice(0, 10) };
+    }
+
     const updated = await this.dealModel.findOneAndUpdate(filter, { $set: update }, { new: true }).exec();
     if (!updated) throw new NotFoundException('Deal not found');
     return updated;

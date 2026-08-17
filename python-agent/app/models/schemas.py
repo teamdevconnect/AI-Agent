@@ -31,6 +31,27 @@ class RoleGenerateResponse(BaseModel):
     name: str
     department: str
     description: str
+    goals: list[str]
+    responsibilities: list[str]
+    dailyTasks: list[str]
+    weeklyTasks: list[str]
+    kpis: list[RoleKpi]
+    systemPrompt: str
+
+
+class RoleGenerateFromDescriptionRequest(BaseModel):
+    description: str
+    user_id: str
+
+
+# Agent Builder Phase 1's Describe method — same fields as
+# RoleGenerateResponse minus the document-specific ones (documentId/chunks/
+# sourceDocumentName), since there's no uploaded file to embed.
+class RoleGenerateFromDescriptionResponse(BaseModel):
+    name: str
+    department: str
+    description: str
+    goals: list[str]
     responsibilities: list[str]
     dailyTasks: list[str]
     weeklyTasks: list[str]

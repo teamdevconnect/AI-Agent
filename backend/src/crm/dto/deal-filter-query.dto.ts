@@ -22,10 +22,8 @@ function splitCsv({ value }: { value: unknown }): string[] | undefined {
 }
 
 export class DealFilterQueryDto {
-  // Matched against expectedClosingDate — the same period-attribution/
-  // closed-date proxy already used throughout sales-analytics.service.ts
-  // and business-dashboard.service.ts; this app has no separate "closed at"
-  // timestamp.
+  // Matched against createdAt by default — see dateField below to match
+  // expectedClosingDate instead.
   @IsOptional()
   @Matches(DATE, { message: 'dateFrom must be YYYY-MM-DD' })
   dateFrom?: string;
@@ -33,6 +31,16 @@ export class DealFilterQueryDto {
   @IsOptional()
   @Matches(DATE, { message: 'dateTo must be YYYY-MM-DD' })
   dateTo?: string;
+
+  // Which field dateFrom/dateTo range against. Defaults to createdAt (see
+  // deal-filter.util.ts). 'expectedClosingDate' exists so a caller can match
+  // the period-attribution semantics SalesAnalyticsService.getAchievement
+  // uses for the "Total Revenue" figure — a drill-down into that number must
+  // filter the same field it was summed over, or the list won't reconcile
+  // with the total the user clicked.
+  @IsOptional()
+  @IsIn(['createdAt', 'expectedClosingDate'])
+  dateField?: 'createdAt' | 'expectedClosingDate';
 
   @IsOptional()
   @Transform(splitCsv)

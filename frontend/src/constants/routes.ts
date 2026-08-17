@@ -28,7 +28,6 @@ export const ROUTES = {
   settingsUsers: '/settings/users',
   settingsSalesTargets: '/settings/sales-targets',
   settingsDealAssignment: '/settings/deal-assignment',
-  settingsWorkflows: '/settings/workflows',
   settingsRoyaltyRules: '/settings/royalty-rules',
 
   profile: '/profile',

@@ -32,7 +32,7 @@ let IntegrationsService = class IntegrationsService {
     }
     async connect(organizationId, provider, apiKey, baseUrl) {
         this.assertAllowed(provider);
-        await this.credentialModel.findOneAndUpdate({ organizationId, provider }, { organizationId, provider, apiKey, baseUrl, authType: undefined, credentialsEncrypted: undefined }, { upsert: true });
+        await this.credentialModel.findOneAndUpdate({ organizationId, provider }, { organizationId, provider, apiKey: this.encryption.encrypt(apiKey), baseUrl, authType: undefined, credentialsEncrypted: undefined }, { upsert: true });
         return { connected: true, maskedKey: this.mask(apiKey), baseUrl };
     }
     async connectWithAuth(organizationId, provider, dto) {
@@ -67,7 +67,7 @@ let IntegrationsService = class IntegrationsService {
         if (doc.authType) {
             return { connected: true, authType: doc.authType, baseUrl: doc.baseUrl };
         }
-        return { connected: true, maskedKey: this.mask(doc.apiKey ?? ''), baseUrl: doc.baseUrl };
+        return { connected: true, maskedKey: this.mask(this.decryptStoredApiKey(doc.apiKey)), baseUrl: doc.baseUrl };
     }
     async listCustom(organizationId) {
         const docs = await this.credentialModel
@@ -77,7 +77,7 @@ let IntegrationsService = class IntegrationsService {
             provider: doc.provider,
             connected: true,
             authType: doc.authType,
-            maskedKey: doc.authType ? undefined : this.mask(doc.apiKey ?? ''),
+            maskedKey: doc.authType ? undefined : this.mask(this.decryptStoredApiKey(doc.apiKey)),
             baseUrl: doc.baseUrl,
             connectedAt: doc.createdAt,
         }));
@@ -103,7 +103,7 @@ let IntegrationsService = class IntegrationsService {
             }
             else {
                 authType = 'apiKeyBaseUrl';
-                credentials = { apiKey: doc.apiKey };
+                credentials = { apiKey: this.decryptStoredApiKey(doc.apiKey) };
             }
         }
         else if (!authType) {
@@ -144,7 +144,7 @@ let IntegrationsService = class IntegrationsService {
         return {
             integrationId: doc._id,
             authType: 'apiKeyBaseUrl',
-            credentials: { apiKey: doc.apiKey },
+            credentials: { apiKey: this.decryptStoredApiKey(doc.apiKey) },
             baseUrl: doc.baseUrl,
         };
     }
@@ -188,6 +188,16 @@ let IntegrationsService = class IntegrationsService {
     }
     mask(apiKey) {
         return apiKey.length > 12 ? `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}` : '***';
+    }
+    decryptStoredApiKey(value) {
+        if (!value)
+            return '';
+        try {
+            return this.encryption.decrypt(value);
+        }
+        catch {
+            return value;
+        }
     }
 };
 exports.IntegrationsService = IntegrationsService;

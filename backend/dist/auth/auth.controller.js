@@ -24,17 +24,21 @@ const forgot_password_dto_1 = require("./dto/forgot-password.dto");
 const reset_password_dto_1 = require("./dto/reset-password.dto");
 const change_password_dto_1 = require("./dto/change-password.dto");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
+const require_session_auth_guard_1 = require("../common/guards/require-session-auth.guard");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const AUTH_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+function sessionMeta(req) {
+    return { userAgent: req.headers['user-agent'], ip: req.ip };
+}
 let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
     }
-    register(dto) {
-        return this.authService.register(dto.email, dto.password, dto.name, dto.organizationName);
+    register(dto, req) {
+        return this.authService.register(dto.email, dto.password, dto.name, dto.organizationName, sessionMeta(req));
     }
-    login(dto) {
-        return this.authService.login(dto.email, dto.password);
+    login(dto, req) {
+        return this.authService.login(dto.email, dto.password, sessionMeta(req));
     }
     async verifyOtp(dto) {
         await this.authService.verifyEmail(dto.email, dto.otp);
@@ -51,8 +55,12 @@ let AuthController = class AuthController {
         await this.authService.resetPassword(dto.email, dto.otp, dto.password);
         return { success: true };
     }
-    async changePassword(user, dto) {
-        await this.authService.changePassword(user.sub, dto.currentPassword, dto.newPassword);
+    async changePassword(user, dto, req) {
+        await this.authService.changePassword(user.sub, dto.currentPassword, dto.newPassword, user.jti, req.ip);
+        return { success: true };
+    }
+    async logout(user) {
+        await this.authService.logout(user.sub, user.jti);
         return { success: true };
     }
 };
@@ -61,16 +69,18 @@ __decorate([
     (0, throttler_1.Throttle)(AUTH_THROTTLE),
     (0, common_1.Post)('register'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [register_dto_1.RegisterDto]),
+    __metadata("design:paramtypes", [register_dto_1.RegisterDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "register", null);
 __decorate([
     (0, throttler_1.Throttle)(AUTH_THROTTLE),
     (0, common_1.Post)('login'),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [login_dto_1.LoginDto]),
+    __metadata("design:paramtypes", [login_dto_1.LoginDto, Object]),
     __metadata("design:returntype", void 0)
 ], AuthController.prototype, "login", null);
 __decorate([
@@ -106,15 +116,24 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "resetPassword", null);
 __decorate([
-    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, require_session_auth_guard_1.RequireSessionAuthGuard),
     (0, throttler_1.Throttle)(AUTH_THROTTLE),
     (0, common_1.Post)('change-password'),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, change_password_dto_1.ChangePasswordDto]),
+    __metadata("design:paramtypes", [Object, change_password_dto_1.ChangePasswordDto, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "changePassword", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, require_session_auth_guard_1.RequireSessionAuthGuard),
+    (0, common_1.Post)('logout'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "logout", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService])

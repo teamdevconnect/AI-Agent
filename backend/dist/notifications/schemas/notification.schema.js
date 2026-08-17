@@ -18,7 +18,6 @@ exports.NOTIFICATION_ENTITY_TYPES = [
     'deal',
     'task',
     'outlookAccount',
-    'workflowExecution',
     'dailyReport',
 ];
 let Notification = class Notification {

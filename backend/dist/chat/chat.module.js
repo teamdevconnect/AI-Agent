@@ -12,6 +12,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const redis_cache_service_1 = require("../common/redis/redis-cache.service");
 const auth_module_1 = require("../auth/auth.module");
+const users_module_1 = require("../users/users.module");
 const agent_role_schema_1 = require("../agent-roles/schemas/agent-role.schema");
 const conversation_schema_1 = require("./schemas/conversation.schema");
 const chat_controller_1 = require("./chat.controller");
@@ -29,6 +30,7 @@ exports.ChatModule = ChatModule = __decorate([
             ]),
             axios_1.HttpModule.register({ timeout: 300_000 }),
             auth_module_1.AuthModule,
+            users_module_1.UsersModule,
         ],
         controllers: [chat_controller_1.ChatController],
         providers: [chat_service_1.ChatService, chat_gateway_1.ChatGateway, redis_cache_service_1.RedisCacheService],

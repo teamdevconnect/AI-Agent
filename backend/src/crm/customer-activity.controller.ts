@@ -35,7 +35,10 @@ export class CustomerActivityController {
   breakdownStats(@CurrentUser() user: JwtPayload, @Query('from') from: string, @Query('to') to: string) {
     if (!from || !to) throw new BadRequestException('from and to are required');
     const start = new Date(from);
-    const end = new Date(new Date(to).setHours(23, 59, 59, 999));
+    // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the server
+    // process's local timezone, which drifts hours off this boundary on any
+    // server not running in UTC.
+    const end = new Date(`${to}T23:59:59.999Z`);
     const canOverride = user.roles.includes('admin') || user.roles.includes('owner');
     if (canOverride) {
       return this.customerActivityService.getCustomerBreakdownForRange(user.organizationId, start, end);

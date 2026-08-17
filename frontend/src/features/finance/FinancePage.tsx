@@ -356,7 +356,19 @@ export function FinancePage() {
                   <div className={styles.emptyState}>No documents uploaded yet.</div>
                 ) : (
                   data.recentDocuments.map((d) => (
-                    <div key={d._id} className={styles.listItem} onClick={() => setReviewDoc(d)} style={{ cursor: 'pointer' }}>
+                    <div
+                      key={d._id}
+                      className={styles.listItem}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setReviewDoc(d)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        e.preventDefault();
+                        setReviewDoc(d);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <div className={styles.listItemMain}>
                         <span className={styles.listItemTitle}>{d.vendorName ?? d.originalFilename}</span>
                         <span className={styles.listItemMeta}>{d.invoiceDate ?? 'No invoice date'}</span>

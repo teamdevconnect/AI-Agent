@@ -4,11 +4,14 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { buildManifestCredentials, resolveManifestAuthType } from './connector-manifest.util';
 import { CreateEndpointDto } from './dto/create-endpoint.dto';
 import { CreateResourceDto } from './dto/create-resource.dto';
 import { ExecuteEndpointDto } from './dto/execute-endpoint.dto';
+import { ImportConnectorManifestDto } from './dto/import-connector-manifest.dto';
 import { DynamicExecutorService } from './dynamic-executor.service';
 import { IntegrationResourcesService } from './integration-resources.service';
+import { IntegrationsService } from './integrations.service';
 
 // Metadata CRUD for the "unlimited resources/endpoints per integration"
 // engine (see integration-resource.schema.ts / integration-endpoint.schema.ts),
@@ -22,7 +25,40 @@ export class ResourcesController {
   constructor(
     private resourcesService: IntegrationResourcesService,
     private executor: DynamicExecutorService,
+    private integrationsService: IntegrationsService,
   ) {}
+
+  // Bulk connector import — pastes a whole manifest (base URL + auth
+  // template + modules[].actions[]) and creates the credential plus every
+  // resource/endpoint in one call, instead of the one-at-a-time Add
+  // Integration + per-endpoint builder flow below. Admin-only, matching
+  // every other integration-mutating route on this controller.
+  @Post('import-connector')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  async importConnector(@CurrentUser() user: JwtPayload, @Body() dto: ImportConnectorManifestDto) {
+    const provider = dto.connector_id.trim().toLowerCase();
+    const authType = resolveManifestAuthType(dto.auth);
+    const credentials = buildManifestCredentials(authType, dto.auth, {
+      apiKeyValue: dto.apiKeyValue,
+      username: dto.username,
+      password: dto.password,
+    });
+
+    await this.integrationsService.connectWithAuth(user.organizationId, provider, {
+      authType,
+      credentials: credentials as unknown as Record<string, unknown>,
+      baseUrl: dto.base_url,
+    });
+
+    const { resourcesCreated, endpointsCreated } = await this.resourcesService.importManifestModules(
+      user.organizationId,
+      provider,
+      dto.modules,
+    );
+
+    return { provider, authType, resourcesCreated, endpointsCreated };
+  }
 
   // Read-only discovery — what's connected and what actions are configured
   // for it. Used by the AI's integration_capabilities tool (via

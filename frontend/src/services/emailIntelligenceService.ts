@@ -215,8 +215,9 @@ export const emailIntelligenceService = {
   // Owner/manager get an org/store-wide aggregate here (a deliberate,
   // narrow exception to every other route on this service being self-
   // scoped only); consultant sees their own mailbox, same as everywhere
-  // else. Takes a raw day range (not a calendar month) so the widget's own
-  // day-based filter works independently of the dashboard's month picker.
+  // else. Takes a raw from/to range — the dashboard always passes its own
+  // page-level dateFrom/dateTo (see CustomersAndEmailSection), so this
+  // widget shares the same single month/year filter as the rest of the page.
   async getActivityStats(
     from: string,
     to: string,
