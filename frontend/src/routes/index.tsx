@@ -47,6 +47,10 @@ const NotificationsPage = lazy(() =>
   import('@/features/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),
 );
 const ProfilePage = lazy(() => import('@/features/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const BillingPage = lazy(() => import('@/features/billing/BillingPage').then((m) => ({ default: m.BillingPage })));
+const PlatformAdminBillingPage = lazy(() =>
+  import('@/features/platform-admin/PlatformAdminBillingPage').then((m) => ({ default: m.PlatformAdminBillingPage })),
+);
 
 const SettingsLayout = lazy(() => import('@/features/settings/SettingsLayout').then((m) => ({ default: m.SettingsLayout })));
 const GeneralSettings = lazy(() =>
@@ -142,9 +146,14 @@ export function AppRoutes() {
             <Route path={ROUTES.notifications} element={<NotificationsPage />} />
             <Route path={ROUTES.profile} element={<ProfilePage />} />
 
+            <Route element={<RequireRole role="platform_admin" />}>
+              <Route path={ROUTES.platformAdminBilling} element={<PlatformAdminBillingPage />} />
+            </Route>
+
             <Route element={<BlockRole role="agent_user" />}>
               <Route path={ROUTES.emailIntelligence} element={<EmailIntelligencePage />} />
               <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
+              <Route path={ROUTES.billing} element={<BillingPage />} />
               <Route path={ROUTES.settings} element={<SettingsLayout />}>
                 <Route index element={<Navigate to={ROUTES.settingsGeneral} replace />} />
                 <Route path="general" element={<GeneralSettings />} />

@@ -35,6 +35,7 @@ import { MailModule } from './mail/mail.module';
 import { EncryptionModule } from './common/encryption/encryption.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { ApiTokensModule } from './api-tokens/api-tokens.module';
+import { BillingModule } from './billing/billing.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -79,6 +80,7 @@ import { HealthController } from './health/health.controller';
     ReportingModule,
     VendorsModule,
     BusinessIntelligenceModule,
+    BillingModule,
     // Registers a global audit-logging interceptor (see AuditModule) in
     // addition to its own admin-only GET /audit-logs viewer.
     AuditModule,

@@ -30,23 +30,38 @@ def record_llm_execution(
     latency_ms: float,
     success: bool,
     error: str | None,
+    request_id: str = "",
 ) -> None:
+    now = datetime.now(timezone.utc)
     get_db().agent_executions.insert_one(
         {
             "organizationId": organization_id,
             "userId": user_id,
             "conversationId": conversation_id,
+            # Correlates this row back to the billing reservation that
+            # pre-authorized the chat turn it belongs to (see
+            # backend/src/billing/reservation.service.ts's settle()) — empty
+            # string for call sites that don't thread a request_id through
+            # yet (e.g. the scheduled report crew), which settle() simply
+            # won't find any rows for.
+            "requestId": request_id,
             "kind": "llm",
             "name": name,
             "provider": provider,
             "model": model,
             "inputTokens": input_tokens,
             "outputTokens": output_tokens,
+            "totalTokens": input_tokens + output_tokens,
             "costUsd": cost_usd,
+            "currency": "USD",
             "latencyMs": latency_ms,
             "success": success,
             "error": error,
-            "occurredAt": datetime.now(timezone.utc),
+            "occurredAt": now,
+            # Written directly (not left to Mongoose's timestamps:true) —
+            # this collection's sole writer is pymongo, which bypasses
+            # Mongoose's document middleware entirely.
+            "createdAt": now,
         }
     )
 
@@ -60,6 +75,7 @@ def record_tool_execution(
     latency_ms: float,
     success: bool,
 ) -> None:
+    now = datetime.now(timezone.utc)
     get_db().agent_executions.insert_one(
         {
             "organizationId": organization_id,
@@ -69,6 +85,7 @@ def record_tool_execution(
             "name": name,
             "latencyMs": latency_ms,
             "success": success,
-            "occurredAt": datetime.now(timezone.utc),
+            "occurredAt": now,
+            "createdAt": now,
         }
     )

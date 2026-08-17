@@ -16,6 +16,13 @@ class AgentState(TypedDict):
     # rather than per-org resolution. See app.integrations.prospectconnect.
     organization_id: str | None
     conversation_id: str
+    # Minted once per chat turn by app.routes.chat before run_agent() is
+    # called, threaded through every traced_llm_call site touched during
+    # the turn (see app.observability.tracing) so billing's settle() can
+    # sum this turn's actual agent_executions rows back to one
+    # CreditReservation. Missing/"" for callers built before this field
+    # existed (e.g. crew_reports.py) — those calls simply aren't billed yet.
+    request_id: str
     # Not serialized/checkpointed (no checkpointer is used) — a plain
     # in-process callback for streaming text/tool-progress events out of
     # planner_node as they happen. None for non-streaming callers.

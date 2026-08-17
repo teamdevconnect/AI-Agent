@@ -25,8 +25,11 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^10.4.22",
     "bcrypt": "^5.1.1",
+    "bullmq": "^5.81.3",
+    "cashfree-pg": "^6.0.4",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
+    "decimal.js": "^10.6.0",
     "exceljs": "^4.4.0",
     "form-data": "^4.0.6",
     "geoip-lite": "^1.4.10",
@@ -40,9 +43,11 @@
     "passport-jwt": "^4.0.1",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
+    "razorpay": "^2.9.8",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.3",
+    "stripe": "^22.5.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
