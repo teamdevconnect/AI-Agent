@@ -11,7 +11,16 @@ export type AgentExecutionDocument = AgentExecution & Document<Types.ObjectId>;
 // DailyReport, TimelineEvent, ...) rather than Python's native snake_case.
 // Nothing here is `required` at the Mongoose level — this schema exists for
 // typed queries, not to validate documents this app never creates.
-@Schema({ collection: 'agent_executions' })
+//
+// Deliberately does NOT carry customerCharge/haiveCreditsUsed: this
+// collection is python-agent's raw provider-cost trace (one row per LLM/
+// tool call, priced before any margin is applied), not the customer-facing
+// charge. That already lives, per settled chat turn, in WalletTransaction's
+// AI_USAGE rows (amountCredits IS haiveCreditsUsed; metadata.providerCostUsd
+// is the cost this row's costUsd rolls up from) — duplicating it here would
+// denormalize billing detail backward into an internal accounting
+// collection, which the original design explicitly avoids.
+@Schema({ collection: 'agent_executions', timestamps: true })
 export class AgentExecution {
   @Prop({ index: true })
   organizationId?: string;
@@ -51,8 +60,20 @@ export class AgentExecution {
   @Prop()
   outputTokens?: number;
 
+  // Always inputTokens + outputTokens when both are present — stored
+  // directly (not a virtual) so it's queryable/aggregatable without a
+  // pipeline stage recomputing it on every read.
+  @Prop()
+  totalTokens?: number;
+
   @Prop({ type: Number })
   costUsd?: number | null;
+
+  // This collection's cost is always USD (python-agent's provider-cost
+  // accounting never converts currency) — stored explicitly rather than
+  // left implicit, so a reader never has to assume it.
+  @Prop({ default: 'USD' })
+  currency: string;
 
   @Prop()
   latencyMs: number;
@@ -68,3 +89,4 @@ export class AgentExecution {
 }
 
 export const AgentExecutionSchema = SchemaFactory.createForClass(AgentExecution);
+AgentExecutionSchema.index({ organizationId: 1, occurredAt: -1 });

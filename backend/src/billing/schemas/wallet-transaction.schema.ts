@@ -4,6 +4,7 @@ import { Document, Types } from 'mongoose';
 export type WalletTransactionDocument = WalletTransaction & Document<Types.ObjectId>;
 
 export const WALLET_TRANSACTION_TYPES = [
+  'FREE_TRIAL',
   'PURCHASE',
   'AI_USAGE',
   'AUTO_RECHARGE',
@@ -61,3 +62,5 @@ export class WalletTransaction {
 }
 
 export const WalletTransactionSchema = SchemaFactory.createForClass(WalletTransaction);
+WalletTransactionSchema.index({ organizationId: 1, createdAt: -1 });
+WalletTransactionSchema.index({ organizationId: 1, type: 1, createdAt: -1 });

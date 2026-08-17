@@ -51,3 +51,5 @@ export class CreditReservation {
 }
 
 export const CreditReservationSchema = SchemaFactory.createForClass(CreditReservation);
+CreditReservationSchema.index({ organizationId: 1, status: 1 });
+CreditReservationSchema.index({ organizationId: 1, createdAt: -1 });

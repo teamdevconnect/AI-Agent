@@ -13,17 +13,21 @@ import Decimal from 'decimal.js';
  * profit, 50% margin (profit/price). A naive "+50%" markup ($15 price)
  * would only be a 33% margin.
  *
- * Rounding policy: every intermediate step (provider_cost USD → customer
- * USD) stays high-precision via decimal.js; rounding to a whole Haive
- * Credit (HALF_UP) happens exactly once, in usdToCredits — the only place
- * in the entire billing domain a fraction of a credit is ever discarded.
+ * Credit peg: 1 Haive Credit = 1 unit of config.billing.currency
+ * (CREDIT_VALUE_INR, ₹1 by default — INR being this platform's billing
+ * currency). Rounding policy: every intermediate step (provider_cost USD →
+ * customer USD → customer currency) stays high-precision via decimal.js;
+ * rounding happens only at the two currency/credit boundaries
+ * (usdToCredits/creditsToUsd), to 2 decimal places (matching the currency's
+ * own minor unit — paise), never truncated to a whole credit. A ₹6.40
+ * charge stays ₹6.40 in the ledger, not rounded to 6 or 7.
  */
 @Injectable()
 export class PricingService {
   constructor(private config: ConfigService) {}
 
-  private get creditValueUsd(): Decimal {
-    return new Decimal(this.config.get<number>('billing.creditValueUsd') ?? 0.01);
+  private get creditValueInCurrency(): Decimal {
+    return new Decimal(this.config.get<number>('billing.creditValueInCurrency') ?? 1);
   }
 
   private get targetGrossMargin(): Decimal {
@@ -40,20 +44,29 @@ export class PricingService {
     return new Decimal(costUsd).dividedBy(retained);
   }
 
-  /** provider_cost USD -> whole Haive Credits to charge (the only rounding boundary). */
+  /** provider_cost USD -> Haive Credits to charge, at 2-decimal precision
+   * (never rounded to a whole credit). */
   providerCostToCustomerCredits(costUsd: number, marginOverride?: number): number {
     const customerUsd = this.costToCustomerUsd(costUsd, marginOverride);
     return this.usdToCredits(customerUsd);
   }
 
+  /** USD -> Haive Credits, via the configured currency bridge and the ₹1 =
+   * 1 Credit peg — 2-decimal precision, HALF_UP, the only rounding boundary
+   * between a USD cost and a credit charge. */
   usdToCredits(usdAmount: number | Decimal): number {
     const usd = usdAmount instanceof Decimal ? usdAmount : new Decimal(usdAmount);
-    return usd.dividedBy(this.creditValueUsd).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber();
+    const inCurrency = new Decimal(this.usdToCurrency(usd.toNumber()));
+    return inCurrency.dividedBy(this.creditValueInCurrency).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
   }
 
-  /** Credits -> USD, exact (no rounding) — for display/reporting only, never for charging. */
+  /** Credits -> USD, via the same currency bridge in reverse — for
+   * display/reporting and for computing an AutoPay/purchase charge amount,
+   * never for re-deriving a settlement charge (that only ever flows
+   * costUsd -> credits, never the other way). */
   creditsToUsd(credits: number): number {
-    return new Decimal(credits).times(this.creditValueUsd).toNumber();
+    const inCurrency = new Decimal(credits).times(this.creditValueInCurrency).toNumber();
+    return this.currencyToUsd(inCurrency);
   }
 
   /** config.billing.currency — whatever credit packages are actually priced

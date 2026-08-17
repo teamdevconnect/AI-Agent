@@ -110,8 +110,26 @@ export class RazorpayPaymentProvider implements PaymentProviderAdapter {
         amount: amountMinorUnits,
         currency,
         order_id: order.id,
-        name: 'Haive AI',
+        name: 'Haive',
         description: `${creditPackageKey} credit package`,
+        // Haive's brand palette (frontend/src/styles/variables.css —
+        // --brand-accent-primary/--brand-bg-primary, "do not rename") — kept
+        // in sync manually since Checkout.js can't read the app's CSS
+        // custom properties; the logo itself (`image`) is added on the
+        // frontend instead (see RazorpayCheckoutModal.tsx), since it needs
+        // an absolute URL resolved against wherever the app is actually
+        // being served from, which this backend service has no notion of.
+        theme: {
+          color: '#ed7e2c',
+          backdrop_color: '#070707',
+        },
+        modal: {
+          backdropclose: false,
+          escape: true,
+          handleback: true,
+          confirm_close: true,
+          animation: true,
+        },
       },
     };
   }

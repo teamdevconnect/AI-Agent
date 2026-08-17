@@ -21,14 +21,13 @@ export interface AutoPaySettingsCardProps {
 // "Auto Recharge" — matches OpenAI's API billing terminology this was
 // modeled after: when enabled, Haive can automatically purchase more
 // credits using the saved payment method on file once the balance reaches
-// the configured threshold, topping it back up to a target balance (not a
-// fixed package — the charge amount is computed fresh each time from
-// however many credits are actually needed, see AutoPayService.attemptRecharge).
-// No provider is ever mentioned here.
+// the configured threshold — a flat, fixed amount added each time it
+// triggers (see AutoPayService.attemptRecharge). No provider is ever
+// mentioned here.
 export function AutoPaySettingsCard({ autoPay, paymentMethods, onChanged, onRequirePurchase }: AutoPaySettingsCardProps) {
   const [enabled, setEnabled] = useState(autoPay.enabled);
   const [threshold, setThreshold] = useState(String(autoPay.thresholdCredits));
-  const [target, setTarget] = useState(String(autoPay.targetBalanceCredits));
+  const [rechargeAmount, setRechargeAmount] = useState(String(autoPay.rechargeAmountCredits));
   const [monthlyCap, setMonthlyCap] = useState(autoPay.monthlyCapCredits ? String(autoPay.monthlyCapCredits) : '');
   const [paymentMethodId] = useState(autoPay.paymentMethodId ?? paymentMethods[0]?._id ?? '');
   const [saving, setSaving] = useState(false);
@@ -45,7 +44,7 @@ export function AutoPaySettingsCard({ autoPay, paymentMethods, onChanged, onRequ
 
   const handleSave = async () => {
     const thresholdCredits = Number.parseInt(threshold, 10) || 0;
-    const targetBalanceCredits = Number.parseInt(target, 10) || 0;
+    const rechargeAmountCredits = Number.parseInt(rechargeAmount, 10) || 0;
 
     if (enabled) {
       if (!paymentMethodId) {
@@ -53,8 +52,8 @@ export function AutoPaySettingsCard({ autoPay, paymentMethods, onChanged, onRequ
         onRequirePurchase();
         return;
       }
-      if (targetBalanceCredits <= thresholdCredits) {
-        toast.error('The target balance must be higher than the low-balance threshold.');
+      if (rechargeAmountCredits <= 0) {
+        toast.error('The recharge amount must be greater than zero.');
         return;
       }
     }
@@ -66,7 +65,7 @@ export function AutoPaySettingsCard({ autoPay, paymentMethods, onChanged, onRequ
       await billingService.updateAutoPay({
         enabled,
         thresholdCredits,
-        targetBalanceCredits,
+        rechargeAmountCredits,
         paymentMethodId: paymentMethodId || undefined,
         monthlyCapCredits,
       });
@@ -125,12 +124,12 @@ export function AutoPaySettingsCard({ autoPay, paymentMethods, onChanged, onRequ
           onChange={(e) => setThreshold(e.target.value)}
         />
         <Input
-          label="Bring balance back up to"
-          hint="Must be higher than the threshold"
+          label="Add exactly"
+          hint="A flat number of credits added each time Auto Recharge triggers"
           type="number"
           min={1}
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
+          value={rechargeAmount}
+          onChange={(e) => setRechargeAmount(e.target.value)}
         />
       </div>
 

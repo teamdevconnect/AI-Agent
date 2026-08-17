@@ -53,8 +53,10 @@ declare const _default: () => {
         };
     };
     billing: {
-        creditValueUsd: number;
+        creditValueInCurrency: number;
         targetGrossMargin: number;
+        freeTrialCredits: number;
+        autoRechargeDefault: boolean;
         reservationCeilingCredits: number;
         reservationTimeoutMinutes: number;
         lowBalanceThresholdCredits: number;

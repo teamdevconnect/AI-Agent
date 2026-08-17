@@ -9,14 +9,14 @@ export class AutoPaySettingsDto {
   @Min(0)
   thresholdCredits?: number;
 
-  // The balance Auto Recharge tops up to when triggered — validated
-  // against thresholdCredits (must be higher) in AutoPayService.updateSettings,
-  // not here, since that check needs whichever of the two the request
-  // didn't set to fall back to the wallet's already-saved value.
+  // The flat number of credits Auto Recharge adds each time it triggers —
+  // validated as > 0 in AutoPayService.updateSettings, not here, since that
+  // check needs to fall back to the wallet's already-saved value when the
+  // request doesn't set this field.
   @IsOptional()
   @IsNumber()
   @Min(1)
-  targetBalanceCredits?: number;
+  rechargeAmountCredits?: number;
 
   @IsOptional()
   @IsString()

@@ -15,10 +15,20 @@ import { SavePaymentMethodDto } from './dto/save-payment-method.dto';
 // Every route here is JwtAuthGuard-only (no @Roles) — reserve/settle/release
 // are called by python-agent's service-role bridge token (see
 // integration_executor.py's identical pattern for /integrations/execute),
-// and the rest are ordinary customer-facing routes any authenticated org
-// member can use. Nothing here ever returns a provider name/model/cost —
-// see billing.service.ts's listCustomerTransactions for the enforcement
-// point.
+// and the rest are ordinary customer-facing routes any authenticated user
+// can use. Nothing here ever returns a provider name/model/cost — see
+// billing.service.ts's listCustomerTransactions for the enforcement point.
+//
+// Billing is scoped per USER (user.sub), not per organization — every call
+// below deliberately passes user.sub as the tenant key into
+// WalletService/ReservationService/AutoPayService/BillingService, none of
+// which care whether that string is actually an org id or a user id; they
+// just use it as an opaque wallet key. This is the only place that
+// selection is made — nothing downstream (those four services, python-agent,
+// the frontend) had to change. Each individual user therefore gets their
+// own wallet, their own one-time free-trial grant, and their own Auto
+// Recharge/saved payment method, matching a ChatGPT-style per-account model
+// rather than a shared company pool.
 @UseGuards(JwtAuthGuard)
 @Controller('billing')
 export class BillingController {
@@ -30,7 +40,7 @@ export class BillingController {
 
   @Get('wallet')
   getWallet(@CurrentUser() user: JwtPayload) {
-    return this.billingService.getWalletSummary(user.organizationId);
+    return this.billingService.getWalletSummary(user.sub);
   }
 
   @Get('packages')
@@ -40,23 +50,23 @@ export class BillingController {
 
   @Get('usage/summary')
   getUsageSummary(@CurrentUser() user: JwtPayload) {
-    return this.billingService.getUsageSummary(user.organizationId);
+    return this.billingService.getUsageSummary(user.sub);
   }
 
   @Get('transactions')
   listTransactions(@CurrentUser() user: JwtPayload, @Query('limit') limit?: string) {
-    return this.billingService.listCustomerTransactions(user.organizationId, limit ? Number.parseInt(limit, 10) : undefined);
+    return this.billingService.listCustomerTransactions(user.sub, limit ? Number.parseInt(limit, 10) : undefined);
   }
 
   @Get('payment-methods')
   listPaymentMethods(@CurrentUser() user: JwtPayload) {
-    return this.billingService.listPaymentMethods(user.organizationId);
+    return this.billingService.listPaymentMethods(user.sub);
   }
 
   @Post('payment-methods')
   savePaymentMethod(@CurrentUser() user: JwtPayload, @Body() dto: SavePaymentMethodDto) {
     return this.billingService.savePaymentMethod(
-      user.organizationId,
+      user.sub,
       dto.gatewayCustomerId,
       dto.gatewayPaymentId ?? '',
       dto.signature ?? '',
@@ -66,12 +76,12 @@ export class BillingController {
 
   @Delete('payment-methods/:id')
   deletePaymentMethod(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
-    return this.billingService.deletePaymentMethod(user.organizationId, id);
+    return this.billingService.deletePaymentMethod(user.sub, id);
   }
 
   @Post('credits/purchase')
   purchase(@CurrentUser() user: JwtPayload, @Body() dto: PurchasePackageDto) {
-    return this.billingService.initiatePurchase(user.organizationId, user.sub, dto.packageKey);
+    return this.billingService.initiatePurchase(user.sub, user.sub, dto.packageKey);
   }
 
   // Called right after a real (non-simulated) checkout's client-side
@@ -80,17 +90,17 @@ export class BillingController {
   // why this can't be spoofed into granting free credits.
   @Post('credits/confirm-purchase')
   confirmPurchase(@CurrentUser() user: JwtPayload, @Body() dto: ConfirmPurchaseDto) {
-    return this.billingService.confirmPurchase(user.organizationId, user.sub, dto.paymentRecordId, dto.gatewayPaymentId, dto.signature ?? '');
+    return this.billingService.confirmPurchase(user.sub, user.sub, dto.paymentRecordId, dto.gatewayPaymentId, dto.signature ?? '');
   }
 
   @Get('autopay')
   getAutoPay(@CurrentUser() user: JwtPayload) {
-    return this.billingService.getWalletSummary(user.organizationId).then((w) => w.autoPay);
+    return this.billingService.getWalletSummary(user.sub).then((w) => w.autoPay);
   }
 
   @Put('autopay')
   async updateAutoPay(@CurrentUser() user: JwtPayload, @Body() dto: AutoPaySettingsDto) {
-    const wallet = await this.autoPayService.updateSettings(user.organizationId, dto);
+    const wallet = await this.autoPayService.updateSettings(user.sub, dto);
     return wallet.autoPay;
   }
 
@@ -98,7 +108,7 @@ export class BillingController {
 
   @Post('credits/reserve')
   reserve(@CurrentUser() user: JwtPayload, @Body() dto: ReserveCreditsDto) {
-    return this.reservationService.reserve(user.organizationId, user.sub, dto.requestId, dto.conversationId);
+    return this.reservationService.reserve(user.sub, user.sub, dto.requestId, dto.conversationId);
   }
 
   @Post('credits/settle')

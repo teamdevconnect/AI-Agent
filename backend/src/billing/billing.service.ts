@@ -36,6 +36,7 @@ export interface UsageSummary {
 }
 
 const TRANSACTION_DESCRIPTIONS: Record<WalletTransactionType, string> = {
+  FREE_TRIAL: 'Free trial credits',
   PURCHASE: 'Credit purchase',
   AI_USAGE: 'Haive AI usage',
   AUTO_RECHARGE: 'Auto Recharge',

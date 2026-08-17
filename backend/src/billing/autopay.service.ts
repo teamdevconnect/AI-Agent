@@ -13,7 +13,7 @@ import { Wallet, WalletDocument } from './schemas/wallet.schema';
 export interface AutoPaySettingsUpdate {
   enabled: boolean;
   thresholdCredits?: number;
-  targetBalanceCredits?: number;
+  rechargeAmountCredits?: number;
   paymentMethodId?: string;
   monthlyCapCredits?: number;
 }
@@ -24,12 +24,12 @@ export interface AutoPaySettingsUpdate {
  * provider a request ends up using. Triggered synchronously from
  * ReservationService.reserve() when balance is insufficient.
  *
- * Target-balance model: when balanceCredits drops to thresholdCredits or
- * below, this charges whatever amount brings balanceCredits back up to
- * targetBalanceCredits — not a fixed package price. The charge amount is
- * therefore computed fresh each time from the actual credit gap, via the
- * same PricingService every other credit<->currency conversion in this
- * module goes through.
+ * Fixed threshold + fixed recharge amount: when balanceCredits drops to
+ * thresholdCredits or below, this charges exactly rechargeAmountCredits —
+ * a flat amount, independent of how far below the threshold the balance
+ * actually is. Converted to a real charge amount via PricingService's
+ * credits<->currency bridge, same as every other credit-to-money
+ * conversion in this module.
  */
 @Injectable()
 export class AutoPayService {
@@ -50,10 +50,9 @@ export class AutoPayService {
     const wallet = await this.walletService.getOrCreateWallet(organizationId);
 
     if (update.enabled) {
-      const threshold = update.thresholdCredits ?? wallet.autoPay.thresholdCredits;
-      const target = update.targetBalanceCredits ?? wallet.autoPay.targetBalanceCredits;
-      if (!(target > threshold)) {
-        throw new BadRequestException('The target balance must be higher than the low-balance threshold.');
+      const rechargeAmount = update.rechargeAmountCredits ?? wallet.autoPay.rechargeAmountCredits;
+      if (!(rechargeAmount > 0)) {
+        throw new BadRequestException('The recharge amount must be greater than zero.');
       }
       const paymentMethodId = update.paymentMethodId ?? wallet.autoPay.paymentMethodId;
       if (!paymentMethodId) {
@@ -65,7 +64,7 @@ export class AutoPayService {
 
     wallet.autoPay.enabled = update.enabled;
     if (update.thresholdCredits !== undefined) wallet.autoPay.thresholdCredits = update.thresholdCredits;
-    if (update.targetBalanceCredits !== undefined) wallet.autoPay.targetBalanceCredits = update.targetBalanceCredits;
+    if (update.rechargeAmountCredits !== undefined) wallet.autoPay.rechargeAmountCredits = update.rechargeAmountCredits;
     if (update.paymentMethodId !== undefined) wallet.autoPay.paymentMethodId = update.paymentMethodId;
     if (update.monthlyCapCredits !== undefined) wallet.autoPay.monthlyCapCredits = update.monthlyCapCredits;
     if (!update.enabled) {
@@ -82,11 +81,11 @@ export class AutoPayService {
     return wallet;
   }
 
-  /** Charges the org's saved payment method for exactly the credit gap
-   * between the current balance and targetBalanceCredits, and credits the
-   * wallet on success. Returns false (never throws) on any failure — the
-   * caller (ReservationService) treats a false return as "Auto Recharge
-   * did not help," not as a hard error. */
+  /** Charges the org's saved payment method for exactly
+   * rechargeAmountCredits (a flat amount), and credits the wallet on
+   * success. Returns false (never throws) on any failure — the caller
+   * (ReservationService) treats a false return as "Auto Recharge did not
+   * help," not as a hard error. */
   async attemptRecharge(organizationId: string, reason: string): Promise<boolean> {
     const wallet = await this.walletService.getOrCreateWallet(organizationId);
     if (!wallet.autoPay?.enabled || !wallet.autoPay.paymentMethodId) {
@@ -99,11 +98,8 @@ export class AutoPayService {
       return false;
     }
 
-    const creditsNeeded = wallet.autoPay.targetBalanceCredits - wallet.balanceCredits;
-    if (creditsNeeded <= 0) {
-      // Already at or above the target — e.g. reserve() called this
-      // speculatively right as another concurrent request's settlement
-      // pushed the balance back up. Nothing to do.
+    const creditsNeeded = wallet.autoPay.rechargeAmountCredits;
+    if (!(creditsNeeded > 0)) {
       return false;
     }
 
@@ -185,7 +181,8 @@ export class AutoPayService {
       paymentRecordId: record._id.toString(),
       metadata: {
         reason,
-        targetBalanceCredits: wallet.autoPay.targetBalanceCredits,
+        rechargeAmountCredits: wallet.autoPay.rechargeAmountCredits,
+        thresholdCredits: wallet.autoPay.thresholdCredits,
         provider: this.paymentProvider.providerKey,
         simulated: charge.simulated,
         gatewayPaymentId: charge.paymentId,

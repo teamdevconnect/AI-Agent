@@ -5,7 +5,7 @@ import { axiosClient } from '@/api/axiosClient';
 export interface AutoPaySettings {
   enabled: boolean;
   thresholdCredits: number;
-  targetBalanceCredits: number;
+  rechargeAmountCredits: number;
   paymentMethodId?: string;
   dailyCapCredits?: number;
   monthlyCapCredits?: number;
@@ -94,7 +94,7 @@ export interface InitiatePurchaseResult {
 export interface AutoPaySettingsUpdate {
   enabled: boolean;
   thresholdCredits?: number;
-  targetBalanceCredits?: number;
+  rechargeAmountCredits?: number;
   paymentMethodId?: string;
   monthlyCapCredits?: number;
 }

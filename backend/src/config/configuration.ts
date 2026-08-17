@@ -78,8 +78,19 @@ export default () => ({
   // call short-circuits to a fake success) when unset — same fail-open-with-
   // warning shape as EncryptionService/MailService.
   billing: {
-    creditValueUsd: parseFloat(process.env.CREDIT_VALUE_USD ?? '0.01'),
+    // 1 Haive Credit = 1 unit of billing.currency (₹1 by default) — the
+    // platform's core credit-value business rule. Not USD-pegged.
+    creditValueInCurrency: parseFloat(process.env.CREDIT_VALUE_INR ?? '1'),
     targetGrossMargin: parseFloat(process.env.TARGET_GROSS_MARGIN ?? '0.5'),
+    // Granted exactly once per organization, on first wallet creation (see
+    // WalletService.getOrCreateWallet) — an auditable FREE_TRIAL ledger row
+    // is written alongside it, only on the insert that actually created the
+    // wallet, so retries/races can never grant it twice.
+    freeTrialCredits: parseInt(process.env.FREE_TRIAL_CREDITS ?? '20', 10),
+    // Seeds Wallet.autoPay.enabled for a newly created wallet — Auto
+    // Recharge itself still requires a saved payment method before it can
+    // actually trigger, regardless of this default.
+    autoRechargeDefault: (process.env.AUTO_RECHARGE_DEFAULT ?? 'false').toLowerCase() === 'true',
     // Flat per-turn reservation ceiling — a chat turn's real cost is unknown
     // until the LLM responds (it may take several tool-calling rounds), so
     // this is a deliberately generous upper bound checked before any LLM

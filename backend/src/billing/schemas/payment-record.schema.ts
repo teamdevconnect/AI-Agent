@@ -64,3 +64,5 @@ export class PaymentRecord {
 }
 
 export const PaymentRecordSchema = SchemaFactory.createForClass(PaymentRecord);
+PaymentRecordSchema.index({ organizationId: 1, createdAt: -1 });
+PaymentRecordSchema.index({ organizationId: 1, status: 1 });

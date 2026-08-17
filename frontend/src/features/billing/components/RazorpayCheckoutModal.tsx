@@ -5,6 +5,7 @@ import { billingService } from '@/services/billingService';
 import type { CreditPackage } from '@/services/billingService';
 import { extractErrorMessage } from '@/utils/errors';
 import { CreditPackageGrid } from './CreditPackageGrid';
+import { HAIVE_LOGO_DATA_URI } from '../haiveLogoDataUri';
 import styles from '../BillingPage.module.css';
 
 interface RazorpayCheckoutSuccessResponse {
@@ -70,6 +71,11 @@ export function RazorpayCheckoutModal({ open, onClose, packages, onPurchased }: 
       }
       const razorpay = new window.Razorpay({
         ...order.checkoutParams,
+        // Haive's actual logo — embedded as a data URI rather than a
+        // /haive-logo.png URL Checkout.js has to fetch itself, since that
+        // fetch was unreliable (showed a fallback "H" avatar instead of the
+        // real logo). An inline data URI can't fail to load.
+        image: HAIVE_LOGO_DATA_URI,
         // Checkout.js only calls this after Razorpay itself confirms the
         // payment succeeded, and hands back a signature only Razorpay's
         // servers could have produced — confirmPurchase verifies that

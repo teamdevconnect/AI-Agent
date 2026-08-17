@@ -32,6 +32,7 @@ def record_llm_execution(
     error: str | None,
     request_id: str = "",
 ) -> None:
+    now = datetime.now(timezone.utc)
     get_db().agent_executions.insert_one(
         {
             "organizationId": organization_id,
@@ -50,11 +51,17 @@ def record_llm_execution(
             "model": model,
             "inputTokens": input_tokens,
             "outputTokens": output_tokens,
+            "totalTokens": input_tokens + output_tokens,
             "costUsd": cost_usd,
+            "currency": "USD",
             "latencyMs": latency_ms,
             "success": success,
             "error": error,
-            "occurredAt": datetime.now(timezone.utc),
+            "occurredAt": now,
+            # Written directly (not left to Mongoose's timestamps:true) —
+            # this collection's sole writer is pymongo, which bypasses
+            # Mongoose's document middleware entirely.
+            "createdAt": now,
         }
     )
 
@@ -68,6 +75,7 @@ def record_tool_execution(
     latency_ms: float,
     success: bool,
 ) -> None:
+    now = datetime.now(timezone.utc)
     get_db().agent_executions.insert_one(
         {
             "organizationId": organization_id,
@@ -77,6 +85,7 @@ def record_tool_execution(
             "name": name,
             "latencyMs": latency_ms,
             "success": success,
-            "occurredAt": datetime.now(timezone.utc),
+            "occurredAt": now,
+            "createdAt": now,
         }
     )

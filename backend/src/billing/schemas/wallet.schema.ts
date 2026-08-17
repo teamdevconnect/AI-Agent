@@ -8,10 +8,10 @@ export type WalletDocument = Wallet & Document<Types.ObjectId>;
 // internally since renaming every identifier across the module for a pure
 // copy change isn't worth the churn/risk.
 //
-// Target-balance model, not a fixed package: when balanceCredits drops to
-// thresholdCredits or below, AutoPayService charges whatever amount brings
-// balanceCredits back up to targetBalanceCredits — not a flat package
-// price. See AutoPayService.attemptRecharge for the actual computation.
+// Fixed threshold + fixed recharge amount: when balanceCredits drops to
+// thresholdCredits or below, AutoPayService charges exactly
+// rechargeAmountCredits — a flat amount, not a computed gap to a target
+// balance. See AutoPayService.attemptRecharge for the actual trigger.
 export class AutoPaySettings {
   @Prop({ default: false })
   enabled: boolean;
@@ -20,7 +20,7 @@ export class AutoPaySettings {
   thresholdCredits: number;
 
   @Prop({ default: 2000 })
-  targetBalanceCredits: number;
+  rechargeAmountCredits: number;
 
   @Prop()
   paymentMethodId?: string;

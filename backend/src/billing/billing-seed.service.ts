@@ -5,19 +5,21 @@ import { Model } from 'mongoose';
 import { CreditPackage, CreditPackageDocument } from './schemas/credit-package.schema';
 import { ProviderPricing, ProviderPricingDocument } from './schemas/provider-pricing.schema';
 
-// Default credit packages ($5/$10/$20/$50/$100, per the user's spec) and the
-// day-0 ProviderPricing rows, seeded from python-agent's existing
-// observability/cost.py constants. Runs as an idempotent upsert on every
-// boot (findOneAndUpdate + upsert:true, never a plain insert) rather than a
-// one-off script — this codebase has no existing scripts/ convention to
-// slot a migration into, and "just works on startup, safe to run every
-// time" needs no separate manual step.
-const DEFAULT_PACKAGES_USD: { key: string; name: string; usd: number; credits: number; bonusCredits: number; sortOrder: number }[] = [
-  { key: 'starter', name: 'Starter', usd: 5, credits: 500, bonusCredits: 0, sortOrder: 1 },
-  { key: 'basic', name: 'Basic', usd: 10, credits: 1000, bonusCredits: 0, sortOrder: 2 },
-  { key: 'standard', name: 'Standard', usd: 20, credits: 2000, bonusCredits: 0, sortOrder: 3 },
-  { key: 'pro', name: 'Pro', usd: 50, credits: 5000, bonusCredits: 250, sortOrder: 4 },
-  { key: 'business', name: 'Business', usd: 100, credits: 10000, bonusCredits: 750, sortOrder: 5 },
+// Default credit packages — exact ₹1 = 1 Credit tiers per the platform's
+// business rules (no FX conversion needed: package price and credits
+// granted are the same number, no bonus credits). The day-0 ProviderPricing
+// rows below are seeded from python-agent's existing observability/cost.py
+// constants. Runs as an idempotent upsert on every boot (findOneAndUpdate +
+// upsert:true, never a plain insert) rather than a one-off script — this
+// codebase has no existing scripts/ convention to slot a migration into,
+// and "just works on startup, safe to run every time" needs no separate
+// manual step.
+const DEFAULT_PACKAGES: { key: string; name: string; priceInr: number; credits: number; sortOrder: number }[] = [
+  { key: 'starter', name: 'Starter', priceInr: 500, credits: 500, sortOrder: 1 },
+  { key: 'basic', name: 'Basic', priceInr: 1000, credits: 1000, sortOrder: 2 },
+  { key: 'standard', name: 'Standard', priceInr: 2000, credits: 2000, sortOrder: 3 },
+  { key: 'pro', name: 'Pro', priceInr: 5000, credits: 5000, sortOrder: 4 },
+  { key: 'business', name: 'Business', priceInr: 10000, credits: 10000, sortOrder: 5 },
 ];
 
 // Mirrors python-agent/app/observability/cost.py's _RATES_PER_MTOK exactly
@@ -39,10 +41,9 @@ export class BillingSeedService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const rate = this.config.get<number>('billing.usdToCurrencyRate') ?? 83;
     const currency = this.config.get<string>('billing.currency') ?? 'INR';
 
-    for (const pkg of DEFAULT_PACKAGES_USD) {
+    for (const pkg of DEFAULT_PACKAGES) {
       await this.packageModel.findOneAndUpdate(
         { key: pkg.key },
         {
@@ -50,8 +51,8 @@ export class BillingSeedService implements OnModuleInit {
             key: pkg.key,
             name: pkg.name,
             credits: pkg.credits,
-            bonusCredits: pkg.bonusCredits,
-            price: Math.round(pkg.usd * rate * 100) / 100,
+            bonusCredits: 0,
+            price: pkg.priceInr,
             currency,
             active: true,
             sortOrder: pkg.sortOrder,

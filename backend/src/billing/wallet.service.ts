@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Wallet, WalletDocument } from './schemas/wallet.schema';
@@ -36,11 +37,29 @@ export class WalletService {
   constructor(
     @InjectModel(Wallet.name) private walletModel: Model<WalletDocument>,
     @InjectModel(WalletTransaction.name) private transactionModel: Model<WalletTransactionDocument>,
+    private config: ConfigService,
   ) {}
 
+  /** Creates the wallet on first touch (lazy, not at organization-creation
+   * time — the org-creation flow is shared across password/OAuth signup and
+   * doesn't need to know about billing) and, exactly on that first creation,
+   * grants config.billing.freeTrialCredits with an auditable FREE_TRIAL
+   * ledger row.
+   *
+   * Idempotency for the trial grant reuses the SAME atomic upsert that
+   * already makes wallet creation itself race-safe (organizationId is
+   * uniquely indexed) — `rawResult: true` surfaces whether this particular
+   * call is the one that actually inserted the document
+   * (`lastErrorObject.upserted`) or lost the race to a concurrent caller
+   * and just matched the now-existing one. Only the winner writes the
+   * ledger row, so retries/races can never grant the trial twice. */
   async getOrCreateWallet(organizationId: string): Promise<WalletDocument> {
     const existing = await this.walletModel.findOne({ organizationId });
     if (existing) return existing;
+
+    const freeTrialCredits = this.config.get<number>('billing.freeTrialCredits') ?? 20;
+    const autoRechargeDefault = this.config.get<boolean>('billing.autoRechargeDefault') ?? false;
+
     // Concurrent first-ever calls for the same org could both miss the find
     // above — upsert makes wallet creation itself race-safe, same idiom as
     // IntegrationsService.connect's findOneAndUpdate({upsert:true}).
@@ -52,18 +71,37 @@ export class WalletService {
     // {enabled:false, thresholdCredits:200, consecutiveFailures:0, ...}) —
     // that hydration only reliably happens via `new Model().save()`, not a
     // query-based upsert.
-    return this.walletModel.findOneAndUpdate(
+    const result = (await this.walletModel.findOneAndUpdate(
       { organizationId },
       {
         $setOnInsert: {
           organizationId,
-          balanceCredits: 0,
+          balanceCredits: freeTrialCredits,
           reservedCredits: 0,
-          autoPay: { enabled: false, thresholdCredits: 200, targetBalanceCredits: 2000, consecutiveFailures: 0 },
+          autoPay: {
+            enabled: autoRechargeDefault,
+            thresholdCredits: 200,
+            rechargeAmountCredits: 2000,
+            consecutiveFailures: 0,
+          },
         },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+      { upsert: true, new: true, setDefaultsOnInsert: true, includeResultMetadata: true },
+    )) as unknown as { value: WalletDocument; lastErrorObject?: { upserted?: unknown } };
+
+    const wallet = result.value;
+    if (result.lastErrorObject?.upserted && freeTrialCredits > 0) {
+      await this.transactionModel.create({
+        organizationId,
+        walletId: wallet._id.toString(),
+        type: 'FREE_TRIAL',
+        amountCredits: freeTrialCredits,
+        balanceAfterCredits: freeTrialCredits,
+        metadata: { reason: 'organization_signup' },
+        createdBy: 'system',
+      });
+    }
+    return wallet;
   }
 
   async getSummary(organizationId: string, defaultLowBalanceThreshold: number): Promise<WalletSummary> {
