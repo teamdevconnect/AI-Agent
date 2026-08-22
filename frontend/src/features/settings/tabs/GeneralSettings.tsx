@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FiSun, FiMoon, FiClock } from 'react-icons/fi';
-import { Button, Input, Switch } from '@/components/ui';
-import { useUiStore } from '@/stores/uiStore';
+import { FiClock, FiCheck } from 'react-icons/fi';
+import { Button, Input } from '@/components/ui';
 import { storeSettingsService } from '@/services/storeSettingsService';
 import { SettingsField, SettingsSection } from '../components/SettingsSection';
 import styles from '../components/SettingsSection.module.css';
@@ -36,9 +35,6 @@ function listTimezones(): string[] {
 const TIMEZONES = listTimezones();
 
 export function GeneralSettings() {
-  const theme = useUiStore((state) => state.theme);
-  const toggleTheme = useUiStore((state) => state.toggleTheme);
-
   const handleSave = () => toast.success('General settings saved');
 
   const [openingTime, setOpeningTime] = useState('09:00');
@@ -73,15 +69,6 @@ export function GeneralSettings() {
 
   return (
     <>
-      <SettingsSection title="Theme" description="Choose how HaiVE AI looks on your device.">
-        <Switch
-          checked={theme === 'dark'}
-          onChange={toggleTheme}
-          label={theme === 'dark' ? 'Dark theme' : 'Light theme'}
-          description="Switch between dark and light appearance."
-        />
-      </SettingsSection>
-
       <SettingsSection
         title="Store Timing"
         description="Sets when the store opens and closes. HaiVE AI uses this to automatically post a to-do list before opening and an end-of-day report at closing, grounded in your CRM and Outlook data."
@@ -125,7 +112,7 @@ export function GeneralSettings() {
       </SettingsSection>
 
       <div className={styles.footer} style={{ borderTop: 'none' }}>
-        <Button onClick={handleSave} leftIcon={theme === 'dark' ? <FiMoon /> : <FiSun />}>
+        <Button onClick={handleSave} leftIcon={<FiCheck />}>
           Save Changes
         </Button>
       </div>

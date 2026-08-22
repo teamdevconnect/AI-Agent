@@ -8,8 +8,13 @@ export interface NavItem {
   badge?: number;
   // Only agent_user ever populates this — admin/legacy user roles always see everything.
   hideForRoles?: string[];
-  // Groups PRIMARY_NAV_ITEMS under a static section header in the sidebar
-  // (see Sidebar.tsx) — purely presentational, no effect on hideForRoles
-  // filtering. Unset items (e.g. SECONDARY_NAV_ITEMS) render ungrouped.
-  section?: string;
+}
+
+// One section of the sidebar's application nav — see constants/navigation.ts.
+// `label` is optional in the type (SidebarNav skips rendering a header when
+// it's absent), but every current group sets one for a consistent look.
+export interface NavGroup {
+  id: string;
+  label?: string;
+  items: NavItem[];
 }

@@ -1,0 +1,172 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.topRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.title {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.subtitle {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.mainRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.mainCol {
+  min-width: 0;
+}
+
+.bigValue {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.trendLine {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 600;
+}
+
+.trendUp {
+  color: var(--color-success);
+}
+
+.trendDown {
+  color: var(--color-danger);
+}
+
+.trendMeta {
+  color: var(--color-text-muted);
+}
+
+.sideStat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.predictedRow {
+  display: flex;
+  flex-direction: column;
+}
+
+.miniLabel {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.miniValue {
+  margin-top: 2px;
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.progressTrack {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-active);
+  overflow: hidden;
+}
+
+.progressAchieved {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--brand-accent-primary);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+
+.progressForecast {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  background: var(--color-accent-muted);
+  transition: width var(--duration-slow) var(--ease-out), left var(--duration-slow) var(--ease-out);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotAchieved {
+  background: var(--brand-accent-primary);
+}
+
+.dotForecast {
+  background: var(--color-accent-muted);
+}
+
+.dotTarget {
+  background: var(--color-text-primary);
+}
+
+.footerDivider {
+  height: 1px;
+  background: var(--color-border);
+}
+
+.footerRow {
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .sideStat {
+    align-items: flex-start;
+    text-align: left;
+  }
+}

@@ -21,6 +21,15 @@ resolved here at sync time via `crm_deal_owner_mappings`). Deals whose
 `sales_person` has no mapping yet keep whatever `ownerId` they already had
 (never wiped) until an admin maps that salesperson in Settings → Deal
 Assignment.
+
+That mapping UI needs a human-readable label for each raw sales_person id,
+but the deals endpoint only ever returns a bare id (confirmed live) — never
+a name. The quotes endpoint DOES return one (quote_owner is a nested
+{id, name, ...} object) for the same underlying CRM user id space, so
+sync_deals_for_org cross-references this org's already-synced
+Quote.quoteOwnerLabel values onto Deal.externalOwnerLabel. Real data either
+way — never fabricated — just sourced from wherever the CRM actually exposes
+it.
 """
 
 import logging
@@ -77,22 +86,50 @@ def _to_native_update(
     raw: dict,
     existing_by_external_id: dict[str, dict],
     owner_mapping_by_ref: dict[str, str],
+    owner_label_by_ref: dict[str, str],
 ) -> UpdateOne | None:
     external_id = raw.get("id")
     if not external_id:
         return None
+    existing = existing_by_external_id.get(str(external_id))
+    new_status = _map_deal_status(raw.get("deal_status"))
+    raw_expected_closing = (raw.get("expected_closing_date") or "")[:10] or None
     fields = {
         "organizationId": organization_id,
         "externalId": str(external_id),
         "name": raw.get("name") or "Untitled deal",
-        "dealStatus": _map_deal_status(raw.get("deal_status")),
+        "dealStatus": new_status,
         "monetaryValue": raw.get("monetary_value") or 0,
-        "expectedClosingDate": (raw.get("expected_closing_date") or "")[:10] or None,
+        "expectedClosingDate": raw_expected_closing,
         "stageId": raw.get("stage_id"),
         "pipelineId": raw.get("pipeline_id"),
     }
     if store_id:
         fields["storeId"] = store_id
+
+    # Real bug, fixed here: mirrors deals.service.ts's own update() logic
+    # for natively-edited deals (auto-stamps expectedClosingDate to today on
+    # a won/lost transition, unless the caller already sent an explicit new
+    # date) — analytics-dashboard.service.ts attributes "Won Deals"/revenue
+    # to whichever month a deal's expectedClosingDate falls in, so a stale
+    # date silently misattributes real won revenue to the wrong month.
+    # ProspectConnect's "expected closing date" is a forecast set once when
+    # the deal was created/quoted — confirmed live it is NOT retroactively
+    # updated when a deal is later marked won there (16 of this org's 19 won
+    # deals still carried a pre-win forecast date, misattributing ~₹613k of
+    # real won revenue away from the months those deals actually won in).
+    # Only stamps "today" on a genuine open->won/lost TRANSITION detected
+    # this poll (never on an already-won deal's routine re-sync — that would
+    # perpetually reset its date on every 10-minute poll instead), and only
+    # when ProspectConnect itself didn't also send a fresh date in this same
+    # payload — an explicit CRM-provided date is always respected.
+    if (
+        existing is not None
+        and existing.get("dealStatus") != new_status
+        and new_status in ("won", "lost")
+        and existing.get("expectedClosingDate") == raw_expected_closing
+    ):
+        fields["expectedClosingDate"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # sales_person is a raw ProspectConnect user id, not a native User._id —
     # always mirrored as-is so it's visible in Settings → Deal Assignment's
@@ -106,6 +143,16 @@ def _to_native_update(
     if sales_person:
         fields["externalOwnerRef"] = str(sales_person)
         fields["externalOwnerProvider"] = _OWNER_PROVIDER
+        # The deal endpoint never returns a name for sales_person (confirmed
+        # live — always a bare id), but the SAME ProspectConnect user id also
+        # shows up as quote_owner.id on this org's quotes, which DOES carry a
+        # real name (see _to_native_quote_update). owner_label_by_ref is built
+        # from whatever quotes have already synced — only ever a real label
+        # actually seen from the CRM, never guessed, and left unset (falling
+        # back to the raw ref in the UI) until a matching quote has synced.
+        label = owner_label_by_ref.get(str(sales_person))
+        if label:
+            fields["externalOwnerLabel"] = label
         mapped_owner_id = owner_mapping_by_ref.get(str(sales_person))
         if mapped_owner_id:
             fields["ownerId"] = mapped_owner_id
@@ -118,8 +165,8 @@ def _to_native_update(
     # service.ts's whole point is distinguishing real activity from noise).
     # So: only bump lastActivityAt when a field a human/CRM change would
     # actually affect has genuinely changed value, or the record is brand
-    # new — never on a no-op re-sync of unchanged data.
-    existing = existing_by_external_id.get(str(external_id))
+    # new — never on a no-op re-sync of unchanged data. (existing already
+    # resolved above, reused here rather than looked up twice.)
     changed = existing is None or any(existing.get(f) != fields.get(f) for f in _DEAL_ACTIVITY_FIELDS)
     if changed:
         fields["lastActivityAt"] = datetime.now(timezone.utc)
@@ -160,6 +207,19 @@ def sync_deals_for_org(organization_id: str) -> int:
             {"externalOwnerRef": 1, "ownerId": 1},
         )
     }
+    # Cross-referenced from this org's already-synced quotes (see
+    # _to_native_quote_update) — the deals endpoint itself never returns a
+    # name for sales_person, but the same CRM user id shows up as
+    # quote_owner.id on quotes, which does carry one. Empty on an org's very
+    # first-ever sync (before any quote has synced yet); self-heals on a
+    # later poll once sync_quotes_for_org has run at least once.
+    owner_label_by_ref = {
+        q["quoteOwner"]: q["quoteOwnerLabel"]
+        for q in db.crm_quotes.find(
+            {"organizationId": organization_id, "quoteOwner": {"$exists": True}, "quoteOwnerLabel": {"$exists": True, "$ne": None}},
+            {"quoteOwner": 1, "quoteOwnerLabel": 1},
+        )
+    }
 
     for page in range(_MAX_PAGES):
         body = crm_deal_tool._fetch_raw_deals(
@@ -175,7 +235,7 @@ def sync_deals_for_org(organization_id: str) -> int:
         operations = [
             op
             for op in (
-                _to_native_update(organization_id, store_id, d, existing_by_external_id, owner_mapping_by_ref)
+                _to_native_update(organization_id, store_id, d, existing_by_external_id, owner_mapping_by_ref, owner_label_by_ref)
                 for d in raw_deals
             )
             if op
@@ -262,9 +322,14 @@ def _to_native_quote_update(
     client_details = _extract_client_details(raw)
     # quote_owner is a nested profile object live (id/name/phone/email/
     # profile), not a bare id — Quote.quoteOwner is a plain string field
-    # (matches Deal.ownerId's convention), so store just the id.
+    # (matches Deal.ownerId's convention), so store just the id. The name
+    # alongside it is real, CRM-provided data (never guessed) — captured into
+    # quoteOwnerLabel so sync_deals_for_org can cross-reference it onto
+    # Deal.externalOwnerLabel for the same CRM user id (see that function's
+    # own comment on why deals alone can't get a label directly).
     owner_ref = raw.get("quote_owner")
     owner_id = owner_ref.get("id") if isinstance(owner_ref, dict) else owner_ref
+    owner_label = owner_ref.get("name") if isinstance(owner_ref, dict) else None
     fields = {
         "organizationId": organization_id,
         "externalId": str(external_id),
@@ -277,6 +342,8 @@ def _to_native_quote_update(
     }
     if owner_id:
         fields["quoteOwner"] = str(owner_id)
+    if owner_label:
+        fields["quoteOwnerLabel"] = str(owner_label)
     if deal_id:
         fields["dealId"] = str(deal_id)
     # Never fabricate a quoteNumber when the external record has none —

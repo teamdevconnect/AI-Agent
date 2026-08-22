@@ -10,7 +10,7 @@ import { SalesAnalyticsService } from '../crm/sales-analytics.service';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { EmailIntelligenceService } from '../email-intelligence/email-intelligence.service';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { AnalyticsDashboardOverview, ScopeInfo } from './analytics-dashboard.types';
+import { AiInsightItem, AnalyticsDashboardOverview, ScopeInfo } from './analytics-dashboard.types';
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
@@ -214,12 +214,16 @@ export class AnalyticsDashboardService {
       revenueTrend,
       customers: customerBreakdown,
       aiInsight: this.buildInsight(achievement.achievementPct, wonCount, lostCount, openCount, emailStats.missedCount),
+      insights: this.buildInsights(achievement.achievementPct, wonCount, lostCount, openCount, emailStats.missedCount),
     };
   }
 
   // Deterministic, rule-based text from numbers already computed — never a
   // live LLM call on a dashboard endpoint, matching the one unbroken
-  // convention every "AI Insight" in this app already follows.
+  // convention every "AI Insight" in this app already follows. Kept
+  // alongside buildInsights() below (same four conditions, same copy) only
+  // because aiInsight is still a field on the response — see that field's
+  // own comment for why it's not removed.
   private buildInsight(
     achievementPct: number | null,
     wonCount: number,
@@ -240,6 +244,59 @@ export class AnalyticsDashboardService {
       return `${openCount} deal(s) are currently open this month — keep an eye on the ones nearing their expected close date.`;
     }
     return 'Performance is on track — no urgent items flagged for this period.';
+  }
+
+  // Same four conditions as buildInsight above, but evaluates every one of
+  // them (not just the first match) so the redesigned Overview tab can show
+  // every applicable observation instead of only ever the highest-priority
+  // one. actionTabId points at AnalyticsDashboardPage's own TAB_ITEMS ids —
+  // the frontend only ever switches tabs for these, never navigates
+  // anywhere new. Still 100% deterministic/rule-based — no LLM call.
+  private buildInsights(
+    achievementPct: number | null,
+    wonCount: number,
+    lostCount: number,
+    openCount: number,
+    missedCount: number,
+  ): AiInsightItem[] {
+    const insights: AiInsightItem[] = [];
+
+    if (achievementPct !== null && achievementPct < 50) {
+      insights.push({
+        severity: 'critical',
+        message: `Only ${round1(achievementPct)}% of this month's target achieved so far — review the open pipeline for deals that can be accelerated.`,
+        actionTabId: 'pipeline',
+        actionLabel: 'View Pipeline',
+      });
+    }
+    if (missedCount > 0) {
+      insights.push({
+        severity: 'warning',
+        message: `${missedCount} email(s) have gone unanswered for over 24 hours — these are the fastest wins to catch up on.`,
+        actionTabId: 'customers',
+        actionLabel: 'View Customers & Email',
+      });
+    }
+    if (lostCount > wonCount && lostCount > 0) {
+      insights.push({
+        severity: 'warning',
+        message: `More deals were lost (${lostCount}) than won (${wonCount}) this month — worth reviewing recent lost-deal reasons for a pattern.`,
+        actionTabId: 'pipeline',
+        actionLabel: 'View Pipeline',
+      });
+    }
+    if (openCount > 0) {
+      insights.push({
+        severity: 'info',
+        message: `${openCount} deal(s) are currently open this month — keep an eye on the ones nearing their expected close date.`,
+        actionTabId: 'pipeline',
+        actionLabel: 'View Pipeline',
+      });
+    }
+    if (insights.length === 0) {
+      insights.push({ severity: 'info', message: 'Performance is on track — no urgent items flagged for this period.' });
+    }
+    return insights;
   }
 
   private async resolveStoreName(organizationId: string, storeId: string): Promise<string | undefined> {

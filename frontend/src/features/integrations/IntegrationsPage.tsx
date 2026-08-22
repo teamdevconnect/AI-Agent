@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   FiCheckCircle,
-  FiDatabase,
   FiKey,
   FiLink,
   FiPlus,
@@ -40,21 +39,14 @@ interface CardState {
   detail?: string;
 }
 
-type KeyProvider = 'anthropic' | 'crm';
-
-const KEY_MODAL_COPY: Record<KeyProvider, { title: string; description: string; placeholder: string; needsBaseUrl: boolean }> = {
-  anthropic: {
-    title: 'Connect Anthropic',
-    description: "Paste your Anthropic API key. It's stored server-side and used by the chat agent — never exposed to the browser.",
-    placeholder: 'sk-ant-api03-...',
-    needsBaseUrl: false,
-  },
-  crm: {
-    title: 'Connect CRM',
-    description: 'Enter your CRM API base URL and key. Stored server-side and used by the chat agent to look up leads, customers, and opportunities.',
-    placeholder: 'Your CRM API key',
-    needsBaseUrl: true,
-  },
+// Only 'anthropic' uses this simple api-key-only flow now — CRM connections
+// go through the "Custom Integrations" section below (Add Integration /
+// Import Connector Config), which supports every auth style ProspectConnect
+// or any other CRM's REST API actually needs, not just a bare API key.
+const ANTHROPIC_KEY_MODAL_COPY = {
+  title: 'Connect Anthropic',
+  description: "Paste your Anthropic API key. It's stored server-side and used by the chat agent — never exposed to the browser.",
+  placeholder: 'sk-ant-api03-...',
 };
 
 // OAuth-based platforms (Salesforce, Slack, HubSpot, ...) aren't offered
@@ -75,7 +67,6 @@ const AUTH_TYPES: AuthType[] = ['apiKeyBaseUrl', 'apiKey', 'bearer', 'basic', 'c
 export function IntegrationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [anthropic, setAnthropic] = useState<CardState>({ status: 'loading' });
-  const [crm, setCrm] = useState<CardState>({ status: 'loading' });
   const [outlookAccounts, setOutlookAccounts] = useState<OutlookAccount[]>([]);
   const [outlookOrgAccounts, setOutlookOrgAccounts] = useState<OutlookOrgAccount[]>([]);
   const [outlookStatus, setOutlookStatus] = useState<CardStatus>('loading');
@@ -87,9 +78,8 @@ export function IntegrationsPage() {
   const [gmailStatus, setGmailStatus] = useState<CardStatus>('loading');
   const [gmailError, setGmailError] = useState<string | undefined>();
   const [gmailModalOpen, setGmailModalOpen] = useState(false);
-  const [keyModalProvider, setKeyModalProvider] = useState<KeyProvider | null>(null);
+  const [anthropicModalOpen, setAnthropicModalOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [baseUrlInput, setBaseUrlInput] = useState('');
   const [connecting, setConnecting] = useState(false);
 
   // Generic "connect any CRM/SaaS" flow — see integrationsService.ts's
@@ -189,16 +179,6 @@ export function IntegrationsPage() {
       .then((s) => setAnthropic({ status: s.connected ? 'connected' : 'disconnected', detail: s.maskedKey }))
       .catch((error) => setAnthropic({ status: 'error', detail: extractErrorMessage(error) }));
 
-    integrationsService
-      .getCredentialStatus('crm')
-      .then((s) =>
-        setCrm({
-          status: s.connected ? 'connected' : 'disconnected',
-          detail: s.connected ? `${s.baseUrl ?? ''} ${s.maskedKey ?? ''}`.trim() : undefined,
-        }),
-      )
-      .catch((error) => setCrm({ status: 'error', detail: extractErrorMessage(error) }));
-
     loadOutlookAccounts();
     loadOutlookOrgAccounts();
     loadTenantAuthStatus();
@@ -268,43 +248,24 @@ export function IntegrationsPage() {
     return () => clearTimeout(timeout);
   }, [customProvider, customModalOpen]);
 
-  const openKeyModal = (provider: KeyProvider) => {
+  const openAnthropicModal = () => {
     setApiKeyInput('');
-    setBaseUrlInput('');
-    setKeyModalProvider(provider);
+    setAnthropicModalOpen(true);
   };
 
-  const handleSaveKey = async () => {
-    const provider = keyModalProvider;
-    if (!provider) return;
-    const copy = KEY_MODAL_COPY[provider];
-
+  const handleSaveAnthropicKey = async () => {
     if (apiKeyInput.trim().length < 10) {
-      toast.error(`That doesn’t look like a valid ${copy.title.replace('Connect ', '')} API key.`);
-      return;
-    }
-    if (copy.needsBaseUrl && baseUrlInput.trim().length === 0) {
-      toast.error('A base URL is required.');
+      toast.error('That doesn’t look like a valid Anthropic API key.');
       return;
     }
 
     setConnecting(true);
     try {
-      const result = await integrationsService.connectWithApiKey(
-        provider,
-        apiKeyInput.trim(),
-        copy.needsBaseUrl ? baseUrlInput.trim() : undefined,
-      );
-      if (provider === 'anthropic') {
-        setAnthropic({ status: 'connected', detail: result.maskedKey });
-        toast.success('Anthropic connected — Claude will now be used for chat and Outlook mail analysis.');
-      } else {
-        setCrm({ status: 'connected', detail: `${result.baseUrl ?? ''} ${result.maskedKey ?? ''}`.trim() });
-        toast.success('CRM connected — the chat agent can now look up leads, customers, and opportunities.');
-      }
-      setKeyModalProvider(null);
+      const result = await integrationsService.connectWithApiKey('anthropic', apiKeyInput.trim());
+      setAnthropic({ status: 'connected', detail: result.maskedKey });
+      toast.success('Anthropic connected — Claude will now be used for chat and Outlook mail analysis.');
+      setAnthropicModalOpen(false);
       setApiKeyInput('');
-      setBaseUrlInput('');
     } catch (error) {
       toast.error(extractErrorMessage(error));
     } finally {
@@ -316,12 +277,6 @@ export function IntegrationsPage() {
     await integrationsService.disconnectCredential('anthropic');
     setAnthropic({ status: 'disconnected' });
     toast.success('Anthropic disconnected');
-  };
-
-  const handleDisconnectCrm = async () => {
-    await integrationsService.disconnectCredential('crm');
-    setCrm({ status: 'disconnected' });
-    toast.success('CRM disconnected');
   };
 
   // "Header: value" per line, matching how most people paste headers from
@@ -576,36 +531,7 @@ export function IntegrationsPage() {
                 Disconnect
               </Button>
             ) : (
-              <Button size="sm" leftIcon={<FiKey />} onClick={() => openKeyModal('anthropic')}>
-                Connect
-              </Button>
-            )}
-          </div>
-        </Card>
-
-        {/* CRM — generic REST CRM, stored server-side, used by the crm_lookup tool */}
-        <Card className={styles.card}>
-          <div className={styles.cardHeader}>
-            <span className={styles.iconTile}>
-              <FiDatabase />
-            </span>
-            <div className={styles.cardTitleRow}>
-              <div className={styles.cardName}>CRM</div>
-              <div className={styles.cardCategory}>Sales</div>
-            </div>
-            {badgeFor(crm)}
-          </div>
-          <p className={styles.cardDescription}>Leads, customers, and opportunities via your CRM's REST API.</p>
-          {(crm.status === 'connected' || crm.status === 'error') && crm.detail && (
-            <div className={styles.keyPreview}>{crm.detail}</div>
-          )}
-          <div className={styles.cardFooter}>
-            {crm.status === 'connected' ? (
-              <Button size="sm" variant="secondary" onClick={handleDisconnectCrm}>
-                Disconnect
-              </Button>
-            ) : (
-              <Button size="sm" leftIcon={<FiKey />} onClick={() => openKeyModal('crm')}>
+              <Button size="sm" leftIcon={<FiKey />} onClick={openAnthropicModal}>
                 Connect
               </Button>
             )}
@@ -949,36 +875,26 @@ export function IntegrationsPage() {
         </Modal>
       )}
 
-      {keyModalProvider && (
+      {anthropicModalOpen && (
         <Modal
           open
-          onClose={() => setKeyModalProvider(null)}
-          title={KEY_MODAL_COPY[keyModalProvider].title}
-          description={KEY_MODAL_COPY[keyModalProvider].description}
+          onClose={() => setAnthropicModalOpen(false)}
+          title={ANTHROPIC_KEY_MODAL_COPY.title}
+          description={ANTHROPIC_KEY_MODAL_COPY.description}
         >
-          {KEY_MODAL_COPY[keyModalProvider].needsBaseUrl && (
-            <Input
-              label="Base URL"
-              placeholder="https://api.yourcrm.com/v1"
-              value={baseUrlInput}
-              onChange={(e) => setBaseUrlInput(e.target.value)}
-              autoFocus
-              style={{ marginBottom: 'var(--space-4)' }}
-            />
-          )}
           <Input
             label="API key"
             type="password"
-            placeholder={KEY_MODAL_COPY[keyModalProvider].placeholder}
+            placeholder={ANTHROPIC_KEY_MODAL_COPY.placeholder}
             value={apiKeyInput}
             onChange={(e) => setApiKeyInput(e.target.value)}
-            autoFocus={!KEY_MODAL_COPY[keyModalProvider].needsBaseUrl}
+            autoFocus
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-5)' }}>
-            <Button variant="ghost" onClick={() => setKeyModalProvider(null)}>
+            <Button variant="ghost" onClick={() => setAnthropicModalOpen(false)}>
               Cancel
             </Button>
-            <Button loading={connecting} onClick={handleSaveKey}>
+            <Button loading={connecting} onClick={handleSaveAnthropicKey}>
               Save Key
             </Button>
           </div>

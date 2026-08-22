@@ -15,7 +15,7 @@ const ENTITY_TARGETS: Record<NotificationEntityType, { route: string; queryParam
   financeDocument: { route: ROUTES.finance, queryParam: 'openDocumentId' },
   deal: { route: ROUTES.dealPerformance },
   task: { route: ROUTES.todoEod },
-  outlookAccount: { route: ROUTES.integrations },
+  outlookAccount: { route: ROUTES.settingsIntegrations },
   dailyReport: { route: ROUTES.todoEod },
 };
 

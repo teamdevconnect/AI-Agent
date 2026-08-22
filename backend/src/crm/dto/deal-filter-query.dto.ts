@@ -22,6 +22,16 @@ function splitCsv({ value }: { value: unknown }): string[] | undefined {
 }
 
 export class DealFilterQueryDto {
+  // Free-text substring match against Deal.name only (see deal-filter.util.ts
+  // — escaped before use in a $regex). Deal has no first-class customer/
+  // account name field to search against at the DB layer (a synced deal's
+  // real customer signal, when it has one, only exists via a joined Quote's
+  // clientDetails, resolved post-query — see deal-owner-mapping.service.ts's
+  // listDealsForAssignment).
+  @IsOptional()
+  @IsString()
+  search?: string;
+
   // Matched against createdAt by default — see dateField below to match
   // expectedClosingDate instead.
   @IsOptional()

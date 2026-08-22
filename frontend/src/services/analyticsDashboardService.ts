@@ -7,6 +7,13 @@ export interface AnalyticsScopeInfo {
   userId?: string;
 }
 
+export interface AiInsightItem {
+  message: string;
+  severity: 'critical' | 'warning' | 'info';
+  actionTabId?: string;
+  actionLabel?: string;
+}
+
 export interface AnalyticsDashboardOverview {
   dateFrom: string;
   dateTo: string;
@@ -44,6 +51,7 @@ export interface AnalyticsDashboardOverview {
   revenueTrend: { period: string; achieved: number; targetAmount: number | null; achievementPct: number | null }[];
   customers: { newCount: number; existingCount: number; lostCount: number; totalConsidered: number };
   aiInsight: string;
+  insights: AiInsightItem[];
 }
 
 export const analyticsDashboardService = {

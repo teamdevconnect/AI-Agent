@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { FilterQuery, Model } from 'mongoose';
 import { Deal, DealDocument } from './schemas/deal.schema';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
@@ -65,8 +65,14 @@ export class DealsService {
     return deal;
   }
 
-  async listFiltered(organizationId: string, query: ListDealsQueryDto, storeConstraint?: string) {
-    const match = buildDealMatchStage(organizationId, query, storeConstraint);
+  // extraMatch merges additional raw Mongo conditions on top of the
+  // filter-derived match — used by deal-owner-mapping.service.ts's
+  // listDealsForAssignment to add its "needs mapping" condition (a real
+  // condition on the ownerId field, not a DealFilterQueryDto concept every
+  // other caller of this method should have to know about) without
+  // duplicating this method's own pagination logic.
+  async listFiltered(organizationId: string, query: ListDealsQueryDto, storeConstraint?: string, extraMatch?: FilterQuery<Deal>) {
+    const match = { ...buildDealMatchStage(organizationId, query, storeConstraint), ...extraMatch };
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
     const sortBy = query.sortBy ?? 'expectedClosingDate';

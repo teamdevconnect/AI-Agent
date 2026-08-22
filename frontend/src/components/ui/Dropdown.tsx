@@ -29,6 +29,10 @@ export interface DropdownProps {
   // unaffected: this defaults to false, preserving the original
   // position:absolute-within-wrapper behavior exactly.
   usePortal?: boolean;
+  // Applied to the wrapper div alongside styles.wrapper — e.g. Sidebar's
+  // account menu needs display:block instead of the default inline-flex so
+  // its full-width trigger button actually spans the sidebar.
+  className?: string;
 }
 
 interface PortalPosition {
@@ -38,7 +42,7 @@ interface PortalPosition {
   right?: number;
 }
 
-export function Dropdown({ trigger, items, align = 'left', placement = 'bottom', usePortal = false }: DropdownProps) {
+export function Dropdown({ trigger, items, align = 'left', placement = 'bottom', usePortal = false, className }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const [portalPos, setPortalPos] = useState<PortalPosition | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -120,7 +124,7 @@ export function Dropdown({ trigger, items, align = 'left', placement = 'bottom',
   );
 
   return (
-    <div className={styles.wrapper} ref={wrapperRef}>
+    <div className={clsx(styles.wrapper, className)} ref={wrapperRef}>
       <span onClick={() => setOpen((prev) => !prev)}>{trigger}</span>
       <AnimatePresence>
         {open && (usePortal ? (portalPos ? createPortal(menuContent, document.body) : null) : menuContent)}

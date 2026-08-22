@@ -149,7 +149,7 @@ export function NotificationsPage() {
               <Button
                 onClick={() => {
                   setSelected(null);
-                  navigate(ROUTES.integrations);
+                  navigate(ROUTES.settingsIntegrations);
                 }}
               >
                 View Integrations

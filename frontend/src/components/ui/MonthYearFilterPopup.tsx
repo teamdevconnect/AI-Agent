@@ -6,7 +6,7 @@ import { useClickOutside } from '@/hooks/useClickOutside';
 import type { DateRange } from './DateRangeControl';
 import styles from './MonthYearFilterPopup.module.css';
 
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
@@ -19,8 +19,11 @@ const fmt = (d: dayjs.Dayjs) => d.format('YYYY-MM-DD');
 // filtered this same way, so one control is enough. Same "start of period
 // through today, never into the future" rule as the old "This Month" preset
 // (see DateRangeControl.tsx's presetToRange) — a past month gets its full
-// range, the current month is capped at today.
-function rangeForMonth(year: number, month: number): DateRange {
+// range, the current month is capped at today. Exported — DashboardHeroHeader
+// reuses this to render its own inline month/year selects (nesting this
+// component's own trigger+popover inside another popover looked visually
+// disconnected, floating outside the outer panel's bounds).
+export function rangeForMonth(year: number, month: number): DateRange {
   const today = dayjs();
   const start = dayjs(new Date(year, month - 1, 1));
   const naturalEnd = start.endOf('month');
@@ -28,9 +31,9 @@ function rangeForMonth(year: number, month: number): DateRange {
   return { dateFrom: fmt(start), dateTo: fmt(end) };
 }
 
-const CURRENT_YEAR = dayjs().year();
-const CURRENT_MONTH = dayjs().month() + 1;
-const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
+export const CURRENT_YEAR = dayjs().year();
+export const CURRENT_MONTH = dayjs().month() + 1;
+export const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
 
 export function MonthYearFilterPopup({
   value,

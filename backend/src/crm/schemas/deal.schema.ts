@@ -44,6 +44,11 @@ export class Deal {
   // when the provider's API happens to return one alongside the raw id) —
   // shown in the mapping UI so an admin isn't asked to map a bare id string
   // blind. Never guaranteed non-null; the UI must fall back to the raw ref.
+  // ProspectConnect's deal endpoint never returns a name directly (sales_person
+  // is a bare id) — crm_mongo_sync.py populates this by cross-referencing the
+  // same CRM user id against Quote.quoteOwnerLabel (see quote.schema.ts),
+  // since the quotes endpoint DOES return a nested name for that same id
+  // space. Left unset until at least one quote from that owner has synced.
   @Prop()
   externalOwnerLabel?: string;
 

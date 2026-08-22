@@ -57,6 +57,16 @@ export class Quote {
   @Prop()
   quoteOwner?: string;
 
+  // Best-effort human-readable label for quoteOwner — ProspectConnect's
+  // quotes endpoint returns quote_owner as a nested {id, name, ...} profile
+  // object (unlike deals, which only ever expose a bare sales_person id; see
+  // deal.schema.ts's externalOwnerLabel comment). crm_mongo_sync.py captures
+  // it here and cross-references it back onto Deal.externalOwnerLabel for
+  // any deal sharing the same underlying CRM user id, since that's the only
+  // place this integration ever receives a real name for that id space.
+  @Prop()
+  quoteOwnerLabel?: string;
+
   // Set only for quotes mirrored in from an org's connected external CRM
   // (see python-agent/app/integrations/crm_mongo_sync.py's sync_quotes_for_org)
   // — the external record's own id, so re-syncing updates the same document

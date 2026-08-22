@@ -16,19 +16,22 @@ export function StatTile({
   onClick,
   icon: Icon,
   trend,
+  glass,
 }: {
   value: string | number;
   label: string;
   active?: boolean;
   onClick?: () => void;
-  // Both optional and additive — most existing call sites pass neither, so
-  // this is zero behavior/visual change for them.
+  // All optional and additive — most existing call sites pass none of
+  // these, so this is zero behavior/visual change for them.
   icon?: IconType;
   trend?: StatTileTrend;
+  glass?: boolean;
 }) {
   return (
     <Card
       interactive={!!onClick}
+      glass={glass}
       className={clsx(styles.tile, active && styles.tileActive)}
       onClick={onClick}
     >

@@ -1,21 +1,49 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { FiDollarSign, FiTrendingUp, FiZap } from 'react-icons/fi';
-import { Badge, Button, SectionCard, Skeleton, StatTile } from '@/components/ui';
+import clsx from 'clsx';
+import { FiTrendingUp, FiPackage, FiArrowUpRight, FiTarget, FiZap, FiHelpCircle } from 'react-icons/fi';
+import type { IconType } from 'react-icons';
+import { Badge, Card, Skeleton } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { formatINR as money } from '@/utils/currency';
 import { vendorProfitabilityService, type VendorCustomerCompareResult } from '@/services/vendorProfitabilityService';
-import { ManageVendorsModal } from '@/features/business-intelligence/components/ManageVendorsModal';
+import { ROUTES } from '@/constants/routes';
 import biStyles from '@/features/business-intelligence/business-intelligence.module.css';
 import styles from '../analytics-dashboard.module.css';
+import statStyles from './VendorProfitabilityStats.module.css';
+import panelStyles from './VendorProfitabilityPanel.module.css';
+
+function StatCard({ icon: Icon, label, value, note }: { icon: IconType; label: string; value: string; note: string }) {
+  return (
+    <Card className={statStyles.cell}>
+      <span className={statStyles.iconBadge}>
+        <Icon size={16} />
+      </span>
+      <div className={statStyles.label}>{label}</div>
+      <div className={statStyles.value}>{value}</div>
+      <div className={statStyles.note}>{note}</div>
+    </Card>
+  );
+}
 
 // Business Intelligence section 5 — Accounts Receivable & Vendor
 // Profitability. This tab is only rendered for owner/admin (see
 // AnalyticsDashboardPage's own tab-visibility filter) — margin data is more
 // sensitive than pipeline data. No Net Profit column — Gross Profit only.
+//
+// "Vendor cost" here is driven by a paid/partially-paid FinanceDocument
+// linked to a deal (see vendor-profitability.service.ts) — VendorQuote
+// records only ever supply the vendor's display name, they don't drive the
+// cost total. There is no frontend surface anywhere yet for manually
+// linking a finance document to a deal (that linkage is set up during
+// document processing) — so "Go to vendor quotes"/"Learn how" below point
+// at the real Finance AI page (where those paid vendor documents actually
+// live), not an invented quote-creation flow that wouldn't move these
+// numbers.
 export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
-  const [manageOpen, setManageOpen] = useState(false);
+  const navigate = useNavigate();
   const [aiResult, setAiResult] = useState<VendorCustomerCompareResult | null>(null);
   const filters = { dateFrom, dateTo };
 
@@ -32,14 +60,10 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
     onError: (err) => toast.error(extractErrorMessage(err)),
   });
 
+  const hasRows = !!data && data.rows.length > 0;
+
   return (
     <div className={styles.tabContent}>
-      <div className={styles.headerActions} style={{ justifyContent: 'flex-end' }}>
-        <Button size="sm" variant="secondary" onClick={() => setManageOpen(true)}>
-          Manage Vendors
-        </Button>
-      </div>
-
       {data && data.coveragePct !== null && data.coveragePct < 100 && (
         <div className={biStyles.coverageNote}>
           {data.coveragePct}% of deals with a vendor invoice in this range have that cost fully/partially paid.
@@ -54,31 +78,67 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
       {isLoading || !data ? (
         <Skeleton height={100} />
       ) : (
-        <div className={styles.statsGrid}>
-          <StatTile icon={FiDollarSign} value={money(data.totals.customerRevenue)} label="Customer Revenue" />
-          <StatTile icon={FiDollarSign} value={money(data.totals.vendorCost)} label="Vendor Cost (Paid)" />
-          <StatTile icon={FiTrendingUp} value={money(data.totals.grossProfit)} label="Gross Profit" />
-          <StatTile value={data.totals.grossMarginPct !== null ? `${data.totals.grossMarginPct}%` : '—'} label="Gross Margin" />
+        <div className={statStyles.grid}>
+          <StatCard
+            icon={FiTrendingUp}
+            label="Customer revenue"
+            value={money(data.totals.customerRevenue)}
+            note={data.totals.customerRevenue > 0 ? 'in this period' : 'no linked transactions'}
+          />
+          <StatCard icon={FiPackage} label="Vendor cost paid" value={money(data.totals.vendorCost)} note="in this period" />
+          <StatCard
+            icon={FiArrowUpRight}
+            label="Gross profit"
+            value={money(data.totals.grossProfit)}
+            note={hasRows ? 'in this period' : 'awaiting linked costs'}
+          />
+          <StatCard
+            icon={FiTarget}
+            label="Gross margin"
+            value={data.totals.grossMarginPct !== null ? `${data.totals.grossMarginPct}%` : '—'}
+            note={data.totals.grossMarginPct !== null ? 'of customer revenue' : 'not enough data'}
+          />
         </div>
       )}
 
-      <SectionCard
-        title="Transactions"
-        action={
-          <Button size="sm" variant="ghost" loading={aiCompare.isPending} onClick={() => aiCompare.mutate()}>
-            <FiZap size={13} /> AI Compare
-          </Button>
-        }
-      >
+      <Card className={panelStyles.card}>
+        <div className={panelStyles.header}>
+          <div className={panelStyles.headerText}>
+            <div className={panelStyles.label}>Cost Intelligence</div>
+            <div className={panelStyles.title}>Vendor profitability</div>
+            <p className={panelStyles.subtitle}>Connect vendor quotes and payments to understand margin by deal.</p>
+          </div>
+          {hasRows && (
+            <div className={panelStyles.headerActions}>
+              <button type="button" className={panelStyles.aiBtn} disabled={aiCompare.isPending} onClick={() => aiCompare.mutate()}>
+                <FiZap size={13} />
+                {aiCompare.isPending ? 'Comparing…' : 'AI Compare'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className={panelStyles.divider} />
+
         {isLoading || !data ? (
-          <Skeleton height={220} />
-        ) : data.rows.length === 0 ? (
-          <div className={styles.emptyState}>
-            No transactions with a linked, paid vendor cost in this range yet — link a Vendor Quote/Payment to a Deal to see it here.
+          <Skeleton height={140} />
+        ) : !hasRows ? (
+          <div className={panelStyles.emptyState}>
+            <span className={panelStyles.emptyIconBadge}>
+              <FiPackage size={20} />
+            </span>
+            <div className={panelStyles.emptyBody}>
+              <div className={panelStyles.emptyTitle}>Nothing to compare yet</div>
+              <p className={panelStyles.emptySubtitle}>Transactions with a linked, paid vendor cost will show up here automatically.</p>
+            </div>
+            <button type="button" className={panelStyles.learnBtn} onClick={() => navigate(ROUTES.finance)}>
+              Learn how
+              <FiHelpCircle size={14} />
+            </button>
           </div>
         ) : (
-          <div className={biStyles.tableWrapper}>
-            <table className={biStyles.table}>
+          <div className={panelStyles.tableWrap}>
+            <table className={panelStyles.table}>
               <thead>
                 <tr>
                   <th>Deal</th>
@@ -93,7 +153,7 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
               <tbody>
                 {data.rows.map((r) => (
                   <tr key={r.dealId}>
-                    <td>{r.dealName ?? r.dealId}</td>
+                    <td className={panelStyles.dealCell}>{r.dealName ?? r.dealId}</td>
                     <td>{r.vendorNames.join(', ') || '—'}</td>
                     <td>
                       {money(r.vendorCost)} {r.vendorCostCurrency !== 'INR' ? r.vendorCostCurrency : ''}
@@ -110,7 +170,26 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
             </table>
           </div>
         )}
-      </SectionCard>
+      </Card>
+
+      {!isLoading && data && !hasRows && (
+        <Card className={clsx(panelStyles.card, panelStyles.nextStepCard)}>
+          <div className={panelStyles.nextStepText}>
+            <div className={panelStyles.label}>Recommended Next Step</div>
+            <div className={panelStyles.title}>Link vendor costs to deals</div>
+            <p className={panelStyles.nextStepBody}>
+              Once a paid vendor invoice is linked to a deal, HaiVE can surface gross profit and margin changes in this view.
+            </p>
+          </div>
+          <div className={panelStyles.nextStepAction}>
+            <span className={panelStyles.stepNumber}>01</span>
+            <button type="button" className={panelStyles.nextStepLink} onClick={() => navigate(ROUTES.finance)}>
+              Go to Finance AI
+              <FiArrowUpRight size={14} />
+            </button>
+          </div>
+        </Card>
+      )}
 
       {aiResult && (
         <div className={biStyles.aiSummaryCard}>
@@ -146,8 +225,6 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
           )}
         </div>
       )}
-
-      <ManageVendorsModal open={manageOpen} onClose={() => setManageOpen(false)} />
     </div>
   );
 }

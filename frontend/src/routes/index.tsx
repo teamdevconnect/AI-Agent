@@ -40,6 +40,7 @@ const FinancePage = lazy(() => import('@/features/finance/FinancePage').then((m)
 const ReportingPage = lazy(() => import('@/features/reporting/ReportingPage').then((m) => ({ default: m.ReportingPage })));
 const TodoEodPage = lazy(() => import('@/features/todo-eod/TodoEodPage').then((m) => ({ default: m.TodoEodPage })));
 const ChatPage = lazy(() => import('@/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
+const ChatHistoryPage = lazy(() => import('@/features/chat/ChatHistoryPage').then((m) => ({ default: m.ChatHistoryPage })));
 const IntegrationsPage = lazy(() =>
   import('@/features/integrations/IntegrationsPage').then((m) => ({ default: m.IntegrationsPage })),
 );
@@ -77,6 +78,8 @@ const DealAssignmentSettings = lazy(() =>
 const RoyaltyRulesSettings = lazy(() =>
   import('@/features/settings/tabs/RoyaltyRulesSettings').then((m) => ({ default: m.RoyaltyRulesSettings })),
 );
+
+const HelpSupportPage = lazy(() => import('@/features/help/HelpSupportPage').then((m) => ({ default: m.HelpSupportPage })));
 
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 
@@ -143,8 +146,10 @@ export function AppRoutes() {
             <Route path={ROUTES.todoEod} element={<TodoEodPage />} />
             <Route path={ROUTES.chat} element={<ChatPage />} />
             <Route path={`${ROUTES.chat}/:conversationId`} element={<ChatPage />} />
+            <Route path={ROUTES.chatHistory} element={<ChatHistoryPage />} />
             <Route path={ROUTES.notifications} element={<NotificationsPage />} />
             <Route path={ROUTES.profile} element={<ProfilePage />} />
+            <Route path={ROUTES.help} element={<HelpSupportPage />} />
 
             <Route element={<RequireRole role="platform_admin" />}>
               <Route path={ROUTES.platformAdminBilling} element={<PlatformAdminBillingPage />} />
@@ -152,6 +157,12 @@ export function AppRoutes() {
 
             <Route element={<BlockRole role="agent_user" />}>
               <Route path={ROUTES.emailIntelligence} element={<EmailIntelligencePage />} />
+              {/* Legacy/OAuth-callback path — backend/src/outlook/outlook.controller.ts
+                  redirects here directly after the Microsoft OAuth round trip
+                  (`/integrations?outlook=<status>`), and IntegrationsPage's own
+                  useEffect reads that query param. Kept rendering the same page
+                  so that flow keeps working; Settings → Integrations below is
+                  the discoverable entry point now. */}
               <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
               <Route path={ROUTES.billing} element={<BillingPage />} />
               <Route path={ROUTES.settings} element={<SettingsLayout />}>
@@ -160,6 +171,7 @@ export function AppRoutes() {
                 <Route path="notifications" element={<NotificationSettings />} />
                 <Route path="security" element={<SecuritySettings />} />
                 <Route path="agent-roles" element={<AgentRolesSettings />} />
+                <Route path="integrations" element={<IntegrationsPage />} />
                 <Route element={<RequireRole role="admin" />}>
                   <Route path="users" element={<UsersSettings />} />
                   <Route path="sales-targets" element={<SalesTargetsSettings />} />

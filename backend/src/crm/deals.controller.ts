@@ -12,6 +12,7 @@ import { AssignDealDto } from './dto/assign-deal.dto';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
 import { ListDealsQueryDto } from './dto/list-deals-query.dto';
+import { ListAssignmentDealsQueryDto } from './dto/list-assignment-deals-query.dto';
 import { ExportDealsQueryDto } from './dto/export-deals-query.dto';
 import { UpsertDealOwnerMappingDto } from './dto/upsert-deal-owner-mapping.dto';
 import { DealsService } from './deals.service';
@@ -147,6 +148,19 @@ export class DealsController {
   async deleteOwnerMapping(@CurrentUser() user: JwtPayload, @Param('mappingId') mappingId: string) {
     await this.dealOwnerMappingService.deleteMapping(user.organizationId, mappingId);
     return { status: 'ok' };
+  }
+
+  // Settings → Deal Assignment's own richer list (owner name, ownership
+  // status, best-effort customer/account label per deal) — see
+  // deal-owner-mapping.service.ts's listDealsForAssignment for why this is
+  // deliberately not just GET /crm/deals/query with extra fields bolted on.
+  // Static segment, must stay registered before ':id' below (see this
+  // controller's own route-ordering comment).
+  @Get('assignment')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  listForAssignment(@CurrentUser() user: JwtPayload, @Query() query: ListAssignmentDealsQueryDto) {
+    return this.dealOwnerMappingService.listDealsForAssignment(user.organizationId, query, query.needsMapping ?? false);
   }
 
   @Get(':id')

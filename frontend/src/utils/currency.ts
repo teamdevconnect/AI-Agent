@@ -3,7 +3,7 @@
 // the correct lakh/crore digit grouping, not just the ₹ symbol.
 export function formatINR(value: number | null): string {
   if (value === null) return '—';
-  return `₹${value.toLocaleString('en-IN')}`;
+  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
 
 // Haive Credits billing (packages/payments) is NOT hardcoded to INR (see

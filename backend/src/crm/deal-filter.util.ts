@@ -19,6 +19,14 @@ export function buildDealMatchStage(
   const includeDateRange = options?.includeDateRange ?? true;
   const match: FilterQuery<Deal> = { organizationId };
 
+  // Escaped before use (same precedent as royalty/invoice-filter.util.ts's
+  // customerName search) — a raw, unescaped user string straight into
+  // $regex would let stray regex metacharacters throw or scan pathologically.
+  if (filters.search?.trim()) {
+    const escaped = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    match.name = new RegExp(escaped, 'i');
+  }
+
   if (storeConstraint) {
     match.storeId = storeConstraint;
   } else if (filters.storeId?.length) {

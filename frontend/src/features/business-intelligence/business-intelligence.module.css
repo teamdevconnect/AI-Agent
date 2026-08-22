@@ -116,6 +116,63 @@
   overflow-x: auto;
 }
 
+/* Table → stacked cards below 640px (this app's one other established
+   breakpoint, alongside AppLayout's 900px sidebar/drawer split — see
+   Sidebar.module.css/BillingPage.module.css for the other precedents). Every
+   <td> across every table using .table needs a matching data-label
+   attribute (the column header text) for this to render correctly — the
+   ::before below reads it. Every consumer of .table/.tableWrapper in this
+   app was updated to add these when this rule landed. */
+@media (max-width: 640px) {
+  .tableWrapper {
+    overflow-x: visible;
+  }
+
+  .table thead {
+    display: none;
+  }
+
+  .table,
+  .table tbody,
+  .table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+  }
+
+  .table tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    border-bottom: none;
+    white-space: normal;
+    text-align: right;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    text-align: left;
+  }
+}
+
 .clickableCell {
   cursor: pointer;
   font-weight: 600;
@@ -137,14 +194,19 @@
   border: 1px dashed var(--color-border);
 }
 
+/* Same glass recipe as Card.module.css's .glass — this panel is a plain div
+   (a genuine button-triggered LLM result, not a SectionCard), so it can't
+   just pass a `glass` prop; the values are kept in sync by hand instead. */
 .aiSummaryCard {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-bg-surface) 55%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 55%, transparent);
   border-left: 3px solid var(--brand-accent-primary);
   box-shadow: var(--shadow-glow);
 }

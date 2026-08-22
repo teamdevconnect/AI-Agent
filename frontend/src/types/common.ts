@@ -1,5 +1,3 @@
-export type Theme = 'dark' | 'light';
-
 export interface SelectOption<T = string> {
   label: string;
   value: T;

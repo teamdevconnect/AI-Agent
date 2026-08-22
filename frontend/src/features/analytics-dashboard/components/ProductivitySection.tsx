@@ -1,22 +1,17 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { SectionCard, Skeleton } from '@/components/ui';
+import clsx from 'clsx';
+import { Card, Skeleton, Avatar, Badge } from '@/components/ui';
 import { formatINR as money } from '@/utils/currency';
 import { employeeProductivityService } from '@/services/employeeProductivityService';
-import biStyles from '@/features/business-intelligence/business-intelligence.module.css';
-import styles from '../analytics-dashboard.module.css';
+import styles from './ProductivitySection.module.css';
 
-function bucketCell(assigned: number, completed: number, pending: number, overdue: number) {
-  return (
-    <span>
-      {completed}/{assigned} done
-      {overdue > 0 && <span style={{ color: 'var(--color-danger)' }}> · {overdue} overdue</span>}
-      {pending > 0 && <span className={biStyles.fadeCaption}> · {pending} pending</span>}
-    </span>
-  );
+function completionPct(completed: number, assigned: number): number {
+  return assigned > 0 ? Math.round((completed / assigned) * 100) : 0;
 }
 
-// Business Intelligence section 3 — Employee Work Completion & Productivity,
-// merged into the Dashboard's own "Team Performance" companion tab.
+// Business Intelligence section 3 — Employee Work Completion & Productivity.
+// Same real endpoint/data as before (employeeProductivityService.getOverview,
+// unchanged), just restyled from a flat table into per-member cards.
 export function ProductivitySection({ dateFrom, dateTo, storeId }: { dateFrom: string; dateTo: string; storeId?: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['dash-productivity', dateFrom, dateTo, storeId],
@@ -26,46 +21,73 @@ export function ProductivitySection({ dateFrom, dateTo, storeId }: { dateFrom: s
   });
 
   return (
-    <div className={styles.tabContent}>
+    <Card className={styles.card}>
+      <div className={styles.header}>
+        <div className={styles.title}>Workload by member</div>
+        <p className={styles.subtitle}>Emails, quotes and deals — assigned, completed, pending, overdue.</p>
+      </div>
+
       {data && data.quoteCoveragePct !== null && data.quoteCoveragePct < 100 && (
-        <div className={biStyles.coverageNote}>
+        <div className={styles.coverageNote}>
           Quote ownership coverage: {data.quoteCoveragePct}% of quotes in this range have a real assigned employee.
         </div>
       )}
-      <SectionCard title="Emails, Quotes & Deals — Assigned / Completed / Pending / Overdue">
-        {isLoading || !data ? (
-          <Skeleton height={220} />
-        ) : data.rows.length === 0 ? (
-          <div className={styles.emptyState}>No eligible employees in scope for this period.</div>
-        ) : (
-          <div className={biStyles.tableWrapper}>
-            <table className={biStyles.table}>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Emails</th>
-                  <th>Quotes</th>
-                  <th>Deals</th>
-                  <th>Won Value</th>
-                  <th>Overall Completion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.map((r) => (
-                  <tr key={r.userId}>
-                    <td>{r.userName}</td>
-                    <td>{bucketCell(r.emails.assigned, r.emails.completed, r.emails.pending, r.emails.overdue)}</td>
-                    <td>{bucketCell(r.quotes.assigned, r.quotes.completed, r.quotes.pending, r.quotes.overdue)}</td>
-                    <td>{bucketCell(r.deals.assigned, r.deals.completed, r.deals.pending, r.deals.overdue)}</td>
-                    <td>{money(r.deals.wonValue)}</td>
-                    <td>{r.overallCompletionPct !== null ? `${r.overallCompletionPct}%` : '—'}</td>
-                  </tr>
+
+      {isLoading || !data ? (
+        <Skeleton height={140} />
+      ) : data.rows.length === 0 ? (
+        <div className={styles.empty}>No eligible employees in scope for this period.</div>
+      ) : (
+        <div className={styles.list}>
+          {data.rows.map((r) => (
+            <div key={r.userId} className={styles.row}>
+              <div className={styles.rowTop}>
+                <div className={styles.memberInfo}>
+                  <Avatar name={r.userName} size="md" />
+                  <div>
+                    <div className={styles.memberName}>{r.userName}</div>
+                    <div className={styles.memberMeta}>
+                      {r.deals.completed}/{r.deals.assigned} deals done
+                      {r.deals.overdue > 0 && ` · ${r.deals.overdue} overdue`}
+                      {r.deals.pending > 0 && ` · ${r.deals.pending} pending`}
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.rowStats}>
+                  <span className={styles.wonValue}>{money(r.deals.wonValue)}</span>
+                  {r.deals.overdue > 0 && <Badge variant="danger">{r.deals.overdue} overdue</Badge>}
+                </div>
+              </div>
+
+              <div className={styles.bucketGrid}>
+                {(
+                  [
+                    ['Deals', r.deals],
+                    ['Emails', r.emails],
+                    ['Quotes', r.quotes],
+                  ] as const
+                ).map(([label, bucket]) => (
+                  <div key={label} className={styles.bucket}>
+                    <div className={styles.bucketHeader}>
+                      <span className={styles.bucketLabel}>{label}</span>
+                      <span className={styles.bucketValue}>
+                        {bucket.completed}/{bucket.assigned} done
+                      </span>
+                    </div>
+                    <div className={styles.bucketTrack}>
+                      <div className={styles.bucketFill} style={{ width: `${completionPct(bucket.completed, bucket.assigned)}%` }} />
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </SectionCard>
-    </div>
+              </div>
+
+              <div className={clsx(styles.overall, r.overallCompletionPct === null && styles.overallMuted)}>
+                Overall completion {r.overallCompletionPct !== null ? `${r.overallCompletionPct}%` : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }

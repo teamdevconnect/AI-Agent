@@ -47,62 +47,14 @@
   color: var(--brand-accent-primary);
 }
 
-.headerRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.pageTitle {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-
-.pageSubtitle {
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
 .headerActions {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.aiInsightCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--brand-accent-primary);
-  box-shadow: var(--shadow-glow);
-}
-
-.aiInsightLabel {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--brand-accent-primary);
-}
-
-.aiInsightText {
-  font-size: var(--text-sm);
-  color: var(--color-text-primary);
-}
-
 .tabBar {
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-1);
 }
 
 .tabContent {
@@ -113,8 +65,15 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: 1.6fr 1fr;
   gap: var(--space-3);
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .twoColumn {
@@ -182,13 +141,4 @@
   max-height: 60vh;
   overflow-y: auto;
   padding: var(--space-4);
-}
-
-.storeSelect {
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-surface);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
 }
