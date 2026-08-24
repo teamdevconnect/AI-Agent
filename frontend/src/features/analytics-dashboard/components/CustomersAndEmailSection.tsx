@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FiAlertTriangle, FiMail, FiSend, FiUserPlus } from 'react-icons/fi';
 import type { IconType } from 'react-icons';
-import { Card, Skeleton } from '@/components/ui';
+import { Card, Skeleton, InfoPopover } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { hasRole } from '@/utils/roles';
 import { customerActivityService } from '@/services/customerActivityService';
@@ -34,19 +35,24 @@ function StatCard({
   value,
   note,
   onClick,
+  info,
 }: {
   icon: IconType;
   label: string;
   value: number;
   note: string;
   onClick?: () => void;
+  info?: ReactNode;
 }) {
   return (
     <Card className={statStyles.cell} interactive={!!onClick} onClick={onClick}>
       <span className={statStyles.iconBadge}>
         <Icon size={16} />
       </span>
-      <div className={statStyles.label}>{label}</div>
+      <div className={statStyles.label}>
+        {label}
+        {info && <InfoPopover title={label}>{info}</InfoPopover>}
+      </div>
       <div className={statStyles.value}>{value.toLocaleString()}</div>
       <div className={statStyles.note}>{note}</div>
     </Card>
@@ -147,16 +153,30 @@ export function CustomersAndEmailSection({ dateFrom, dateTo, storeId }: { dateFr
             value={customers.newCount}
             note="in this period"
             onClick={() => setActiveCategory('new')}
+            info={<p>Businesses whose earliest deal or quote was created in this period. Click to see the list.</p>}
           />
-          <StatCard icon={FiSend} label="Replied emails" value={summary.sentCount} note={`of ${summary.sentCount + summary.missedCount} sent`} />
+          <StatCard
+            icon={FiSend}
+            label="Replied emails"
+            value={summary.sentCount}
+            note={`of ${summary.sentCount + summary.missedCount} sent`}
+            info={<p>Relevant inbound emails in this period that received a reply, out of the total relevant emails received (replied + missed).</p>}
+          />
           <StatCard
             icon={FiAlertTriangle}
             label="Missed emails"
             value={summary.missedCount}
             note="24h+ overdue"
             onClick={() => setActiveCategory('missed')}
+            info={<p>Relevant emails still awaiting a reply more than 24 hours after they were received. Click to see the list and open any email.</p>}
           />
-          <StatCard icon={FiMail} label="New enquiries" value={summary.newEnquiryCount} note="awaiting triage" />
+          <StatCard
+            icon={FiMail}
+            label="New enquiries"
+            value={summary.newEnquiryCount}
+            note="awaiting triage"
+            info={<p>Emails the AI classified with intent "new enquiry" in this period — first-contact interest from a prospect, not yet actioned.</p>}
+          />
         </div>
       )}
 

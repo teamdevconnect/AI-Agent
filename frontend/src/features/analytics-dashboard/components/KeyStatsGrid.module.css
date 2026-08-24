@@ -11,6 +11,9 @@
 }
 
 .label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-xs);
   font-weight: 700;
   text-transform: uppercase;

@@ -1,4 +1,4 @@
-import { Card } from '@/components/ui';
+import { Card, InfoPopover } from '@/components/ui';
 import styles from './InboxIntentCard.module.css';
 
 export interface InboxIntentCardProps {
@@ -11,7 +11,13 @@ export function InboxIntentCard({ byIntent }: InboxIntentCardProps) {
   return (
     <Card className={styles.card}>
       <div className={styles.label}>Inbox Intelligence</div>
-      <div className={styles.title}>By intent</div>
+      <div className={styles.title}>
+        By intent
+        <InfoPopover title="By intent">
+          <p>Relevant inbound emails in this period, grouped by the intent the AI classified each one with (e.g. new enquiry, quotation request, complaint, price negotiation).</p>
+          <p>Only intents a salesperson would act on are shown — internal mail, spam, and other noise are filtered out.</p>
+        </InfoPopover>
+      </div>
 
       {byIntent.length === 0 ? (
         <div className={styles.empty}>No relevant emails in this period.</div>
