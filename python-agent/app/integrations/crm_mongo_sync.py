@@ -254,7 +254,7 @@ def sync_all_orgs() -> dict:
     """Only orgs with an external CRM connected need this — native-only orgs
     already have live data in crm_deals with nothing to mirror."""
     db = get_db()
-    org_ids = db.integration_credentials.distinct("organizationId", {"provider": "crm"})
+    org_ids = db.integration_credentials.distinct("organizationId", {"provider": {"$in": ["crm", "prospectconnect"]}})
 
     summary: dict[str, int | str] = {}
     for organization_id in org_ids:
@@ -535,7 +535,7 @@ def sync_all_quote_orgs() -> dict:
     orgs need mirroring; a failure syncing one org's quotes must never abort
     another org's."""
     db = get_db()
-    org_ids = db.integration_credentials.distinct("organizationId", {"provider": "crm"})
+    org_ids = db.integration_credentials.distinct("organizationId", {"provider": {"$in": ["crm", "prospectconnect"]}})
 
     summary: dict[str, int | str] = {}
     for organization_id in org_ids:

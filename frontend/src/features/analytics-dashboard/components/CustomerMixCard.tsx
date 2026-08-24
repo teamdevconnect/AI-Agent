@@ -7,6 +7,10 @@ export interface CustomerMixCardProps {
   existingCount: number;
   lostCount: number;
   totalConsidered: number;
+  // Additive — clicking a segment (donut slice or legend row) opens a popup
+  // listing the businesses behind that number. Omitted keeps the card
+  // purely visual, as every existing call site expects.
+  onSegmentClick?: (key: 'new' | 'existing' | 'lost') => void;
 }
 
 const SEGMENTS = [
@@ -15,7 +19,7 @@ const SEGMENTS = [
   { key: 'lost', label: 'Lost', color: 'color-mix(in srgb, var(--color-text-muted) 60%, white)' },
 ] as const;
 
-export function CustomerMixCard({ newCount, existingCount, lostCount, totalConsidered }: CustomerMixCardProps) {
+export function CustomerMixCard({ newCount, existingCount, lostCount, totalConsidered, onSegmentClick }: CustomerMixCardProps) {
   const values: Record<string, number> = { new: newCount, existing: existingCount, lost: lostCount };
   const data = SEGMENTS.map((s) => ({ ...s, value: values[s.key] }));
 
@@ -38,7 +42,13 @@ export function CustomerMixCard({ newCount, existingCount, lostCount, totalConsi
               <PieChart>
                 <Pie data={data} dataKey="value" nameKey="label" innerRadius={62} outerRadius={92} paddingAngle={2} startAngle={90} endAngle={-270}>
                   {data.map((s) => (
-                    <Cell key={s.key} fill={s.color} stroke="none" />
+                    <Cell
+                      key={s.key}
+                      fill={s.color}
+                      stroke="none"
+                      cursor={onSegmentClick ? 'pointer' : undefined}
+                      onClick={onSegmentClick ? () => onSegmentClick(s.key) : undefined}
+                    />
                   ))}
                 </Pie>
                 <Tooltip
@@ -59,13 +69,26 @@ export function CustomerMixCard({ newCount, existingCount, lostCount, totalConsi
           </div>
 
           <div className={styles.legend}>
-            {data.map((s) => (
-              <div key={s.key} className={styles.legendItem}>
-                <i className={styles.dot} style={{ background: s.color }} />
-                <span className={styles.legendValue}>{s.value.toLocaleString()}</span>
-                <span className={styles.legendLabel}>{s.label}</span>
-              </div>
-            ))}
+            {data.map((s) =>
+              onSegmentClick ? (
+                <button
+                  key={s.key}
+                  type="button"
+                  className={`${styles.legendItem} ${styles.legendItemClickable}`}
+                  onClick={() => onSegmentClick(s.key)}
+                >
+                  <i className={styles.dot} style={{ background: s.color }} />
+                  <span className={styles.legendValue}>{s.value.toLocaleString()}</span>
+                  <span className={styles.legendLabel}>{s.label}</span>
+                </button>
+              ) : (
+                <div key={s.key} className={styles.legendItem}>
+                  <i className={styles.dot} style={{ background: s.color }} />
+                  <span className={styles.legendValue}>{s.value.toLocaleString()}</span>
+                  <span className={styles.legendLabel}>{s.label}</span>
+                </div>
+              ),
+            )}
           </div>
         </div>
       )}
