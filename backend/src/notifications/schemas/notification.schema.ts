@@ -21,7 +21,6 @@ export const NOTIFICATION_ENTITY_TYPES = [
   'deal',
   'task',
   'outlookAccount',
-  'workflowExecution',
   'dailyReport',
 ] as const;
 export type NotificationEntityType = (typeof NOTIFICATION_ENTITY_TYPES)[number];

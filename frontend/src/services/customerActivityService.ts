@@ -148,7 +148,17 @@ export const customerActivityService = {
   async getBreakdownStats(
     from: string,
     to: string,
-  ): Promise<{ newCount: number; existingCount: number; lostCount: number; totalConsidered: number }> {
+  ): Promise<{
+    newCount: number;
+    existingCount: number;
+    lostCount: number;
+    totalConsidered: number;
+    // Backs the Customer Mix drill-down popup — which businesses landed in
+    // each bucket, keyed the same way relationship-view lookups expect.
+    newItems: { key: string; businessName: string }[];
+    existingItems: { key: string; businessName: string }[];
+    lostItems: { key: string; businessName: string }[];
+  }> {
     const { data } = await axiosClient.get('/crm/customer-activity/breakdown-stats', { params: { from, to } });
     return data;
   },

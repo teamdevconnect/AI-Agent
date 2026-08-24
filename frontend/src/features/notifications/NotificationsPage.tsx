@@ -33,9 +33,11 @@ const FILTERS: { id: 'all' | NotificationKind; label: string }[] = [
   { id: 'error', label: 'Errors' },
 ];
 
-// "workflow:crm_follow_up_check" -> "crm follow up check" — same convention
-// as the badge label, just for the free-text source string this app hasn't
-// otherwise formatted anywhere yet.
+// "workflow:crm_follow_up_check" -> "crm follow up check" — python-agent's
+// own workflow engine (todo_agent/eod_agent/crm_follow_up_check/
+// summarize_document, see python-agent/app/workflows/definitions.py) still
+// creates real notifications with this source shape; unrelated to the
+// removed NestJS Workflow Automation settings page.
 function formatSource(source: string): string {
   const name = source.startsWith('workflow:') ? source.slice('workflow:'.length) : source;
   return name.replace(/[_-]+/g, ' ');
@@ -69,7 +71,6 @@ export function NotificationsPage() {
   };
 
   const selectedMeta = selected ? KIND_META[selected.kind] : null;
-  const isWorkflowSourced = selected?.source?.startsWith('workflow:');
 
   return (
     <div className={styles.page}>
@@ -148,20 +149,10 @@ export function NotificationsPage() {
               <Button
                 onClick={() => {
                   setSelected(null);
-                  navigate(ROUTES.integrations);
+                  navigate(ROUTES.settingsIntegrations);
                 }}
               >
                 View Integrations
-              </Button>
-            )}
-            {isWorkflowSourced && (
-              <Button
-                onClick={() => {
-                  setSelected(null);
-                  navigate(ROUTES.settingsWorkflows);
-                }}
-              >
-                View Workflows
               </Button>
             )}
           </div>

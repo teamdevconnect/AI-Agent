@@ -5,6 +5,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CustomerActivityService } from '../crm/customer-activity.service';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { EmailIntelligenceSyncService } from './email-intelligence-sync.service';
 import { EmailIntelligenceService } from './email-intelligence.service';
 
 // No @Roles()/RolesGuard anywhere in this controller — every authenticated
@@ -17,7 +18,44 @@ export class EmailIntelligenceController {
   constructor(
     private emailIntelligenceService: EmailIntelligenceService,
     private customerActivityService: CustomerActivityService,
+    private emailIntelligenceSyncService: EmailIntelligenceSyncService,
   ) {}
+
+  // Phase 21 — cheap, LLM-free count of how many messages-since-lookback are
+  // new, so the frontend can show a real confirm-before-spend operation
+  // count. Static segment, must be declared before the ':id' GET route
+  // below.
+  @Get('sync/preview')
+  previewSync(@CurrentUser() user: JwtPayload) {
+    return this.emailIntelligenceSyncService.previewSync(user.sub);
+  }
+
+  // The only place this module ever spends an LLM call outside of an
+  // explicit approve/reject/regenerate/send action — deliberately
+  // button-triggered only (see EmailIntelligenceSyncService's own comment
+  // for why the old always-on 3-minute cron was removed). Static segment,
+  // must be declared before the ':id' GET route below.
+  @Post('sync')
+  sync(@CurrentUser() user: JwtPayload) {
+    return this.emailIntelligenceSyncService.syncMyMailbox(user.sub);
+  }
+
+  // Phase 21 — recent sync-job history for the caller's own mailbox. Static
+  // segment, must be declared before the ':id' GET route below.
+  @Get('sync/jobs')
+  syncJobs(@CurrentUser() user: JwtPayload) {
+    return this.emailIntelligenceSyncService.listRecentSyncJobs(user.sub);
+  }
+
+  // Phase 21 follow-up — org-scoped (not per-mailbox: provider availability
+  // is a shared fact, not something tied to one user's connection), derived
+  // from real recent call telemetry so a credit/outage issue is visible
+  // before the user clicks Sync, not just discovered as a failure after.
+  // Static segment, must be declared before the ':id' GET route below.
+  @Get('provider-health')
+  providerHealth(@CurrentUser() user: JwtPayload) {
+    return this.emailIntelligenceSyncService.getProviderHealth(user.organizationId);
+  }
 
   @Get()
   list(
@@ -83,7 +121,10 @@ export class EmailIntelligenceController {
   private resolveActivityRange(from: string, to: string): [Date, Date] {
     if (!from || !to) throw new BadRequestException('from and to are required');
     const start = new Date(from);
-    const end = new Date(new Date(to).setHours(23, 59, 59, 999));
+    // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the server
+    // process's local timezone, which drifts hours off this boundary on any
+    // server not running in UTC.
+    const end = new Date(`${to}T23:59:59.999Z`);
     return [start, end];
   }
 

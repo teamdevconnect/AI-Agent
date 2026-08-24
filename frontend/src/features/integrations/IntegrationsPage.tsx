@@ -1,14 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { FiCheckCircle, FiDatabase, FiKey, FiLink, FiPlus, FiSettings, FiShield, FiSliders, FiTrash2 } from 'react-icons/fi';
+import {
+  FiCheckCircle,
+  FiKey,
+  FiLink,
+  FiPlus,
+  FiSettings,
+  FiShield,
+  FiSliders,
+  FiTrash2,
+  FiUploadCloud,
+} from 'react-icons/fi';
 import { Card, Badge, Button, Input, Modal } from '@/components/ui';
 import {
   integrationsService,
+  resolveManifestAuthType,
   type AuthCredentials,
   type AuthType,
+  type ConnectorManifest,
   type CustomIntegration,
   type GmailAccount,
+  type ImportConnectorManifestSecrets,
   type OutlookAccount,
   type OutlookOrgAccount,
   type ProviderRule,
@@ -26,21 +39,14 @@ interface CardState {
   detail?: string;
 }
 
-type KeyProvider = 'anthropic' | 'crm';
-
-const KEY_MODAL_COPY: Record<KeyProvider, { title: string; description: string; placeholder: string; needsBaseUrl: boolean }> = {
-  anthropic: {
-    title: 'Connect Anthropic',
-    description: "Paste your Anthropic API key. It's stored server-side and used by the chat agent — never exposed to the browser.",
-    placeholder: 'sk-ant-api03-...',
-    needsBaseUrl: false,
-  },
-  crm: {
-    title: 'Connect CRM',
-    description: 'Enter your CRM API base URL and key. Stored server-side and used by the chat agent to look up leads, customers, and opportunities.',
-    placeholder: 'Your CRM API key',
-    needsBaseUrl: true,
-  },
+// Only 'anthropic' uses this simple api-key-only flow now — CRM connections
+// go through the "Custom Integrations" section below (Add Integration /
+// Import Connector Config), which supports every auth style ProspectConnect
+// or any other CRM's REST API actually needs, not just a bare API key.
+const ANTHROPIC_KEY_MODAL_COPY = {
+  title: 'Connect Anthropic',
+  description: "Paste your Anthropic API key. It's stored server-side and used by the chat agent — never exposed to the browser.",
+  placeholder: 'sk-ant-api03-...',
 };
 
 // OAuth-based platforms (Salesforce, Slack, HubSpot, ...) aren't offered
@@ -61,7 +67,6 @@ const AUTH_TYPES: AuthType[] = ['apiKeyBaseUrl', 'apiKey', 'bearer', 'basic', 'c
 export function IntegrationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [anthropic, setAnthropic] = useState<CardState>({ status: 'loading' });
-  const [crm, setCrm] = useState<CardState>({ status: 'loading' });
   const [outlookAccounts, setOutlookAccounts] = useState<OutlookAccount[]>([]);
   const [outlookOrgAccounts, setOutlookOrgAccounts] = useState<OutlookOrgAccount[]>([]);
   const [outlookStatus, setOutlookStatus] = useState<CardStatus>('loading');
@@ -73,9 +78,8 @@ export function IntegrationsPage() {
   const [gmailStatus, setGmailStatus] = useState<CardStatus>('loading');
   const [gmailError, setGmailError] = useState<string | undefined>();
   const [gmailModalOpen, setGmailModalOpen] = useState(false);
-  const [keyModalProvider, setKeyModalProvider] = useState<KeyProvider | null>(null);
+  const [anthropicModalOpen, setAnthropicModalOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [baseUrlInput, setBaseUrlInput] = useState('');
   const [connecting, setConnecting] = useState(false);
 
   // Generic "connect any CRM/SaaS" flow — see integrationsService.ts's
@@ -97,6 +101,18 @@ export function IntegrationsPage() {
   // API Integration Engine — which custom integration's resource/endpoint
   // builder modal is open (see ResourceEndpointBuilder.tsx), null when closed.
   const [builderProvider, setBuilderProvider] = useState<string | null>(null);
+
+  // Bulk connector import — pastes a whole manifest JSON (base URL + an auth
+  // template + modules[].actions[]) and creates the credential plus every
+  // resource/endpoint from it in one shot (see integrationsService.ts's
+  // importConnectorManifest), instead of building one integration by hand
+  // via the Add Integration modal above.
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importManifestText, setImportManifestText] = useState('');
+  const [importManifest, setImportManifest] = useState<ConnectorManifest | null>(null);
+  const [importManifestError, setImportManifestError] = useState<string | null>(null);
+  const [importSecrets, setImportSecrets] = useState<ImportConnectorManifestSecrets>({});
+  const [importing, setImporting] = useState(false);
 
   const loadOutlookAccounts = () => {
     integrationsService
@@ -125,14 +141,23 @@ export function IntegrationsPage() {
     integrationsService
       .getOutlookTenantAuthorizationStatus()
       .then(setTenantAuthStatus)
-      .catch(() => setTenantAuthStatus(null));
+      .catch((error) => {
+        // Falls back to null (same as "not yet checked") so the rest of the
+        // page still renders, but a genuine load failure now surfaces
+        // instead of looking identical to "nothing to show yet".
+        setTenantAuthStatus(null);
+        toast.error(`Couldn't load tenant authorization status: ${extractErrorMessage(error)}`);
+      });
   };
 
   const loadCustomIntegrations = () => {
     integrationsService
       .listCustomIntegrations()
       .then(setCustomIntegrations)
-      .catch(() => setCustomIntegrations([]));
+      .catch((error) => {
+        setCustomIntegrations([]);
+        toast.error(`Couldn't load custom integrations: ${extractErrorMessage(error)}`);
+      });
   };
 
   const loadGmailAccounts = () => {
@@ -153,16 +178,6 @@ export function IntegrationsPage() {
       .getCredentialStatus('anthropic')
       .then((s) => setAnthropic({ status: s.connected ? 'connected' : 'disconnected', detail: s.maskedKey }))
       .catch((error) => setAnthropic({ status: 'error', detail: extractErrorMessage(error) }));
-
-    integrationsService
-      .getCredentialStatus('crm')
-      .then((s) =>
-        setCrm({
-          status: s.connected ? 'connected' : 'disconnected',
-          detail: s.connected ? `${s.baseUrl ?? ''} ${s.maskedKey ?? ''}`.trim() : undefined,
-        }),
-      )
-      .catch((error) => setCrm({ status: 'error', detail: extractErrorMessage(error) }));
 
     loadOutlookAccounts();
     loadOutlookOrgAccounts();
@@ -233,43 +248,24 @@ export function IntegrationsPage() {
     return () => clearTimeout(timeout);
   }, [customProvider, customModalOpen]);
 
-  const openKeyModal = (provider: KeyProvider) => {
+  const openAnthropicModal = () => {
     setApiKeyInput('');
-    setBaseUrlInput('');
-    setKeyModalProvider(provider);
+    setAnthropicModalOpen(true);
   };
 
-  const handleSaveKey = async () => {
-    const provider = keyModalProvider;
-    if (!provider) return;
-    const copy = KEY_MODAL_COPY[provider];
-
+  const handleSaveAnthropicKey = async () => {
     if (apiKeyInput.trim().length < 10) {
-      toast.error(`That doesn’t look like a valid ${copy.title.replace('Connect ', '')} API key.`);
-      return;
-    }
-    if (copy.needsBaseUrl && baseUrlInput.trim().length === 0) {
-      toast.error('A base URL is required.');
+      toast.error('That doesn’t look like a valid Anthropic API key.');
       return;
     }
 
     setConnecting(true);
     try {
-      const result = await integrationsService.connectWithApiKey(
-        provider,
-        apiKeyInput.trim(),
-        copy.needsBaseUrl ? baseUrlInput.trim() : undefined,
-      );
-      if (provider === 'anthropic') {
-        setAnthropic({ status: 'connected', detail: result.maskedKey });
-        toast.success('Anthropic connected — Claude will now be used for chat and Outlook mail analysis.');
-      } else {
-        setCrm({ status: 'connected', detail: `${result.baseUrl ?? ''} ${result.maskedKey ?? ''}`.trim() });
-        toast.success('CRM connected — the chat agent can now look up leads, customers, and opportunities.');
-      }
-      setKeyModalProvider(null);
+      const result = await integrationsService.connectWithApiKey('anthropic', apiKeyInput.trim());
+      setAnthropic({ status: 'connected', detail: result.maskedKey });
+      toast.success('Anthropic connected — Claude will now be used for chat and Outlook mail analysis.');
+      setAnthropicModalOpen(false);
       setApiKeyInput('');
-      setBaseUrlInput('');
     } catch (error) {
       toast.error(extractErrorMessage(error));
     } finally {
@@ -281,12 +277,6 @@ export function IntegrationsPage() {
     await integrationsService.disconnectCredential('anthropic');
     setAnthropic({ status: 'disconnected' });
     toast.success('Anthropic disconnected');
-  };
-
-  const handleDisconnectCrm = async () => {
-    await integrationsService.disconnectCredential('crm');
-    setCrm({ status: 'disconnected' });
-    toast.success('CRM disconnected');
   };
 
   // "Header: value" per line, matching how most people paste headers from
@@ -362,6 +352,65 @@ export function IntegrationsPage() {
       loadCustomIntegrations();
     } catch (error) {
       toast.error(extractErrorMessage(error));
+    }
+  };
+
+  const openImportModal = () => {
+    setImportManifestText('');
+    setImportManifest(null);
+    setImportManifestError(null);
+    setImportSecrets({});
+    setImportModalOpen(true);
+  };
+
+  // Live-parses the pasted JSON as the user types/pastes it, so the preview,
+  // detected auth type, and matching credential input all appear before
+  // Import is clicked — no network round trip needed, this is pure client-
+  // side JSON.parse + shape checking.
+  const handleManifestTextChange = (text: string) => {
+    setImportManifestText(text);
+    setImportSecrets({});
+    if (!text.trim()) {
+      setImportManifest(null);
+      setImportManifestError(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(text) as ConnectorManifest;
+      if (!parsed.connector_id || !parsed.base_url || !Array.isArray(parsed.modules)) {
+        setImportManifest(null);
+        setImportManifestError('Missing connector_id, base_url, or modules — check the manifest shape.');
+        return;
+      }
+      setImportManifest(parsed);
+      setImportManifestError(null);
+    } catch {
+      setImportManifest(null);
+      setImportManifestError('Not valid JSON yet.');
+    }
+  };
+
+  const importActionCount = (manifest: ConnectorManifest) =>
+    manifest.modules.reduce((sum, m) => sum + m.actions.length, 0);
+
+  const handleImportConnector = async () => {
+    if (!importManifest) return;
+    setImporting(true);
+    try {
+      const result = await integrationsService.importConnectorManifest(importManifest, importSecrets);
+      toast.success(
+        `${importManifest.display_name || result.provider} imported — ${result.resourcesCreated} module(s), ${result.endpointsCreated} action(s)`,
+      );
+      setImportModalOpen(false);
+      loadCustomIntegrations();
+      // Land the user straight inside their newly-imported actions so they
+      // can spot-check/Test any of them right away, rather than just a
+      // success toast.
+      setBuilderProvider(result.provider);
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -482,36 +531,7 @@ export function IntegrationsPage() {
                 Disconnect
               </Button>
             ) : (
-              <Button size="sm" leftIcon={<FiKey />} onClick={() => openKeyModal('anthropic')}>
-                Connect
-              </Button>
-            )}
-          </div>
-        </Card>
-
-        {/* CRM — generic REST CRM, stored server-side, used by the crm_lookup tool */}
-        <Card className={styles.card}>
-          <div className={styles.cardHeader}>
-            <span className={styles.iconTile}>
-              <FiDatabase />
-            </span>
-            <div className={styles.cardTitleRow}>
-              <div className={styles.cardName}>CRM</div>
-              <div className={styles.cardCategory}>Sales</div>
-            </div>
-            {badgeFor(crm)}
-          </div>
-          <p className={styles.cardDescription}>Leads, customers, and opportunities via your CRM's REST API.</p>
-          {(crm.status === 'connected' || crm.status === 'error') && crm.detail && (
-            <div className={styles.keyPreview}>{crm.detail}</div>
-          )}
-          <div className={styles.cardFooter}>
-            {crm.status === 'connected' ? (
-              <Button size="sm" variant="secondary" onClick={handleDisconnectCrm}>
-                Disconnect
-              </Button>
-            ) : (
-              <Button size="sm" leftIcon={<FiKey />} onClick={() => openKeyModal('crm')}>
+              <Button size="sm" leftIcon={<FiKey />} onClick={openAnthropicModal}>
                 Connect
               </Button>
             )}
@@ -588,9 +608,14 @@ export function IntegrationsPage() {
       <Card className={styles.customSection}>
         <div className={styles.customHeader}>
           <span className={styles.sectionTitle}>Custom Integrations</span>
-          <Button size="sm" leftIcon={<FiLink />} onClick={openCustomModal}>
-            Add Integration
-          </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button size="sm" variant="secondary" leftIcon={<FiUploadCloud />} onClick={openImportModal}>
+              Import Connector Config
+            </Button>
+            <Button size="sm" leftIcon={<FiLink />} onClick={openCustomModal}>
+              Add Integration
+            </Button>
+          </div>
         </div>
         {customIntegrations.length === 0 ? (
           <p className={styles.cardDescription}>
@@ -771,36 +796,105 @@ export function IntegrationsPage() {
         </Modal>
       )}
 
-      {keyModalProvider && (
+      {importModalOpen && (
         <Modal
           open
-          onClose={() => setKeyModalProvider(null)}
-          title={KEY_MODAL_COPY[keyModalProvider].title}
-          description={KEY_MODAL_COPY[keyModalProvider].description}
+          onClose={() => setImportModalOpen(false)}
+          title="Import Connector Config"
+          description="Paste a connector manifest — base URL, auth template, and modules/actions — to create the integration and every configured action in one shot, instead of building it by hand."
         >
-          {KEY_MODAL_COPY[keyModalProvider].needsBaseUrl && (
-            <Input
-              label="Base URL"
-              placeholder="https://api.yourcrm.com/v1"
-              value={baseUrlInput}
-              onChange={(e) => setBaseUrlInput(e.target.value)}
-              autoFocus
-              style={{ marginBottom: 'var(--space-4)' }}
-            />
-          )}
+          <div className={styles.accountList}>
+            <div>
+              <span className={styles.fieldLabel}>Connector manifest (JSON)</span>
+              <textarea
+                className={styles.select}
+                style={{ height: 200, paddingTop: 'var(--space-2)', paddingBottom: 'var(--space-2)', fontFamily: 'monospace', fontSize: '12px' }}
+                placeholder='{"connector_id": "my_crm", "base_url": "https://api...", "auth": {...}, "modules": [...]}'
+                value={importManifestText}
+                onChange={(e) => handleManifestTextChange(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            {importManifestError && <div className={styles.testResultFail}>{importManifestError}</div>}
+
+            {importManifest && (
+              <>
+                <div className={styles.testResultOk}>
+                  {importManifest.display_name || importManifest.connector_id} — {importManifest.base_url} ·{' '}
+                  {importManifest.modules.length} module(s), {importActionCount(importManifest)} action(s)
+                </div>
+
+                {(() => {
+                  const detectedAuthType = resolveManifestAuthType(importManifest.auth);
+                  return (
+                    <>
+                      <div className={styles.testResultFail} style={{ background: 'transparent' }}>
+                        Detected auth type: {AUTH_TYPE_LABELS[detectedAuthType]}
+                        {importManifest.auth.note ? ` — ${importManifest.auth.note}` : ''}
+                      </div>
+
+                      {detectedAuthType === 'basic' ? (
+                        <>
+                          <Input
+                            label="Username"
+                            value={importSecrets.username ?? ''}
+                            onChange={(e) => setImportSecrets((s) => ({ ...s, username: e.target.value }))}
+                          />
+                          <Input
+                            label="Password"
+                            type="password"
+                            value={importSecrets.password ?? ''}
+                            onChange={(e) => setImportSecrets((s) => ({ ...s, password: e.target.value }))}
+                          />
+                        </>
+                      ) : (
+                        <Input
+                          label="API key / token"
+                          type="password"
+                          placeholder="Your CRM's API key"
+                          value={importSecrets.apiKeyValue ?? ''}
+                          onChange={(e) => setImportSecrets((s) => ({ ...s, apiKeyValue: e.target.value }))}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
+              </>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+              <Button variant="ghost" onClick={() => setImportModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button loading={importing} disabled={!importManifest} onClick={handleImportConnector}>
+                Import
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {anthropicModalOpen && (
+        <Modal
+          open
+          onClose={() => setAnthropicModalOpen(false)}
+          title={ANTHROPIC_KEY_MODAL_COPY.title}
+          description={ANTHROPIC_KEY_MODAL_COPY.description}
+        >
           <Input
             label="API key"
             type="password"
-            placeholder={KEY_MODAL_COPY[keyModalProvider].placeholder}
+            placeholder={ANTHROPIC_KEY_MODAL_COPY.placeholder}
             value={apiKeyInput}
             onChange={(e) => setApiKeyInput(e.target.value)}
-            autoFocus={!KEY_MODAL_COPY[keyModalProvider].needsBaseUrl}
+            autoFocus
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', marginTop: 'var(--space-5)' }}>
-            <Button variant="ghost" onClick={() => setKeyModalProvider(null)}>
+            <Button variant="ghost" onClick={() => setAnthropicModalOpen(false)}>
               Cancel
             </Button>
-            <Button loading={connecting} onClick={handleSaveKey}>
+            <Button loading={connecting} onClick={handleSaveAnthropicKey}>
               Save Key
             </Button>
           </div>

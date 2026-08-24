@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import { passwordResetOtp, verifyEmailOtp, welcomeEmail } from './templates';
+import { notificationEmail, passwordResetOtp, twoFactorEnabledEmail, verifyEmailOtp, welcomeEmail } from './templates';
 
 // Fire-and-forget by design, same fail-open shape as RedisCacheService
 // (see common/redis/redis-cache.service.ts): an unreachable/misconfigured
@@ -64,6 +64,20 @@ export class MailService {
 
   sendPasswordResetOtp(to: string, code: string): Promise<void> {
     const { subject, html } = passwordResetOtp(code);
+    return this.send(to, subject, html);
+  }
+
+  // Real delivery for the "Email" notification channel — see
+  // NotificationsService.dispatchExternalChannels, the single place this is
+  // called from (checked against the target user's own preference and their
+  // org's notificationPolicy ceiling first).
+  sendNotificationEmail(to: string, title: string, description: string): Promise<void> {
+    const { subject, html } = notificationEmail(title, description);
+    return this.send(to, subject, html);
+  }
+
+  sendTwoFactorEnabledEmail(to: string): Promise<void> {
+    const { subject, html } = twoFactorEnabledEmail();
     return this.send(to, subject, html);
   }
 }

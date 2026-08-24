@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { UPLOAD_FILE_INTERCEPTOR_OPTIONS } from '../common/upload-limits';
 import { FinanceExportQueryDto } from './dto/finance-export-query.dto';
 import { FinanceListQueryDto } from './dto/finance-list-query.dto';
 import { UpdateFinanceDocumentDto } from './dto/update-finance-document.dto';
@@ -46,7 +47,7 @@ export class FinanceDocumentsController {
   ) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_FILE_INTERCEPTOR_OPTIONS))
   upload(@CurrentUser() user: JwtPayload, @UploadedFile() file: Express.Multer.File) {
     return this.financeDocumentsService.upload(user.organizationId, user.sub, file);
   }

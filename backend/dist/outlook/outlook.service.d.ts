@@ -46,6 +46,7 @@ export declare class OutlookService {
     handleCallback(code: string, userId: string, organizationId?: string): Promise<{
         email: string;
     }>;
+    private decodeAccessTokenClaims;
     getStatus(userId: string): Promise<{
         connected: boolean;
         email?: string;

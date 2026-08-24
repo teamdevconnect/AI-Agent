@@ -6,6 +6,7 @@ export declare class UpdateAgentRoleDto {
     name?: string;
     department?: string;
     description?: string;
+    goals?: string[];
     responsibilities?: string[];
     dailyTasks?: string[];
     weeklyTasks?: string[];

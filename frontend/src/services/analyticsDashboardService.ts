@@ -7,8 +7,16 @@ export interface AnalyticsScopeInfo {
   userId?: string;
 }
 
+export interface AiInsightItem {
+  message: string;
+  severity: 'critical' | 'warning' | 'info';
+  actionTabId?: string;
+  actionLabel?: string;
+}
+
 export interface AnalyticsDashboardOverview {
-  period: string;
+  dateFrom: string;
+  dateTo: string;
   scope: AnalyticsScopeInfo;
   emailActivity: {
     totalRelevantCount: number;
@@ -43,12 +51,13 @@ export interface AnalyticsDashboardOverview {
   revenueTrend: { period: string; achieved: number; targetAmount: number | null; achievementPct: number | null }[];
   customers: { newCount: number; existingCount: number; lostCount: number; totalConsidered: number };
   aiInsight: string;
+  insights: AiInsightItem[];
 }
 
 export const analyticsDashboardService = {
-  async getOverview(period: string, storeId?: string): Promise<AnalyticsDashboardOverview> {
+  async getOverview(dateFrom: string, dateTo: string, storeId?: string): Promise<AnalyticsDashboardOverview> {
     const { data } = await axiosClient.get<AnalyticsDashboardOverview>('/analytics-dashboard/overview', {
-      params: { period, ...(storeId ? { storeId } : {}) },
+      params: { dateFrom, dateTo, ...(storeId ? { storeId } : {}) },
     });
     return data;
   },

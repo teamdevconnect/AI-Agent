@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -12,9 +12,12 @@ import { AssignDealDto } from './dto/assign-deal.dto';
 import { CreateDealDto } from './dto/create-deal.dto';
 import { UpdateDealDto } from './dto/update-deal.dto';
 import { ListDealsQueryDto } from './dto/list-deals-query.dto';
+import { ListAssignmentDealsQueryDto } from './dto/list-assignment-deals-query.dto';
 import { ExportDealsQueryDto } from './dto/export-deals-query.dto';
+import { UpsertDealOwnerMappingDto } from './dto/upsert-deal-owner-mapping.dto';
 import { DealsService } from './deals.service';
 import { DealsExportService } from './deals-export.service';
+import { DealOwnerMappingService } from './deal-owner-mapping.service';
 
 const EXPORT_ROW_CAP = 5000;
 
@@ -23,15 +26,17 @@ const EXPORT_ROW_CAP = 5000;
 // request/response contract for the AI tool-calling layer and must keep
 // that shape untouched. This controller is free to use normal DTOs/roles.
 //
-// Route order matters: 'query'/'export' are static segments and must be
-// registered before ':id', or a request to /crm/deals/query would match
-// :id with id="query" instead (same rule tasks.controller.ts documents).
+// Route order matters: 'query'/'export'/'owner-mappings' are static
+// segments and must be registered before ':id', or a request to
+// /crm/deals/owner-mappings would match :id with id="owner-mappings"
+// instead (same rule tasks.controller.ts documents).
 @UseGuards(JwtAuthGuard)
 @Controller('crm/deals')
 export class DealsController {
   constructor(
     private dealsService: DealsService,
     private dealsExportService: DealsExportService,
+    private dealOwnerMappingService: DealOwnerMappingService,
     private usersService: UsersService,
     private organizationsService: OrganizationsService,
   ) {}
@@ -109,6 +114,53 @@ export class DealsController {
     doc.pipe(res);
     this.dealsExportService.writePdf(doc, rows, query);
     doc.end();
+  }
+
+  // Configurable, provider-agnostic deal-owner field mapping (see
+  // deal.schema.ts's own comment on externalOwnerRef) — an integration-level
+  // concern, restricted tighter than plain per-deal assignment above
+  // (owner/admin only, matching this same tier's Settings → Deal Assignment
+  // tab gate).
+  @Get('owner-mappings')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  listOwnerMappings(@CurrentUser() user: JwtPayload) {
+    return this.dealOwnerMappingService.listExternalOwners(user.organizationId);
+  }
+
+  @Post('owner-mappings')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  upsertOwnerMapping(@CurrentUser() user: JwtPayload, @Body() dto: UpsertDealOwnerMappingDto) {
+    return this.dealOwnerMappingService.upsertMapping(
+      user.organizationId,
+      dto.provider,
+      dto.externalOwnerRef,
+      dto.externalOwnerLabel,
+      dto.ownerId,
+      user.sub,
+    );
+  }
+
+  @Delete('owner-mappings/:mappingId')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  async deleteOwnerMapping(@CurrentUser() user: JwtPayload, @Param('mappingId') mappingId: string) {
+    await this.dealOwnerMappingService.deleteMapping(user.organizationId, mappingId);
+    return { status: 'ok' };
+  }
+
+  // Settings → Deal Assignment's own richer list (owner name, ownership
+  // status, best-effort customer/account label per deal) — see
+  // deal-owner-mapping.service.ts's listDealsForAssignment for why this is
+  // deliberately not just GET /crm/deals/query with extra fields bolted on.
+  // Static segment, must stay registered before ':id' below (see this
+  // controller's own route-ordering comment).
+  @Get('assignment')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin')
+  listForAssignment(@CurrentUser() user: JwtPayload, @Query() query: ListAssignmentDealsQueryDto) {
+    return this.dealOwnerMappingService.listDealsForAssignment(user.organizationId, query, query.needsMapping ?? false);
   }
 
   @Get(':id')

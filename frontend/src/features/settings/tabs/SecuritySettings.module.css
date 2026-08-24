@@ -46,3 +46,15 @@
   font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
+
+.warning {
+  font-size: var(--text-sm);
+  color: var(--color-warning, #d97706);
+}
+
+.emptyState {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}

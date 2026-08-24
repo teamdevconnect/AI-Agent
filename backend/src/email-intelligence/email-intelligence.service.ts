@@ -33,7 +33,7 @@ const FOLLOW_UP_DEFAULT_DAYS = 3;
 // defaults to excluded from "business mail" analytics until deliberately
 // added here. Phase 19's email activity widget uses this to analyze real
 // business mail only, never every message a connected mailbox receives.
-const RELEVANT_EMAIL_INTENTS = [
+export const RELEVANT_EMAIL_INTENTS = [
   'vendor', 'existing_customer', 'new_enquiry', 'quotation_request', 'price_negotiation',
   'complaint', 'technical_support', 'escalation', 'meeting_request',
 ];
@@ -51,6 +51,32 @@ const RELEVANT_INTENT_LABELS: Record<string, string> = {
 };
 
 type RelationshipView = Awaited<ReturnType<CustomerActivityService['getRelationshipView']>>;
+
+// The narrow subset computeRiskScore actually reads — widened (Business
+// Intelligence's AI Follow-Up Summary, section 6) so the same heuristic can
+// score every business in an org at once from raw Deal/Quote documents
+// (getHighRiskCustomers below), not just one at a time from a full
+// RelationshipView (getCustomerTimeline's own shape still satisfies this
+// structurally, zero behavior change there).
+interface RiskScoreInput {
+  deals: { dealStatus: string; createdAt?: Date | string | null }[];
+  quotes: { createdAt?: Date | string | null }[];
+}
+
+// Same roster-eligibility set as deal-performance-dashboard.service.ts's own
+// (private, unexported) SALES_ROLES — Employee Productivity (Business
+// Intelligence section 3) composes email analytics with deals/quotes
+// per-employee, so all three must agree on who counts as "an employee".
+const EMAIL_ROSTER_ROLES = new Set(['manager', 'consultant']);
+
+export interface EmployeeEmailAnalyticsRow {
+  userId: string;
+  userName: string;
+  count: number;
+  byPriority?: { value: string; count: number }[];
+  byUrgency?: { value: string; count: number }[];
+  ageBuckets?: { bucket: string; count: number }[];
+}
 
 const DRAFTABLE_INTENT_LABELS: Record<string, string> = {
   new_enquiry: 'New enquiry',
@@ -87,6 +113,20 @@ export class EmailIntelligenceService {
 
   async itemExists(userId: string, externalMessageId: string): Promise<boolean> {
     return !!(await this.itemModel.exists({ userId, externalMessageId }));
+  }
+
+  // Phase 21 follow-up — a read-only dry-run of the same two deterministic
+  // gates analyzeAndCreate/regenerate apply below (Phase 17 Layer 1 self-send
+  // + Phase 18 Layer 0 pre-filter), used by EmailIntelligenceSyncService's
+  // previewSync to count how many "new" items would actually spend an LLM
+  // call before anything runs. Deliberately NOT a refactor of those two
+  // already-verified methods to share this — the persisted-field shape
+  // differs per gate and isn't needed here, only the boolean answer, so
+  // mirroring these two simple conditions is a smaller, safer footprint than
+  // restructuring production-critical branching logic.
+  wouldSkipLlmAnalysis(email: { from: string; subject: string; preview: string }, mailboxEmail: string): boolean {
+    if (email.from.trim().toLowerCase() === mailboxEmail.trim().toLowerCase()) return true;
+    return !!classifyEmailDeterministically({ from: email.from, subject: email.subject, preview: email.preview });
   }
 
   // Correlates the email, calls python-agent for classification+draft,
@@ -514,6 +554,225 @@ export class EmailIntelligenceService {
     };
   }
 
+  // ---- Business Intelligence: Sent/Missed Email Analytics (sections 1+2) ----
+  //
+  // Lives here, not duplicated in BusinessIntelligenceModule, since that
+  // module can freely import EmailIntelligenceModule (one-directional, zero
+  // cycle risk — see business-intelligence.module.ts's own comment).
+
+  async getEmailAnalyticsByEmployee(
+    organizationId: string,
+    kind: 'sent' | 'missed',
+    start: Date,
+    end: Date,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<{ rows: EmployeeEmailAnalyticsRow[]; totalCount: number }> {
+    const roster = await this.resolveEmailRoster(organizationId, filters);
+    const rosterIds = roster.map((u) => u._id.toString());
+    const match = { ...this.buildActivityKindMatch(organizationId, kind, start, end, {}), userId: { $in: rosterIds } };
+
+    if (kind === 'sent') {
+      const rows = await this.itemModel
+        .aggregate<{ _id: string; count: number }>([{ $match: match }, { $group: { _id: '$userId', count: { $sum: 1 } } }])
+        .exec();
+      const byUser = new Map(rows.map((r) => [r._id, r.count]));
+      const result = roster
+        .map((u) => ({ userId: u._id.toString(), userName: u.name, count: byUser.get(u._id.toString()) ?? 0 }))
+        .sort((a, b) => b.count - a.count);
+      return { rows: result, totalCount: result.reduce((sum, r) => sum + r.count, 0) };
+    }
+
+    // kind === 'missed' also needs a priority/urgency/age-bucket breakdown —
+    // pulled and reduced in application code rather than a deeper aggregation
+    // pipeline, same "small enough dataset, fetch and reduce" choice
+    // listActivity's own 200-record cap already makes; missed mail per
+    // employee is bounded by real overdue volume, not org-wide message count.
+    const items = await this.itemModel.find(match).select('userId priority urgency receivedAt').exec();
+    const byUser = new Map<string, EmailIntelligenceItemDocument[]>();
+    for (const item of items) {
+      const uid = item.userId;
+      if (!byUser.has(uid)) byUser.set(uid, []);
+      byUser.get(uid)!.push(item);
+    }
+
+    const now = Date.now();
+    const result = roster
+      .map((u) => {
+        const uid = u._id.toString();
+        const userItems = byUser.get(uid) ?? [];
+        return {
+          userId: uid,
+          userName: u.name,
+          count: userItems.length,
+          byPriority: this.tallyBy(userItems, 'priority'),
+          byUrgency: this.tallyBy(userItems, 'urgency'),
+          ageBuckets: this.tallyAgeBuckets(userItems, now),
+        };
+      })
+      .sort((a, b) => b.count - a.count);
+
+    return { rows: result, totalCount: result.reduce((sum, r) => sum + r.count, 0) };
+  }
+
+  private tallyBy(items: EmailIntelligenceItemDocument[], field: 'priority' | 'urgency'): { value: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const v = (item[field] as string) ?? 'unknown';
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
+  }
+
+  // Buckets are always 24h+ (kind:'missed' only ever matches items already
+  // past the 24h missedCutoff — see buildActivityKindMatch), so there is no
+  // 0-24h bucket here by design, not omission.
+  private tallyAgeBuckets(items: EmailIntelligenceItemDocument[], now: number): { bucket: string; count: number }[] {
+    const buckets = { '24-48h': 0, '48-72h': 0, '72h+': 0 };
+    for (const item of items) {
+      const ageHours = (now - item.receivedAt.getTime()) / 3_600_000;
+      if (ageHours < 48) buckets['24-48h'] += 1;
+      else if (ageHours < 72) buckets['48-72h'] += 1;
+      else buckets['72h+'] += 1;
+    }
+    return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
+  }
+
+  // Same roster-eligibility rule as deal-performance-dashboard.service.ts's
+  // own SALES_ROLES (manager+consultant) — Employee Productivity (section 3)
+  // composes this exact per-employee breakdown, so the two must never use a
+  // different roster definition. storeConstraint/employeeConstraint (server-
+  // forced, from scopeBiFilters) always fully REPLACE the client-supplied
+  // filter for that dimension rather than intersecting with it — same
+  // "constraint replaces, never merely narrows" idiom as deals.controller.ts's
+  // canOverride pattern, so a scoped caller can never broaden past their own
+  // constraint by also supplying a filter value.
+  private async resolveEmailRoster(
+    organizationId: string,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<UserDocument[]> {
+    const users = await this.usersService.findAll(organizationId);
+    return users.filter(
+      (u) =>
+        u.roles.some((r) => EMAIL_ROSTER_ROLES.has(r)) &&
+        (!filters.storeId?.length || (u.storeId && filters.storeId.includes(u.storeId))) &&
+        (!filters.employeeId?.length || filters.employeeId.includes(u._id.toString())),
+    );
+  }
+
+  // Generalizes resolveMonthlyUserFilter to array-valued employeeId/storeId
+  // filters (the BI global filter bar's multi-select) — left resolveMonthlyUserFilter
+  // itself untouched since AnalyticsDashboardService's already-verified
+  // getActivityStats/listActivity callers still pass single-value constraints.
+  private async resolveEmployeeUserFilter(
+    organizationId: string,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<Record<string, unknown>> {
+    if (filters.employeeId?.length) return { userId: { $in: filters.employeeId } };
+    if (filters.storeId?.length) {
+      const users = await this.usersService.findAll(organizationId);
+      const ids = users.filter((u) => u.storeId && filters.storeId!.includes(u.storeId)).map((u) => u._id.toString());
+      return { userId: { $in: ids } };
+    }
+    return {};
+  }
+
+  // Paginated superset of listActivity's 200-cap drill-down — the BI Sent/
+  // Missed Email pages' full record browser (section 1/2's "full list,
+  // filters"). kind:'all' means every relevant received email in range
+  // (buildActivityKindMatch's own 'intent' branch with no specific intent).
+  async listEmailsFiltered(
+    organizationId: string,
+    kind: 'sent' | 'missed' | 'all',
+    start: Date,
+    end: Date,
+    filters: { employeeId?: string[]; storeId?: string[]; intent?: string },
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: EmailIntelligenceItemDocument[]; total: number; page: number; pageSize: number }> {
+    const userFilter = await this.resolveEmployeeUserFilter(organizationId, filters);
+    const internalKind = kind === 'all' ? 'intent' : kind;
+    const match = this.buildActivityKindMatch(organizationId, internalKind, start, end, userFilter, filters.intent);
+    const sortField = kind === 'sent' ? 'sentAt' : 'receivedAt';
+
+    const [items, total] = await Promise.all([
+      this.itemModel
+        .find(match)
+        .sort({ [sortField]: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .exec(),
+      this.itemModel.countDocuments(match).exec(),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  // Business Intelligence's Employee Productivity (section 3) — Assigned
+  // (received in range, regardless of status), Completed (sentAt in range —
+  // same as kind:'sent'), Pending (still-open, within the 24h SLA window),
+  // Overdue (kind:'missed' — already past the 24h SLA window). Pending and
+  // Overdue are computed against the SAME missedCutoff buildActivityKindMatch
+  // uses, so they can never disagree with the Sent/Missed Email pages'
+  // own numbers for the same employee/range.
+  async getEmailProductivityStats(
+    organizationId: string,
+    start: Date,
+    end: Date,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<{ userId: string; userName: string; assigned: number; completed: number; pending: number; overdue: number }[]> {
+    const roster = await this.resolveEmailRoster(organizationId, filters);
+    const rosterIds = roster.map((u) => u._id.toString());
+    const rosterFilter = { userId: { $in: rosterIds } };
+    const missedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const assignedMatch = {
+      organizationId,
+      ...rosterFilter,
+      intent: { $in: RELEVANT_EMAIL_INTENTS },
+      receivedAt: { $gte: start, $lt: end },
+    };
+    const pendingMatch = { ...assignedMatch, status: 'pending', receivedAt: { $gte: start, $lt: end, $gt: missedCutoff } };
+    const completedMatch = this.buildActivityKindMatch(organizationId, 'sent', start, end, rosterFilter);
+    const overdueMatch = this.buildActivityKindMatch(organizationId, 'missed', start, end, rosterFilter);
+
+    const groupByUser = (match: Record<string, unknown>) =>
+      this.itemModel
+        .aggregate<{ _id: string; count: number }>([{ $match: match }, { $group: { _id: '$userId', count: { $sum: 1 } } }])
+        .exec();
+
+    const [assignedRows, completedRows, pendingRows, overdueRows] = await Promise.all([
+      groupByUser(assignedMatch),
+      groupByUser(completedMatch),
+      groupByUser(pendingMatch),
+      groupByUser(overdueMatch),
+    ]);
+
+    const toMap = (rows: { _id: string; count: number }[]) => new Map(rows.map((r) => [r._id, r.count]));
+    const assigned = toMap(assignedRows);
+    const completed = toMap(completedRows);
+    const pending = toMap(pendingRows);
+    const overdue = toMap(overdueRows);
+
+    return roster.map((u) => {
+      const uid = u._id.toString();
+      return {
+        userId: uid,
+        userName: u.name,
+        assigned: assigned.get(uid) ?? 0,
+        completed: completed.get(uid) ?? 0,
+        pending: pending.get(uid) ?? 0,
+        overdue: overdue.get(uid) ?? 0,
+      };
+    });
+  }
+
+  // Org-scoped (not user-scoped like getOne) — the BI detail modal is opened
+  // by a manager/owner/admin viewing any employee's email, not just their own.
+  async getOneForOrg(organizationId: string, id: string): Promise<EmailIntelligenceItemDocument> {
+    const item = await this.itemModel.findOne({ _id: id, organizationId }).exec();
+    if (!item) throw new NotFoundException('Email intelligence item not found');
+    return item;
+  }
+
   list(userId: string, status?: 'pending' | 'approved' | 'rejected', from?: string, to?: string) {
     const query: Record<string, unknown> = { userId, ...(status ? { status } : {}) };
     // receivedAt is a real Date field (unlike TimelineEvent.occurredAt's
@@ -523,7 +782,10 @@ export class EmailIntelligenceService {
     if (from || to) {
       query.receivedAt = {
         ...(from ? { $gte: new Date(from) } : {}),
-        ...(to ? { $lte: new Date(new Date(to).setHours(23, 59, 59, 999)) } : {}),
+        // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the
+        // server process's local timezone, which drifts hours off this
+        // boundary on any server not running in UTC.
+        ...(to ? { $lte: new Date(`${to}T23:59:59.999Z`) } : {}),
       };
     }
     return this.itemModel.find(query).sort({ receivedAt: -1 }).limit(100).exec();
@@ -683,11 +945,33 @@ export class EmailIntelligenceService {
       contactEmail: item.fromAddress,
       requestedItems: requestedItems ?? undefined,
       createdBy: item.userId,
+      // The real Enquiry->Quote Conversion traceability link (Business
+      // Intelligence section 4) — see CreateDraftQuoteInput's own comment.
+      sourceEmailIntelligenceItemId: item._id.toString(),
     });
   }
 
   listFollowUps(userId: string) {
     return this.followUpModel.find({ userId, status: 'pending' }).sort({ dueDate: 1 }).exec();
+  }
+
+  // Business Intelligence's AI Follow-Up Summary (section 6) — org-wide
+  // counterpart to listFollowUps' self-scoped list. Always shown directly on
+  // the BI page regardless of AI generation state (see the plan's own note)
+  // — AI adds prioritization/narrative on top, never replaces this real list.
+  async listFollowUpsForOrg(
+    organizationId: string,
+    filters: { employeeId?: string[]; storeId?: string[] } = {},
+  ): Promise<EmailFollowUpReminderDocument[]> {
+    const match: Record<string, unknown> = { organizationId, status: 'pending' };
+    if (filters.employeeId?.length) {
+      match.userId = { $in: filters.employeeId };
+    } else if (filters.storeId?.length) {
+      const users = await this.usersService.findAll(organizationId);
+      const ids = users.filter((u) => u.storeId && filters.storeId!.includes(u.storeId)).map((u) => u._id.toString());
+      match.userId = { $in: ids };
+    }
+    return this.followUpModel.find(match).sort({ dueDate: 1 }).exec();
   }
 
   async markFollowUpDone(userId: string, id: string): Promise<EmailFollowUpReminderDocument> {
@@ -840,7 +1124,7 @@ export class EmailIntelligenceService {
   // at-a-glance number, matching business-dashboard.service.ts's
   // businessHealthScore convention exactly, not a model.
   private computeRiskScore(
-    relationship: RelationshipView,
+    relationship: RiskScoreInput,
     emailHistory: EmailIntelligenceItemDocument[],
   ): { score: number; label: string } {
     let score = 100;
@@ -875,6 +1159,49 @@ export class EmailIntelligenceService {
     score = Math.max(0, Math.min(100, score));
     const label = score >= 80 ? 'Healthy' : score >= 50 ? 'Needs Attention' : 'At Risk';
     return { score, label };
+  }
+
+  // Business Intelligence's AI Follow-Up Summary (section 6) — "high-priority
+  // customers" reuses this same deterministic MVP heuristic (never a second
+  // definition of risk), scored across every business in the org at once
+  // rather than one at a time like getCustomerTimeline. gatherCorrelationContext
+  // already builds every BusinessGroup's real deals/quotes (org-wide, the
+  // same computation the scheduled poller uses); email history is fetched
+  // once here and grouped by resolvedGroupKey rather than N+1 queried.
+  async getHighRiskCustomers(
+    organizationId: string,
+    limit = 10,
+  ): Promise<{ businessKey: string; businessName: string; riskScore: number; riskLabel: string }[]> {
+    const context = await this.customerActivityService.gatherCorrelationContext(organizationId);
+    const emails = await this.itemModel
+      .find({ organizationId, resolvedGroupKey: { $exists: true, $ne: null } })
+      .select('resolvedGroupKey receivedAt sentiment intent status')
+      .sort({ receivedAt: -1 })
+      .limit(5000)
+      .exec();
+
+    const emailsByGroup = new Map<string, EmailIntelligenceItemDocument[]>();
+    for (const e of emails) {
+      if (!e.resolvedGroupKey) continue;
+      if (!emailsByGroup.has(e.resolvedGroupKey)) emailsByGroup.set(e.resolvedGroupKey, []);
+      emailsByGroup.get(e.resolvedGroupKey)!.push(e);
+    }
+
+    const results: { businessKey: string; businessName: string; riskScore: number; riskLabel: string }[] = [];
+    for (const [key, group] of context.groups) {
+      const emailHistory = emailsByGroup.get(key) ?? [];
+      // A group with no real activity at all contributes no signal — never
+      // scored, never shown, rather than reporting a fabricated "At Risk"
+      // for a business with nothing on record.
+      if (group.deals.length === 0 && group.quotes.length === 0 && emailHistory.length === 0) continue;
+      const { score, label } = this.computeRiskScore({ deals: group.deals, quotes: group.quotes }, emailHistory);
+      results.push({ businessKey: key, businessName: group.businessName, riskScore: score, riskLabel: label });
+    }
+
+    return results
+      .filter((r) => r.riskLabel !== 'Healthy')
+      .sort((a, b) => a.riskScore - b.riskScore)
+      .slice(0, limit);
   }
 
   // Merges deals/quotes (created dates) and email history into one

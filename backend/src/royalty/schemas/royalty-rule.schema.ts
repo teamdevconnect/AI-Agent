@@ -46,14 +46,13 @@ export class RoyaltyRule {
   @Prop({ type: [RoyaltySlidingTierSchema], default: [] })
   slidingTiers: RoyaltySlidingTier[];
 
+  // Flat INR amounts, not percentages — configured directly, not derived
+  // from revenue (unlike royaltyPercentage/capValue above).
   @Prop()
-  adminFeePercentage?: number;
+  marketingFeeAmount?: number;
 
   @Prop()
-  techFeePercentage?: number;
-
-  @Prop()
-  marketingFeePercentage?: number;
+  otherFeeAmount?: number;
 
   // ASSUMPTION, flagged for the org's admin to confirm/override on the
   // settings page: sales tax and pass-through shipping are conventionally

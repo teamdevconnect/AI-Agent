@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { JwtPayload } from '../auth/jwt-payload.interface';
-import { currentPeriod, periodToDateRange } from '../common/period.util';
 import { CustomerActivityService } from '../crm/customer-activity.service';
 import { DealPerformanceDashboardService } from '../crm/deal-performance-dashboard.service';
 import { Deal, DealDocument } from '../crm/schemas/deal.schema';
@@ -11,7 +10,7 @@ import { SalesAnalyticsService } from '../crm/sales-analytics.service';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { EmailIntelligenceService } from '../email-intelligence/email-intelligence.service';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { AnalyticsDashboardOverview, ScopeInfo } from './analytics-dashboard.types';
+import { AiInsightItem, AnalyticsDashboardOverview, ScopeInfo } from './analytics-dashboard.types';
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
@@ -36,33 +35,58 @@ export class AnalyticsDashboardService {
     private organizationsService: OrganizationsService,
   ) {}
 
-  async getOverview(caller: JwtPayload, scope: ScopeInfo, period: string = currentPeriod()): Promise<AnalyticsDashboardOverview> {
+  // Phase 24 — the frontend's date filter is now always a single whole
+  // calendar month (MonthYearFilterPopup), so every widget can honestly
+  // follow dateFrom's own month instead of being locked to "now" — the old
+  // "can't fabricate a pro-rated number for an arbitrary range" constraint
+  // no longer applies once the range itself is always exactly one month.
+  // achievement (widget 3) uses dateFrom's month directly; revenueTrend
+  // (widget 8) uses it as the trailing-6-month window's end instead of "now".
+  async getOverview(caller: JwtPayload, scope: ScopeInfo, dateFrom: string, dateTo: string): Promise<AnalyticsDashboardOverview> {
     const organizationId = caller.organizationId;
     const scopeId = scope.level === 'store' ? scope.storeId : scope.level === 'user' ? scope.userId : undefined;
 
-    // Real user-reported bug, fixed here: this used to filter deals by
-    // expectedClosingDate (a forecast concept — "when will this revenue
-    // land") for widgets 2/4/5/7 (deal split, leaderboard, work breakdown,
-    // won/lost bar) — but those widgets are about "what did I create/work
-    // on this period," not "what's forecast to close this period." A deal
-    // created today with an expectedClosingDate next month was invisible to
-    // "this month" filtering, which reads as broken, not as intended
-    // forecast behavior. Fixed by matching createdAt instead, same field
-    // Quote's own acceptance widget already correctly uses below — never
-    // expectedClosingDate for "did I touch this record this period" framing.
-    // achievement/revenueTrend (widgets 3/8) deliberately keep using
-    // SalesAnalyticsService's existing expectedClosingDate-based target/
-    // forecast math below, unchanged — that's a genuinely different
-    // question ("revenue expected to land this month against target"),
-    // pre-existing, established business logic this fix does not touch.
-    const { start, end } = periodToDateRange(period);
+    // Real user-reported bug, fixed here: widgets 2/4/5/7 (deal split,
+    // leaderboard, work breakdown, won/lost bar) used to filter deals by
+    // createdAt for "what did I create/work on this period" framing — correct
+    // in principle for natively-created deals, but confirmed live to be badly
+    // wrong for an org whose deals all come from the external CRM sync:
+    // crm_mongo_sync.py's $setOnInsert stamps createdAt with whenever THIS
+    // ORG'S SYNC FIRST RAN, identical across every synced deal regardless of
+    // when it actually happened (confirmed live: 42/42 synced deals shared
+    // one single createdAt month while their real expectedClosingDate spanned
+    // five different months) — so "this month" showed literally every deal
+    // the org has ever had, and any other month showed none. Reverted to
+    // expectedClosingDate, the same field SalesAnalyticsService.getAchievement
+    // already uses (and already trusted) for "Total Revenue"/target math
+    // directly above on this same page — auto-stamped to the real close date
+    // the moment a deal flips to won/lost (see deals.service.ts's own
+    // update() comment), and the one date field the external sync provides
+    // that actually reflects real business timing, not sync-ingestion time.
+    // A deal with no expectedClosingDate set is honestly excluded from every
+    // period rather than guessed into one — same accepted tradeoff
+    // getAchievement itself already has. dateFrom is always the 1st of a
+    // single selected month (see this method's own leading comment), so its
+    // own "YYYY-MM" prefix IS that period.
+    const start = new Date(`${dateFrom}T00:00:00.000Z`);
+    const end = new Date(`${dateTo}T23:59:59.999Z`);
+    const period = dateFrom.slice(0, 7);
     const dealMatch: Record<string, unknown> = {
       organizationId,
-      createdAt: { $gte: start, $lt: end },
+      expectedClosingDate: { $regex: `^${period}` },
       ...(scope.level === 'store' && scope.storeId ? { storeId: scope.storeId } : {}),
       ...(scope.level === 'user' && scope.userId ? { ownerId: scope.userId } : {}),
     };
-    const quoteDateMatch: Record<string, unknown> = { organizationId, createdAt: { $gte: start, $lt: end } };
+    // Scope only, no date range — used below to resolve which deals are in
+    // scope (store/owner) before joining quotes through them; a quote's
+    // linked deal can legitimately belong to this store/owner even if that
+    // deal itself was created outside the selected period.
+    const scopeMatchNoDate: Record<string, unknown> = {
+      organizationId,
+      ...(scope.level === 'store' && scope.storeId ? { storeId: scope.storeId } : {}),
+      ...(scope.level === 'user' && scope.userId ? { ownerId: scope.userId } : {}),
+    };
+    const quoteDateMatch: Record<string, unknown> = { organizationId, createdAt: { $gte: start, $lte: end } };
     // Quote has no storeId/ownerId of its own — scope via the linked Deal's
     // own storeId/ownerId, same join-through-deals approach
     // quotes.service.ts's listFiltered uses. This resolution is deliberately
@@ -71,12 +95,7 @@ export class AnalyticsDashboardService {
     // store/owner even if that deal itself was created outside this period,
     // so scoping must not reuse the period-filtered deal set).
     if (scope.level === 'store' || scope.level === 'user') {
-      const scopeDealMatch: Record<string, unknown> = {
-        organizationId,
-        ...(scope.level === 'store' && scope.storeId ? { storeId: scope.storeId } : {}),
-        ...(scope.level === 'user' && scope.userId ? { ownerId: scope.userId } : {}),
-      };
-      const scopedDeals = await this.dealModel.find(scopeDealMatch).select({ _id: 1 }).exec();
+      const scopedDeals = await this.dealModel.find(scopeMatchNoDate).select({ _id: 1 }).exec();
       quoteDateMatch.dealId = { $in: scopedDeals.map((d) => d._id.toString()) };
     }
 
@@ -103,7 +122,11 @@ export class AnalyticsDashboardService {
           { $group: { _id: { $eq: ['$clientApprovalStatus', 'approved'] }, count: { $sum: 1 }, value: { $sum: '$quoteAmount' } } },
         ])
         .exec(),
-      this.salesAnalyticsService.getAchievement(organizationId, scope.level, scopeId, period),
+      // dateFrom is always the 1st of a single selected month (see this
+      // method's own leading comment) — its own "YYYY-MM" prefix IS that
+      // month's period, so achievement/target now honestly tracks whichever
+      // month is selected instead of always "now".
+      this.salesAnalyticsService.getAchievement(organizationId, scope.level, scopeId, dateFrom.slice(0, 7)),
       this.dashboardService.getOverview(caller),
       this.dealPerformanceDashboardService.getConsultantPerformance(
         organizationId,
@@ -111,16 +134,20 @@ export class AnalyticsDashboardService {
         scope.level === 'store' ? scope.storeId : undefined,
         undefined,
       ),
-      this.dealPerformanceDashboardService.getRevenueProgress(organizationId, scope.level, scopeId, 6),
-      this.emailIntelligenceService.getMonthlyStats(
+      // Trailing 6 months ending on the selected month (dateFrom's own
+      // "YYYY-MM"), same reasoning as achievement above.
+      this.dealPerformanceDashboardService.getRevenueProgress(organizationId, scope.level, scopeId, 6, dateFrom.slice(0, 7)),
+      this.emailIntelligenceService.getActivityStats(
         organizationId,
-        period,
+        start,
+        end,
         scope.level === 'store' ? scope.storeId : undefined,
         scope.level === 'user' ? scope.userId : undefined,
       ),
-      this.customerActivityService.getMonthlyCustomerBreakdown(
+      this.customerActivityService.getCustomerBreakdownForRange(
         organizationId,
-        period,
+        start,
+        end,
         scope.level === 'store' ? scope.storeId : undefined,
         scope.level === 'user' ? scope.userId : undefined,
       ),
@@ -170,7 +197,8 @@ export class AnalyticsDashboardService {
     }));
 
     return {
-      period,
+      dateFrom,
+      dateTo,
       scope: { level: scope.level, storeId: scope.storeId, storeName, userId: scope.userId },
       emailActivity: emailStats,
       deals: { wonCount, lostCount, openCount, wonValue, lostValue, openValue },
@@ -186,12 +214,16 @@ export class AnalyticsDashboardService {
       revenueTrend,
       customers: customerBreakdown,
       aiInsight: this.buildInsight(achievement.achievementPct, wonCount, lostCount, openCount, emailStats.missedCount),
+      insights: this.buildInsights(achievement.achievementPct, wonCount, lostCount, openCount, emailStats.missedCount),
     };
   }
 
   // Deterministic, rule-based text from numbers already computed — never a
   // live LLM call on a dashboard endpoint, matching the one unbroken
-  // convention every "AI Insight" in this app already follows.
+  // convention every "AI Insight" in this app already follows. Kept
+  // alongside buildInsights() below (same four conditions, same copy) only
+  // because aiInsight is still a field on the response — see that field's
+  // own comment for why it's not removed.
   private buildInsight(
     achievementPct: number | null,
     wonCount: number,
@@ -212,6 +244,59 @@ export class AnalyticsDashboardService {
       return `${openCount} deal(s) are currently open this month — keep an eye on the ones nearing their expected close date.`;
     }
     return 'Performance is on track — no urgent items flagged for this period.';
+  }
+
+  // Same four conditions as buildInsight above, but evaluates every one of
+  // them (not just the first match) so the redesigned Overview tab can show
+  // every applicable observation instead of only ever the highest-priority
+  // one. actionTabId points at AnalyticsDashboardPage's own TAB_ITEMS ids —
+  // the frontend only ever switches tabs for these, never navigates
+  // anywhere new. Still 100% deterministic/rule-based — no LLM call.
+  private buildInsights(
+    achievementPct: number | null,
+    wonCount: number,
+    lostCount: number,
+    openCount: number,
+    missedCount: number,
+  ): AiInsightItem[] {
+    const insights: AiInsightItem[] = [];
+
+    if (achievementPct !== null && achievementPct < 50) {
+      insights.push({
+        severity: 'critical',
+        message: `Only ${round1(achievementPct)}% of this month's target achieved so far — review the open pipeline for deals that can be accelerated.`,
+        actionTabId: 'pipeline',
+        actionLabel: 'View Pipeline',
+      });
+    }
+    if (missedCount > 0) {
+      insights.push({
+        severity: 'warning',
+        message: `${missedCount} email(s) have gone unanswered for over 24 hours — these are the fastest wins to catch up on.`,
+        actionTabId: 'customers',
+        actionLabel: 'View Customers & Email',
+      });
+    }
+    if (lostCount > wonCount && lostCount > 0) {
+      insights.push({
+        severity: 'warning',
+        message: `More deals were lost (${lostCount}) than won (${wonCount}) this month — worth reviewing recent lost-deal reasons for a pattern.`,
+        actionTabId: 'pipeline',
+        actionLabel: 'View Pipeline',
+      });
+    }
+    if (openCount > 0) {
+      insights.push({
+        severity: 'info',
+        message: `${openCount} deal(s) are currently open this month — keep an eye on the ones nearing their expected close date.`,
+        actionTabId: 'pipeline',
+        actionLabel: 'View Pipeline',
+      });
+    }
+    if (insights.length === 0) {
+      insights.push({ severity: 'info', message: 'Performance is on track — no urgent items flagged for this period.' });
+    }
+    return insights;
   }
 
   private async resolveStoreName(organizationId: string, storeId: string): Promise<string | undefined> {

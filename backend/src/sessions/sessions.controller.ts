@@ -1,0 +1,34 @@
+import { Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RequireSessionAuthGuard } from '../common/guards/require-session-auth.guard';
+import { JwtPayload } from '../auth/jwt-payload.interface';
+import { SessionsService } from './sessions.service';
+
+// Outside /auth — no credential ever appears in these request bodies, so
+// there's no reason to dodge AuditInterceptor's /auth skip (see its own
+// comment); every mutating route here is automatically audit-logged for
+// free with zero extra code.
+@Controller('sessions')
+@UseGuards(JwtAuthGuard)
+export class SessionsController {
+  constructor(private sessionsService: SessionsService) {}
+
+  @Get()
+  list(@CurrentUser() user: JwtPayload) {
+    return this.sessionsService.list(user.sub, user.jti!);
+  }
+
+  @UseGuards(RequireSessionAuthGuard)
+  @Post(':jti/revoke')
+  async revoke(@CurrentUser() user: JwtPayload, @Param('jti') jti: string) {
+    await this.sessionsService.revoke(user.sub, jti, user.jti!);
+    return { success: true };
+  }
+
+  @UseGuards(RequireSessionAuthGuard)
+  @Post('revoke-all-others')
+  revokeAllOthers(@CurrentUser() user: JwtPayload) {
+    return this.sessionsService.revokeAllOthers(user.sub, user.jti!);
+  }
+}

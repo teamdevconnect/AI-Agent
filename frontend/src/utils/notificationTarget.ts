@@ -1,22 +1,21 @@
 import { ROUTES } from '@/constants/routes';
 import type { AppNotification, NotificationEntityType } from '@/services/mock/fixtures/notifications';
 
-// The map every one of the 8 "click notification -> open exact record"
+// The map every one of the 7 "click notification -> open exact record"
 // cases (see the notification schema's NOTIFICATION_ENTITY_TYPES comment)
 // resolves through. Adding a new entity type is one line here (route +
 // query param name) plus wiring that param on the destination page — see
 // EmailIntelligencePage.tsx/FinancePage.tsx for the two currently wired.
-// Entries with no queryParam (deal/task/outlookAccount/workflowExecution/
-// dailyReport) navigate to the right page today; the page doesn't yet
-// auto-open the specific record — that's the per-page work described in
-// the PR/commit notes, not something this map can do on its own.
+// Entries with no queryParam (deal/task/outlookAccount/dailyReport)
+// navigate to the right page today; the page doesn't yet auto-open the
+// specific record — that's the per-page work described in the PR/commit
+// notes, not something this map can do on its own.
 const ENTITY_TARGETS: Record<NotificationEntityType, { route: string; queryParam?: string }> = {
   email: { route: ROUTES.emailIntelligence, queryParam: 'openEmailId' },
   financeDocument: { route: ROUTES.finance, queryParam: 'openDocumentId' },
   deal: { route: ROUTES.dealPerformance },
   task: { route: ROUTES.todoEod },
-  outlookAccount: { route: ROUTES.integrations },
-  workflowExecution: { route: ROUTES.settingsWorkflows },
+  outlookAccount: { route: ROUTES.settingsIntegrations },
   dailyReport: { route: ROUTES.todoEod },
 };
 

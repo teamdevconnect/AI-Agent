@@ -8,6 +8,8 @@ export interface AuditEntry {
     statusCode: number;
     durationMs: number;
     ip?: string;
+    action?: string;
+    metadata?: Record<string, unknown>;
 }
 export declare class AuditService {
     private auditModel;

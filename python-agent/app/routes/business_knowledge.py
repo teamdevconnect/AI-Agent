@@ -69,6 +69,7 @@ async def extract_business_knowledge_document(file: UploadFile = File(...), user
     organization_id = user.get("organizationId")
     if not organization_id:
         raise HTTPException(400, "organizationId is required for business document extraction")
+    user_id = user.get("sub", "")
 
     content = await file.read()
     filename = file.filename or "document"
@@ -89,16 +90,16 @@ async def extract_business_knowledge_document(file: UploadFile = File(...), user
                 f"This PDF has {page_count} pages, over the {_MAX_PDF_PAGES}-page limit for direct "
                 "processing — split it into smaller files and re-upload",
             )
-        extracted = extract_business_document(content, "application/pdf", filename)
+        extracted = extract_business_document(content, "application/pdf", filename, organization_id=organization_id, user_id=user_id)
         text = load_text(filename, content)  # text layer, if any — free, already read the bytes above
     elif ext in _IMAGE_EXTENSIONS:
         mime_type = mimetypes.guess_type(filename)[0] or "image/png"
-        extracted = extract_business_document(content, mime_type, filename)
+        extracted = extract_business_document(content, mime_type, filename, organization_id=organization_id, user_id=user_id)
     elif ext in _TEXT_EXTENSIONS:
         text = load_text(filename, content)
         if not text.strip():
             raise HTTPException(422, "Could not extract any text from the uploaded document")
-        extracted = extract_business_document_from_text(text, filename)
+        extracted = extract_business_document_from_text(text, filename, organization_id=organization_id, user_id=user_id)
     else:
         raise HTTPException(422, f"Unsupported file type '{ext}' for business knowledge document extraction")
 

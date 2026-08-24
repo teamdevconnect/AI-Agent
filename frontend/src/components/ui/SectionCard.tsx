@@ -8,6 +8,10 @@ export interface SectionCardProps {
   icon?: IconType;
   action?: ReactNode;
   children: ReactNode;
+  // Opts into Card's glass surface (see Card.module.css's .glass) instead of
+  // the flat default — additive, every existing call site keeps its current
+  // flat look unless it explicitly passes this.
+  glass?: boolean;
 }
 
 // Replaces the repeated "uppercase label + unwrapped content" convention
@@ -16,9 +20,9 @@ export interface SectionCardProps {
 // card — clear visual boundaries between sections instead of everything
 // running together in one continuous scroll. Content/children are passed
 // through unchanged; this only changes the wrapper.
-export function SectionCard({ title, icon: Icon, action, children }: SectionCardProps) {
+export function SectionCard({ title, icon: Icon, action, children, glass }: SectionCardProps) {
   return (
-    <Card className={styles.sectionCard}>
+    <Card glass={glass} className={styles.sectionCard}>
       <div className={styles.header}>
         <span className={styles.title}>
           {Icon && <Icon size={15} className={styles.icon} />}

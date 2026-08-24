@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Logger, Param, Query, Redirect } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Logger, Param, Query, Redirect, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
@@ -37,6 +38,7 @@ export class OAuthController {
   @Redirect()
   async callback(
     @Param('provider') provider: string,
+    @Req() req: Request,
     @Query('code') code?: string,
     @Query('state') state?: string,
     @Query('error') error?: string,
@@ -55,12 +57,24 @@ export class OAuthController {
       }
 
       const profile = await this.oauthService.exchangeCodeForProfile(provider, code);
-      const { accessToken } = await this.authService.loginWithOAuth(provider, profile);
-      // Handing the JWT off via a query param redirect is the only option
+      const result = await this.authService.loginWithOAuth(provider, profile, {
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+      });
+      // Handing the token off via a query param redirect is the only option
       // for a plain full-page OAuth round trip (no shared session/cookie
       // between this API and the SPA origin) — the SPA's /oauth/callback
       // route immediately consumes it and never persists the URL itself.
-      return { url: `${frontendUrl}/oauth/callback?token=${encodeURIComponent(accessToken)}`, statusCode: 302 };
+      // Same branch AuthService.login already has: an account with 2FA
+      // enabled gets a short-lived challenge token instead of a real
+      // session — OAuthCallbackPage recognizes `?challenge=` and routes to
+      // the same 2FA-entry step password login uses, rather than logging
+      // straight in.
+      const url =
+        result.status === '2fa_required'
+          ? `${frontendUrl}/oauth/callback?challenge=${encodeURIComponent(result.challengeToken)}`
+          : `${frontendUrl}/oauth/callback?token=${encodeURIComponent(result.accessToken)}`;
+      return { url, statusCode: 302 };
     } catch (err) {
       const detail = (err as { response?: { data?: unknown } }).response?.data ?? (err as Error).message;
       this.logger.error(`${provider} OAuth callback failed: ${JSON.stringify(detail)}`);

@@ -97,6 +97,22 @@ export class OrganizationsService {
     return result.modifiedCount > 0;
   }
 
+  // A ceiling, not a default — see Organization.notificationPolicy's own
+  // comment. Falls back to "everything allowed" for an org somehow not
+  // found (shouldn't happen; a valid organizationId always has a doc)
+  // rather than surprise-blocking delivery.
+  async getNotificationPolicy(organizationId: string): Promise<{ emailEnabled: boolean; pushEnabled: boolean }> {
+    const org = await this.orgModel.findById(organizationId).select({ notificationPolicy: 1 }).exec();
+    return org?.notificationPolicy ?? { emailEnabled: true, pushEnabled: true };
+  }
+
+  updateNotificationPolicy(organizationId: string, patch: Partial<{ emailEnabled: boolean; pushEnabled: boolean }>) {
+    const update: Record<string, unknown> = {};
+    if (patch.emailEnabled !== undefined) update['notificationPolicy.emailEnabled'] = patch.emailEnabled;
+    if (patch.pushEnabled !== undefined) update['notificationPolicy.pushEnabled'] = patch.pushEnabled;
+    return this.orgModel.findByIdAndUpdate(organizationId, update, { new: true }).exec();
+  }
+
   private async uniqueSlug(name: string): Promise<string> {
     const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'org';
     let candidate = base;

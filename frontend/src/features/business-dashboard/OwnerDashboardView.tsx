@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { FiAward, FiBarChart2, FiTrendingUp } from 'react-icons/fi';
-import { Button, SectionCard, Skeleton, StatTile } from '@/components/ui';
+import { FiAward, FiBarChart2, FiTrendingUp, FiUsers } from 'react-icons/fi';
+import { Badge, Button, SectionCard, Skeleton, StatTile } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
 import { customerActivityService } from '@/services/customerActivityService';
 import { homeDashboardService } from '@/services/homeDashboardService';
@@ -108,35 +108,54 @@ export function OwnerDashboardView() {
         <RevenueTrendChart points={data.revenueTrend} />
       </SectionCard>
 
-      <div className={styles.twoColumn}>
-        <SectionCard title="Store Rankings" icon={FiAward}>
-          {data.storeRankings.length === 0 ? (
-            <div className={styles.emptyState}>No store revenue recorded yet this period.</div>
-          ) : (
-            data.storeRankings.map((r, i) => (
-              <div key={r.storeId} className={styles.rankRow}>
-                <span className={styles.rankPosition}>#{i + 1}</span>
-                <span className={styles.rankName}>{r.storeName}</span>
-                <span className={styles.rankValue}>{money(r.revenue)}</span>
-              </div>
-            ))
-          )}
-        </SectionCard>
+      <SectionCard title="Store Rankings" icon={FiAward}>
+        {data.storeRankings.length === 0 ? (
+          <div className={styles.emptyState}>No store revenue recorded yet this period.</div>
+        ) : (
+          data.storeRankings.map((r, i) => (
+            <div key={r.storeId} className={styles.rankRow}>
+              <span className={styles.rankPosition}>#{i + 1}</span>
+              <span className={styles.rankName}>{r.storeName}</span>
+              <span className={styles.rankValue}>{money(r.revenue)}</span>
+            </div>
+          ))
+        )}
+      </SectionCard>
 
-        <SectionCard title="Employee Leaderboard" icon={FiAward}>
-          {data.employeeLeaderboard.length === 0 ? (
-            <div className={styles.emptyState}>No won deals recorded yet this period.</div>
-          ) : (
-            data.employeeLeaderboard.map((r, i) => (
-              <div key={r.userId} className={styles.rankRow}>
-                <span className={styles.rankPosition}>#{i + 1}</span>
-                <span className={styles.rankName}>{r.userName}</span>
-                <span className={styles.rankValue}>{money(r.revenue)}</span>
-              </div>
-            ))
-          )}
-        </SectionCard>
-      </div>
+      <SectionCard title="Employee Activity Monitor" icon={FiUsers}>
+        {data.employeeLeaderboard.length === 0 ? (
+          <div className={styles.emptyState}>No employees to show yet this period.</div>
+        ) : (
+          <div className={styles.tableScroll}>
+            <table className={styles.activityTable}>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Employee</th>
+                  <th>Revenue</th>
+                  <th>Won Deals</th>
+                  <th>Emails Sent</th>
+                  <th>Emails Missed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.employeeLeaderboard.map((r, i) => (
+                  <tr key={r.userId}>
+                    <td>{i + 1}</td>
+                    <td>{r.userName}</td>
+                    <td>{money(r.revenue)}</td>
+                    <td>{r.wonCount}</td>
+                    <td>{r.emailsSent}</td>
+                    <td>
+                      {r.emailsMissed > 0 ? <Badge variant="danger">{r.emailsMissed}</Badge> : r.emailsMissed}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
 
       {/* Tier 7 */}
       {home && <TimelineSection events={home.timeline} />}

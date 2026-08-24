@@ -27,6 +27,13 @@ export function toNotification(n: BackendNotification): AppNotification {
   };
 }
 
+export interface NotificationPreferences {
+  desktopPush: boolean;
+  mobilePush: boolean;
+  email: boolean;
+  orgPolicy: { emailEnabled: boolean; pushEnabled: boolean };
+}
+
 export const notificationsService = {
   async list(): Promise<AppNotification[]> {
     const { data } = await axiosClient.get<BackendNotification[]>('/notifications');
@@ -39,5 +46,15 @@ export const notificationsService = {
 
   async markAllRead(): Promise<void> {
     await axiosClient.post('/notifications/read-all');
+  },
+
+  async getPreferences(): Promise<NotificationPreferences> {
+    const { data } = await axiosClient.get<NotificationPreferences>('/notifications/preferences');
+    return data;
+  },
+
+  async updatePreferences(patch: Partial<Pick<NotificationPreferences, 'desktopPush' | 'mobilePush' | 'email'>>): Promise<NotificationPreferences> {
+    const { data } = await axiosClient.put<NotificationPreferences>('/notifications/preferences', patch);
+    return data;
   },
 };

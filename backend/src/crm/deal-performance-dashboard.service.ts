@@ -15,11 +15,21 @@ function currentPeriod(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-function lastNPeriods(n: number): string[] {
+// `endPeriod` ("YYYY-MM") anchors the trailing window on a specific month
+// instead of always "now" — used by the analytics dashboard's revenue trend
+// so it ends on whichever month the page's date filter has selected. Every
+// pre-existing caller that omits it keeps the original always-"now" behavior.
+function lastNPeriods(n: number, endPeriod?: string): string[] {
   const periods: string[] = [];
   const now = new Date();
+  const [anchorYear, anchorMonth] = endPeriod
+    ? (() => {
+        const [y, m] = endPeriod.split('-').map(Number);
+        return [y, m - 1];
+      })()
+    : [now.getFullYear(), now.getMonth()];
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(anchorYear, anchorMonth - i, 1);
     periods.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
   return periods;
@@ -216,9 +226,17 @@ export class DealPerformanceDashboardService {
   // scope widened to include 'user' for Phase 19's Analytics Dashboard
   // (Consultant's own revenue trend) — getAchievement already supports it,
   // this method was just never asked for it before; existing callers only
-  // ever pass 'org'/'store', unaffected.
-  async getRevenueProgress(organizationId: string, scope: 'org' | 'store' | 'user', scopeId: string | undefined, months: number) {
-    const periods = lastNPeriods(months);
+  // ever pass 'org'/'store', unaffected. `endPeriod` lets the analytics
+  // dashboard anchor the trailing window on its own selected month; every
+  // other caller omits it and keeps ending on the current month.
+  async getRevenueProgress(
+    organizationId: string,
+    scope: 'org' | 'store' | 'user',
+    scopeId: string | undefined,
+    months: number,
+    endPeriod?: string,
+  ) {
+    const periods = lastNPeriods(months, endPeriod);
     return Promise.all(
       periods.map(async (period) => {
         const a = await this.salesAnalyticsService.getAchievement(organizationId, scope, scopeId, period);
@@ -286,6 +304,41 @@ export class DealPerformanceDashboardService {
         };
       })
       .sort((a, b) => b.wonValue - a.wonValue);
+  }
+
+  // Business Intelligence's Employee Productivity (section 3) needs each
+  // employee's openCount split into "pending" (future closing date) vs
+  // "overdue" (already past) — additive to getConsultantPerformance, never
+  // touches it, so that method's already-verified won/lost/openCount numbers
+  // stay exactly as they are. A deal with no expectedClosingDate is counted
+  // as pending, never overdue — an unset date can't honestly be judged late.
+  async getOpenDealAgingByOwner(
+    organizationId: string,
+    match: Record<string, unknown>,
+  ): Promise<Map<string, { pending: number; overdue: number }>> {
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = await this.dealModel
+      .aggregate<{ _id: { ownerId: string; isOverdue: boolean }; count: number }>([
+        { $match: { ...match, dealStatus: 'open', ownerId: { $exists: true, $ne: null } } },
+        {
+          $addFields: {
+            isOverdue: {
+              $cond: [{ $and: [{ $ne: ['$expectedClosingDate', null] }, { $lt: ['$expectedClosingDate', today] }] }, true, false],
+            },
+          },
+        },
+        { $group: { _id: { ownerId: '$ownerId', isOverdue: '$isOverdue' }, count: { $sum: 1 } } },
+      ])
+      .exec();
+
+    const byOwner = new Map<string, { pending: number; overdue: number }>();
+    for (const r of rows) {
+      const entry = byOwner.get(r._id.ownerId) ?? { pending: 0, overdue: 0 };
+      if (r._id.isOverdue) entry.overdue = r.count;
+      else entry.pending = r.count;
+      byOwner.set(r._id.ownerId, entry);
+    }
+    return byOwner;
   }
 
   // Coverage is always surfaced alongside the breakdown (taggedCount vs.

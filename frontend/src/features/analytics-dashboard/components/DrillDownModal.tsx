@@ -19,13 +19,26 @@ export function DrillDownModal({
   title,
   isLoading,
   rows,
+  formatValue,
+  onRowClick,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   isLoading: boolean;
   rows: DrillDownRow[];
+  // Additive, backward-compatible — Business Intelligence needs percentage/
+  // count formatting for several sections, not just this component's
+  // original hardcoded INR currency. Omitted (the default) keeps every
+  // existing call site's money() formatting unchanged.
+  formatValue?: (n: number) => string;
+  // Additive — the Customers & Email tab's popups drill a second level deep
+  // (a business row opens its correlated emails, a missed-email row opens
+  // the full email). Omitted (the default) keeps every existing call site's
+  // static, non-clickable rows unchanged.
+  onRowClick?: (row: DrillDownRow) => void;
 }) {
+  const renderValue = formatValue ?? money;
   return (
     <Modal open={open} onClose={onClose} title={title} maxWidth={640}>
       <div className={styles.drillDownList}>
@@ -38,21 +51,32 @@ export function DrillDownModal({
         ) : rows.length === 0 ? (
           <div className={styles.emptyState}>No records found for this selection.</div>
         ) : (
-          rows.map((r) => (
-            <div key={r.id} className={styles.listItem}>
-              <div className={styles.listItemMain}>
-                <span className={styles.listItemTitle}>{r.title}</span>
-                {(r.subtitle || r.meta) && (
-                  <span className={styles.listItemMeta}>
-                    {r.subtitle}
-                    {r.subtitle && r.meta ? ' · ' : ''}
-                    {r.meta}
-                  </span>
-                )}
+          rows.map((r) => {
+            const content = (
+              <>
+                <div className={styles.listItemMain}>
+                  <span className={styles.listItemTitle}>{r.title}</span>
+                  {(r.subtitle || r.meta) && (
+                    <span className={styles.listItemMeta}>
+                      {r.subtitle}
+                      {r.subtitle && r.meta ? ' · ' : ''}
+                      {r.meta}
+                    </span>
+                  )}
+                </div>
+                {r.value !== undefined && <strong>{renderValue(r.value)}</strong>}
+              </>
+            );
+            return onRowClick ? (
+              <button key={r.id} type="button" className={styles.listItem} onClick={() => onRowClick(r)}>
+                {content}
+              </button>
+            ) : (
+              <div key={r.id} className={styles.listItem}>
+                {content}
               </div>
-              {r.value !== undefined && <strong>{money(r.value)}</strong>}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </Modal>

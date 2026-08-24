@@ -14,6 +14,8 @@ export * from './Dropdown';
 export * from './Tabs';
 export * from './MultiSelectDropdown';
 export * from './DateRangeControl';
+export * from './MonthYearFilterPopup';
 export * from './StringListEditor';
 export * from './MonthPicker';
 export * from './StatTile';
+export * from './CopyableText';

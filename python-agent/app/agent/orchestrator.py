@@ -22,7 +22,7 @@ because of this layer.
 
 from concurrent.futures import ThreadPoolExecutor
 
-from app.agent import anthropic_client, cancellation, groq_client
+from app.agent import anthropic_client, cancellation, groq_client, trivial_router
 from app.agent.graph import final_text, get_graph
 from app.agent.llm_client import SYSTEM_PROMPT
 from app.agent.specialists import SPECIALISTS
@@ -161,16 +161,22 @@ def run(state_input: dict) -> dict:
     state_input = {**state_input, "cancel_event": cancel_event}
 
     try:
-        try:
-            plan = anthropic_client.classify_request(
-                state_input["messages"],
-                organization_id=state_input.get("organization_id"),
-                user_id=state_input.get("user_id", ""),
-                conversation_id=state_input.get("conversation_id", ""),
-                request_id=state_input.get("request_id", ""),
-            )
-        except Exception:
-            plan = {"mode": "simple", "assignments": [], "reasoning": ""}
+        # Deterministic, zero-cost pre-filter tried first — see
+        # app.agent.trivial_router's own docstring for why its allow-list is
+        # deliberately narrow. Falls through to the real classify_request
+        # call (unchanged below) whenever it isn't confident.
+        plan = trivial_router.trivial_plan(state_input["messages"])
+        if plan is None:
+            try:
+                plan = anthropic_client.classify_request(
+                    state_input["messages"],
+                    organization_id=state_input.get("organization_id"),
+                    user_id=state_input.get("user_id", ""),
+                    conversation_id=state_input.get("conversation_id", ""),
+                    request_id=state_input.get("request_id", ""),
+                )
+            except Exception:
+                plan = {"mode": "simple", "assignments": [], "reasoning": ""}
 
         if on_event and plan.get("reasoning"):
             on_event({"type": "reasoning", "text": plan["reasoning"]})

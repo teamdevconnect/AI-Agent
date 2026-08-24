@@ -80,7 +80,10 @@ export class GrossMarginReportService {
     }
 
     const rangeStart = new Date(dateFrom);
-    const rangeEnd = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+    // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the server
+    // process's local timezone, which drifts hours off this boundary on any
+    // server not running in UTC.
+    const rangeEnd = new Date(`${dateTo}T23:59:59.999Z`);
     const match: Record<string, unknown> = {
       organizationId,
       invoiceDate: { $gte: rangeStart, $lte: rangeEnd },

@@ -1,7 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { WorkflowQueueService } from '../workflows/workflow-queue.service';
 import { TimelineEvent, TimelineEventDocument, TimelineEventType } from './schemas/timeline-event.schema';
 
 export interface RecordTimelineEventInput {
@@ -32,23 +31,10 @@ export interface ListTimelineFilters {
 // one place that decides field defaults/shape.
 @Injectable()
 export class TimelineService {
-  private readonly logger = new Logger(TimelineService.name);
-
-  constructor(
-    @InjectModel(TimelineEvent.name) private eventModel: Model<TimelineEventDocument>,
-    private workflowQueue: WorkflowQueueService,
-  ) {}
+  constructor(@InjectModel(TimelineEvent.name) private eventModel: Model<TimelineEventDocument>) {}
 
   async record(input: RecordTimelineEventInput) {
-    const event = await this.eventModel.create({ ...input, occurredAt: input.occurredAt ?? new Date() });
-    // Fire-and-forget-ish, but caught: an enqueue failure (e.g. Redis down)
-    // must never break the actual Timeline write, which is the primary
-    // concern here — same fail-open spirit as RedisCacheService's caching,
-    // just logged louder since a missed workflow trigger is more consequential.
-    this.workflowQueue.enqueueForEvent(input.organizationId, input.type).catch((err: Error) => {
-      this.logger.error(`Failed to enqueue event-triggered workflows for '${input.type}': ${err.message}`);
-    });
-    return event;
+    return this.eventModel.create({ ...input, occurredAt: input.occurredAt ?? new Date() });
   }
 
   list(organizationId: string, filters: ListTimelineFilters = {}) {

@@ -19,6 +19,11 @@ exports.default = () => ({
         password: process.env.SMTP_PASSWORD ?? '',
         from: process.env.MAIL_FROM || process.env.SMTP_USER || '',
     },
+    webPush: {
+        publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+        privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+        subject: process.env.VAPID_SUBJECT ?? '',
+    },
     integrations: {
         crm: {
             baseUrl: process.env.CRM_BASE_URL ?? '',

@@ -18,19 +18,38 @@ _CACHEABLE_PATHS = {
     "/account/fetch-account-list",
     "/quotes/getQuotes",
     "/tag/fetchTagList",
+    "/deal/getPipelineList",
 }
 
 
 def resolve_credentials(organization_id: str | None = None, user_id: str = "") -> tuple[str, str]:
     """Returns (api_root, api_key) for wherever this org's CRM data lives.
 
-    Three tiers, in order:
+    Four tiers, in order:
     1. An external CRM connected via the frontend's Integrations page for
-       this specific org (Mongo-backed, can change at runtime).
-    2. The static .env global fallback (pre-multi-tenancy behavior,
+       this specific org, classic apiKey+baseUrl shape (Mongo-backed, can
+       change at runtime) — the old dedicated "Connect CRM" card.
+    2. Same per-org connection, but the newer multi-auth shape (bearer/
+       basic/apiKey/customHeaders — see auth-methods.ts/integration_store.
+       get_credentials) saved via the generic "Add Integration" or "Import
+       Connector Config" flow, under either provider name "crm" or
+       "prospectconnect" (its own connector id). Real bug, fixed here: an
+       org that connects their real CRM this way (confirmed live — this is
+       how production orgs actually do it today) was previously invisible
+       to every crm_*_tool.py call, which only ever checked tier 1's exact
+       shape/provider name — so the sync silently fell through to tier 4
+       and 404'd against routes the native backend doesn't implement, going
+       stale with no error surfaced anywhere. Only usable when the auth
+       style resolves to a single Authorization header value (bearer/basic)
+       — apiKey-style credentials commonly use a different header name by
+       default (see buildAuthHeaders' "X-Api-Key" default), which this
+       module's single {"Authorization": api_key} header convention can't
+       represent, so those fall through to the next tier rather than
+       silently sending a wrong header.
+    3. The static .env global fallback (pre-multi-tenancy behavior,
        preserved for callers with no organization_id — e.g. the scheduled
        report context).
-    3. **Native fallback**: if organization_id is known and neither of the
+    4. **Native fallback**: if organization_id is known and none of the
        above is configured, target this app's own backend at
        `{backend_url}/crm`, authenticating with a short-lived self-signed
        JWT (see app.service_token.mint_service_token) instead of a static api_key — every org
@@ -40,16 +59,42 @@ def resolve_credentials(organization_id: str | None = None, user_id: str = "") -
        `"Bearer <token>"`, which is exactly what the backend's passport-jwt
        strategy expects, so no other code in this module needs to change.
 
-    api_root is normalized to the bare scheme+host for tiers 1-2 — resource
+    api_root is normalized to the bare scheme+host for every tier — resource
     paths (/contact/..., /deal/..., /note/..., ...) are appended by each
     tool, regardless of whether the stored base URL includes a sub-path.
     """
-    base_url = integration_store.get_base_url("crm", organization_id) or settings.crm_base_url
-    api_key = integration_store.get_api_key("crm", organization_id) or settings.crm_api_key
-    if base_url:
+    base_url = integration_store.get_base_url("crm", organization_id)
+    api_key = integration_store.get_api_key("crm", organization_id)
+    if base_url and api_key:
         parsed = urlparse(base_url)
-        base_url = f"{parsed.scheme}://{parsed.netloc}"
-        return base_url, api_key
+        return f"{parsed.scheme}://{parsed.netloc}", api_key
+
+    if organization_id:
+        for provider in ("crm", "prospectconnect"):
+            creds = integration_store.get_credentials(provider, organization_id)
+            if not creds or not creds.get("baseUrl"):
+                continue
+            headers = integration_store.build_auth_headers(creds["authType"], creds["credentials"])
+            auth_header = headers.get("Authorization")
+            if not auth_header:
+                continue
+            # Confirmed live against the real API: ProspectConnect rejects
+            # (401) a "Bearer "-prefixed token and only accepts the raw
+            # token value — same fact this module's own tier-4 comment above
+            # already documents for post_json/post's header convention. An
+            # org connected via the generic "bearer" auth type still stores
+            # (and should store) a real RFC6750-style token, so strip the
+            # scheme prefix only for THIS provider's actual wire format,
+            # rather than reinterpreting what "bearer" means everywhere else
+            # this generic multi-auth system is used.
+            if creds["authType"] == "bearer" and auth_header.startswith("Bearer "):
+                auth_header = auth_header[len("Bearer ") :]
+            parsed = urlparse(creds["baseUrl"])
+            return f"{parsed.scheme}://{parsed.netloc}", auth_header
+
+    if settings.crm_base_url and settings.crm_api_key:
+        parsed = urlparse(settings.crm_base_url)
+        return f"{parsed.scheme}://{parsed.netloc}", settings.crm_api_key
 
     if organization_id:
         token = mint_service_token(user_id, organization_id)
@@ -78,6 +123,28 @@ def post_json(api_root: str, api_key: str, path: str, payload: dict):
     # ProspectConnect's auth docs specify the raw key in Authorization,
     # with no "Bearer " scheme prefix.
     response = requests.post(url, headers={"Authorization": api_key}, json=payload, timeout=15)
+    response.raise_for_status()
+    body = response.json()
+
+    if key is not None:
+        cache.set_json(key, body, settings.crm_cache_ttl_seconds)
+    return body
+
+
+def get_json(api_root: str, api_key: str, path: str, params: dict | None = None):
+    """GET counterpart to post_json — same caching/auth, needed for the
+    handful of ProspectConnect endpoints that are real GETs (confirmed via
+    this org's own imported connector manifest, e.g. /deal/getPipelineList),
+    unlike the rest of this API which is POST-with-body throughout."""
+    cacheable = path in _CACHEABLE_PATHS
+    key = cache.cache_key(f"crm:{api_root}", path, params or {}) if cacheable else None
+    if key is not None:
+        hit = cache.get_json(key)
+        if hit is not None:
+            return hit
+
+    url = f"{api_root.rstrip('/')}{path}"
+    response = requests.get(url, headers={"Authorization": api_key}, params=params, timeout=15)
     response.raise_for_status()
     body = response.json()
 

@@ -14,10 +14,12 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatController = void 0;
 const common_1 = require("@nestjs/common");
+const throttler_1 = require("@nestjs/throttler");
 const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
 const chat_service_1 = require("./chat.service");
 const send_message_dto_1 = require("./dto/send-message.dto");
+const CHAT_THROTTLE = { default: { limit: 20, ttl: 60_000 } };
 let ChatController = class ChatController {
     constructor(chatService) {
         this.chatService = chatService;
@@ -62,6 +64,7 @@ __decorate([
 ], ChatController.prototype, "getConversation", null);
 __decorate([
     (0, common_1.Post)('messages'),
+    (0, throttler_1.Throttle)(CHAT_THROTTLE),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Req)()),
     __param(2, (0, common_1.Body)()),

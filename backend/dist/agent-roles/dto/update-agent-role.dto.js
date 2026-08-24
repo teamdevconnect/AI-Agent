@@ -45,6 +45,12 @@ __decorate([
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.IsString)({ each: true }),
     __metadata("design:type", Array)
+], UpdateAgentRoleDto.prototype, "goals", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
 ], UpdateAgentRoleDto.prototype, "responsibilities", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),

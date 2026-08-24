@@ -15,9 +15,45 @@ export class Deal {
   storeId?: string;
 
   // The sales rep this deal is assigned to — drives per-consultant
-  // achievement % (see sales-analytics.service.ts).
+  // achievement % (see sales-analytics.service.ts). Always a real User._id
+  // in THIS app — for a synced deal, set either by an admin's manual pick
+  // (deals.controller.ts's assign endpoint) or automatically once a
+  // DealOwnerMapping resolves externalOwnerRef below to a real user.
   @Prop({ index: true })
   ownerId?: string;
+
+  // --- External CRM owner mapping (provider-agnostic) ---
+  //
+  // The raw owner/assigned-user identifier straight from whichever external
+  // CRM this deal was synced from (e.g. ProspectConnect's own internal
+  // "sales_person" id) — never assumed to correspond to anything in this
+  // app on its own. A real user id space belonging to a DIFFERENT system;
+  // resolving it into a trustworthy `ownerId` above requires an explicit
+  // admin-configured DealOwnerMapping (see deal-owner-mapping.schema.ts),
+  // since there's no reliable automatic cross-system identity match (a raw
+  // external id has no inherent relationship to this app's own User._id
+  // space). Every CRM integration's own sync script is responsible for
+  // populating these three fields with ITS OWN provider's real field names
+  // — the mapping/resolution layer above and the Settings → Deal Assignment
+  // UI are entirely provider-agnostic from this point on, so adding a new
+  // CRM (HubSpot, Zoho, Salesforce, ...) later needs no changes to either.
+  @Prop({ index: true })
+  externalOwnerRef?: string;
+
+  // Best-effort human-readable label for externalOwnerRef (a name/email,
+  // when the provider's API happens to return one alongside the raw id) —
+  // shown in the mapping UI so an admin isn't asked to map a bare id string
+  // blind. Never guaranteed non-null; the UI must fall back to the raw ref.
+  // ProspectConnect's deal endpoint never returns a name directly (sales_person
+  // is a bare id) — crm_mongo_sync.py populates this by cross-referencing the
+  // same CRM user id against Quote.quoteOwnerLabel (see quote.schema.ts),
+  // since the quotes endpoint DOES return a nested name for that same id
+  // space. Left unset until at least one quote from that owner has synced.
+  @Prop()
+  externalOwnerLabel?: string;
+
+  @Prop()
+  externalOwnerProvider?: string;
 
   @Prop({ required: true })
   name: string;
@@ -113,4 +149,10 @@ export const DealSchema = SchemaFactory.createForClass(Deal);
 DealSchema.index(
   { organizationId: 1, externalId: 1 },
   { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+);
+// Powers deal-owner-mapping.service.ts's "distinct unmapped external
+// owners" listing and its bulk-apply-on-map update.
+DealSchema.index(
+  { organizationId: 1, externalOwnerRef: 1 },
+  { partialFilterExpression: { externalOwnerRef: { $exists: true } } },
 );

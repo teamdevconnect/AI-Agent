@@ -600,7 +600,19 @@ export class CustomerActivityService {
     end: Date,
     storeConstraint?: string,
     personalConstraint?: string,
-  ): Promise<{ newCount: number; existingCount: number; lostCount: number; totalConsidered: number }> {
+  ): Promise<{
+    newCount: number;
+    existingCount: number;
+    lostCount: number;
+    totalConsidered: number;
+    // Additive — backs the dashboard's Customer Mix drill-down popup (click
+    // a segment to see which businesses landed in it). Same {key, businessName}
+    // shape as BusinessTableRow so the frontend can reuse it for the
+    // relationship-view lookup (GET /crm/customer-activity/relationships/:businessKey).
+    newItems: { key: string; businessName: string }[];
+    existingItems: { key: string; businessName: string }[];
+    lostItems: { key: string; businessName: string }[];
+  }> {
     const dealMatch: Record<string, unknown> = {
       organizationId,
       ...(personalConstraint ? { ownerId: personalConstraint } : storeConstraint ? { storeId: storeConstraint } : {}),
@@ -631,6 +643,9 @@ export class CustomerActivityService {
     let newCount = 0;
     let existingCount = 0;
     let lostCount = 0;
+    const newItems: { key: string; businessName: string }[] = [];
+    const existingItems: { key: string; businessName: string }[] = [];
+    const lostItems: { key: string; businessName: string }[] = [];
 
     for (const group of groups.values()) {
       const allCreated = [
@@ -642,6 +657,7 @@ export class CustomerActivityService {
 
       if (earliestCreated >= start.getTime() && earliestCreated < end.getTime()) {
         newCount++;
+        newItems.push({ key: group.key, businessName: group.businessName });
         continue;
       }
 
@@ -652,6 +668,7 @@ export class CustomerActivityService {
       const hasOpenDeal = group.deals.some((d) => d.dealStatus === 'open');
       if (hasOpenDeal) {
         existingCount++;
+        existingItems.push({ key: group.key, businessName: group.businessName });
         continue;
       }
 
@@ -668,12 +685,22 @@ export class CustomerActivityService {
 
       if (mostRecent?.isLostDeal && mostRecent.date >= start.getTime() && mostRecent.date < end.getTime()) {
         lostCount++;
+        lostItems.push({ key: group.key, businessName: group.businessName });
       } else {
         existingCount++;
+        existingItems.push({ key: group.key, businessName: group.businessName });
       }
     }
 
-    return { newCount, existingCount, lostCount, totalConsidered: newCount + existingCount + lostCount };
+    return {
+      newCount,
+      existingCount,
+      lostCount,
+      totalConsidered: newCount + existingCount + lostCount,
+      newItems,
+      existingItems,
+      lostItems,
+    };
   }
 
   // Back-compat convenience for callers that still think in calendar months

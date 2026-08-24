@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
 import { AuthModule } from '../auth/auth.module';
+import { UsersModule } from '../users/users.module';
 import { AgentRole, AgentRoleSchema } from '../agent-roles/schemas/agent-role.schema';
 import { Conversation, ConversationSchema } from './schemas/conversation.schema';
 import { ChatController } from './chat.controller';
@@ -29,6 +30,10 @@ import { ChatService } from './chat.service';
     // genuine headroom without being unbounded.
     HttpModule.register({ timeout: 300_000 }),
     AuthModule,
+    // Needed for ChatGateway's own session-revocation check on socket
+    // connect (mirrors JwtStrategy's HTTP-side check) — no cycle: UsersModule
+    // imports nothing from this module or AuthModule.
+    UsersModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway, RedisCacheService],

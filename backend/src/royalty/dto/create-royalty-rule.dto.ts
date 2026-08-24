@@ -24,17 +24,12 @@ export class CreateRoyaltyRuleDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  adminFeePercentage?: number;
+  marketingFeeAmount?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(0)
-  techFeePercentage?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  marketingFeePercentage?: number;
+  otherFeeAmount?: number;
 
   @IsOptional()
   @IsBoolean()

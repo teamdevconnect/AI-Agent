@@ -11,6 +11,7 @@ export class UpdateAgentRoleDto {
   @IsOptional() @IsString() department?: string;
   @IsOptional() @IsString() description?: string;
 
+  @IsOptional() @IsArray() @IsString({ each: true }) goals?: string[];
   @IsOptional() @IsArray() @IsString({ each: true }) responsibilities?: string[];
   @IsOptional() @IsArray() @IsString({ each: true }) dailyTasks?: string[];
   @IsOptional() @IsArray() @IsString({ each: true }) weeklyTasks?: string[];

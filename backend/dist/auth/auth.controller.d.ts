@@ -1,3 +1,4 @@
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -10,12 +11,10 @@ import { JwtPayload } from './jwt-payload.interface';
 export declare class AuthController {
     private authService;
     constructor(authService: AuthService);
-    register(dto: RegisterDto): Promise<{
+    register(dto: RegisterDto, req: Request): Promise<{
         accessToken: string;
     }>;
-    login(dto: LoginDto): Promise<{
-        accessToken: string;
-    }>;
+    login(dto: LoginDto, req: Request): Promise<import("./auth.service").LoginResult>;
     verifyOtp(dto: VerifyOtpDto): Promise<{
         verified: boolean;
     }>;
@@ -28,7 +27,10 @@ export declare class AuthController {
     resetPassword(dto: ResetPasswordDto): Promise<{
         success: boolean;
     }>;
-    changePassword(user: JwtPayload, dto: ChangePasswordDto): Promise<{
+    changePassword(user: JwtPayload, dto: ChangePasswordDto, req: Request): Promise<{
+        success: boolean;
+    }>;
+    logout(user: JwtPayload): Promise<{
         success: boolean;
     }>;
 }

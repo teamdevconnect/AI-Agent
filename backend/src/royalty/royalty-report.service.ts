@@ -92,9 +92,8 @@ export interface RoyaltyReportSummary {
   royaltyFeeBeforeCap: number;
   totalDue: number;
   effectiveRoyaltyPct: number | null;
-  adminFeeAmount: number | null;
-  techFeeAmount: number | null;
   marketingFeeAmount: number | null;
+  otherFeeAmount: number | null;
   dataSourceNote: string;
   // Itemized line data for the same [dateFrom, dateTo] range — "the deal
   // data" and "the invoice data" the executive summary's counts/sums are
@@ -156,7 +155,10 @@ export class RoyaltyReportService {
     groupBy?: 'salesperson' | 'customer',
   ): Promise<RoyaltyReportSummary> {
     const rangeStart = new Date(dateFrom);
-    const rangeEnd = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+    // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the server
+    // process's local timezone, which drifts hours off this boundary on any
+    // server not running in UTC.
+    const rangeEnd = new Date(`${dateTo}T23:59:59.999Z`);
 
     const dealMatch: Record<string, unknown> = {
       organizationId,
@@ -226,9 +228,8 @@ export class RoyaltyReportService {
 
     let royaltyFeeBeforeCap = 0;
     let totalDue = 0;
-    let adminFeeAmount: number | null = null;
-    let techFeeAmount: number | null = null;
     let marketingFeeAmount: number | null = null;
+    let otherFeeAmount: number | null = null;
 
     if (rule) {
       let effectivePct = rule.royaltyPercentage;
@@ -254,9 +255,10 @@ export class RoyaltyReportService {
       if (rule.capType === 'min' && rule.capValue !== undefined) totalDue = Math.max(royaltyFeeBeforeCap, rule.capValue);
       if (rule.capType === 'max' && rule.capValue !== undefined) totalDue = Math.min(royaltyFeeBeforeCap, rule.capValue);
 
-      if (rule.adminFeePercentage) adminFeeAmount = round2(eligibleRevenue * (rule.adminFeePercentage / 100));
-      if (rule.techFeePercentage) techFeeAmount = round2(eligibleRevenue * (rule.techFeePercentage / 100));
-      if (rule.marketingFeePercentage) marketingFeeAmount = round2(eligibleRevenue * (rule.marketingFeePercentage / 100));
+      // Flat INR amounts configured directly on the rule — not computed from
+      // revenue (unlike the royalty fee itself), so no percentage math here.
+      marketingFeeAmount = rule.marketingFeeAmount ?? null;
+      otherFeeAmount = rule.otherFeeAmount ?? null;
     }
 
     return {
@@ -283,9 +285,8 @@ export class RoyaltyReportService {
       royaltyFeeBeforeCap,
       totalDue,
       effectiveRoyaltyPct: eligibleRevenue > 0 ? Math.round((totalDue / eligibleRevenue) * 1000) / 10 : null,
-      adminFeeAmount,
-      techFeeAmount,
       marketingFeeAmount,
+      otherFeeAmount,
       dataSourceNote:
         totalInvoices > 0
           ? 'Computed from won-deal revenue plus real invoice records for this period.'

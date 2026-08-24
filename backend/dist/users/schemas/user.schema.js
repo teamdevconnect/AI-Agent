@@ -9,8 +9,82 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UserSchema = exports.User = void 0;
+exports.UserSchema = exports.User = exports.TwoFactorBackupCode = exports.PushSubscriptionEntry = exports.SessionEntry = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
+let SessionEntry = class SessionEntry {
+};
+exports.SessionEntry = SessionEntry;
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", String)
+], SessionEntry.prototype, "jti", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", String)
+], SessionEntry.prototype, "device", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], SessionEntry.prototype, "userAgent", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], SessionEntry.prototype, "ip", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], SessionEntry.prototype, "location", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", Date)
+], SessionEntry.prototype, "createdAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", Date)
+], SessionEntry.prototype, "lastSeenAt", void 0);
+exports.SessionEntry = SessionEntry = __decorate([
+    (0, mongoose_1.Schema)({ _id: false })
+], SessionEntry);
+let PushSubscriptionEntry = class PushSubscriptionEntry {
+};
+exports.PushSubscriptionEntry = PushSubscriptionEntry;
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", String)
+], PushSubscriptionEntry.prototype, "endpoint", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object, required: true }),
+    __metadata("design:type", Object)
+], PushSubscriptionEntry.prototype, "keys", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, enum: ['desktop', 'mobile'] }),
+    __metadata("design:type", String)
+], PushSubscriptionEntry.prototype, "deviceType", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], PushSubscriptionEntry.prototype, "userAgent", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", Date)
+], PushSubscriptionEntry.prototype, "createdAt", void 0);
+exports.PushSubscriptionEntry = PushSubscriptionEntry = __decorate([
+    (0, mongoose_1.Schema)({ _id: false })
+], PushSubscriptionEntry);
+let TwoFactorBackupCode = class TwoFactorBackupCode {
+};
+exports.TwoFactorBackupCode = TwoFactorBackupCode;
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", String)
+], TwoFactorBackupCode.prototype, "codeHash", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", Date)
+], TwoFactorBackupCode.prototype, "usedAt", void 0);
+exports.TwoFactorBackupCode = TwoFactorBackupCode = __decorate([
+    (0, mongoose_1.Schema)({ _id: false })
+], TwoFactorBackupCode);
 let User = class User {
 };
 exports.User = User;
@@ -78,6 +152,45 @@ __decorate([
     (0, mongoose_1.Prop)({ type: Object, default: {} }),
     __metadata("design:type", Object)
 ], User.prototype, "oauthProviders", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false }),
+    __metadata("design:type", Boolean)
+], User.prototype, "twoFactorEnabled", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], User.prototype, "twoFactorSecretEncrypted", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", Date)
+], User.prototype, "twoFactorEnabledAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], User.prototype, "twoFactorPendingSecretEncrypted", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", Date)
+], User.prototype, "twoFactorPendingSecretExpiresAt", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [TwoFactorBackupCode], default: [] }),
+    __metadata("design:type", Array)
+], User.prototype, "twoFactorBackupCodes", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [SessionEntry], default: [] }),
+    __metadata("design:type", Array)
+], User.prototype, "sessions", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: [PushSubscriptionEntry], default: [] }),
+    __metadata("design:type", Array)
+], User.prototype, "pushSubscriptions", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({
+        type: Object,
+        default: { desktopPush: true, mobilePush: true, email: true },
+    }),
+    __metadata("design:type", Object)
+], User.prototype, "notificationPreferences", void 0);
 exports.User = User = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true })
 ], User);

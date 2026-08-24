@@ -31,9 +31,8 @@ function defaultDraft() {
     capType: 'none' as RoyaltyCapType,
     capValue: '',
     slidingTiers: [] as DraftTier[],
-    adminFeePercentage: '',
-    techFeePercentage: '',
-    marketingFeePercentage: '',
+    marketingFeeAmount: '',
+    otherFeeAmount: '',
     excludeTax: true,
     excludeShipping: true,
     excludeDiscount: false,
@@ -72,10 +71,8 @@ export function RoyaltyRulesSettings() {
             toValue: t.toValue !== undefined ? String(t.toValue) : '',
             percentage: String(t.percentage),
           })),
-          adminFeePercentage: currentRule.adminFeePercentage !== undefined ? String(currentRule.adminFeePercentage) : '',
-          techFeePercentage: currentRule.techFeePercentage !== undefined ? String(currentRule.techFeePercentage) : '',
-          marketingFeePercentage:
-            currentRule.marketingFeePercentage !== undefined ? String(currentRule.marketingFeePercentage) : '',
+          marketingFeeAmount: currentRule.marketingFeeAmount !== undefined ? String(currentRule.marketingFeeAmount) : '',
+          otherFeeAmount: currentRule.otherFeeAmount !== undefined ? String(currentRule.otherFeeAmount) : '',
           excludeTax: currentRule.excludeTax,
           excludeShipping: currentRule.excludeShipping,
           excludeDiscount: currentRule.excludeDiscount,
@@ -137,9 +134,8 @@ export function RoyaltyRulesSettings() {
                 percentage: Number(t.percentage) || 0,
               }))
             : undefined,
-        adminFeePercentage: draft.adminFeePercentage ? Number(draft.adminFeePercentage) : undefined,
-        techFeePercentage: draft.techFeePercentage ? Number(draft.techFeePercentage) : undefined,
-        marketingFeePercentage: draft.marketingFeePercentage ? Number(draft.marketingFeePercentage) : undefined,
+        marketingFeeAmount: draft.marketingFeeAmount ? Number(draft.marketingFeeAmount) : undefined,
+        otherFeeAmount: draft.otherFeeAmount ? Number(draft.otherFeeAmount) : undefined,
         excludeTax: draft.excludeTax,
         excludeShipping: draft.excludeShipping,
         excludeDiscount: draft.excludeDiscount,
@@ -270,31 +266,22 @@ export function RoyaltyRulesSettings() {
         )}
 
         <div className={styles.fieldGrid}>
-          <SettingsField label="Admin Fee">
-            <Input
-              type="number"
-              min={0}
-              rightIcon="%"
-              value={draft.adminFeePercentage}
-              onChange={(e) => setDraft((prev) => ({ ...prev, adminFeePercentage: e.target.value }))}
-            />
-          </SettingsField>
-          <SettingsField label="Tech Fee">
-            <Input
-              type="number"
-              min={0}
-              rightIcon="%"
-              value={draft.techFeePercentage}
-              onChange={(e) => setDraft((prev) => ({ ...prev, techFeePercentage: e.target.value }))}
-            />
-          </SettingsField>
           <SettingsField label="Marketing Fee">
             <Input
               type="number"
               min={0}
-              rightIcon="%"
-              value={draft.marketingFeePercentage}
-              onChange={(e) => setDraft((prev) => ({ ...prev, marketingFeePercentage: e.target.value }))}
+              leftIcon="₹"
+              value={draft.marketingFeeAmount}
+              onChange={(e) => setDraft((prev) => ({ ...prev, marketingFeeAmount: e.target.value }))}
+            />
+          </SettingsField>
+          <SettingsField label="Other Fee">
+            <Input
+              type="number"
+              min={0}
+              leftIcon="₹"
+              value={draft.otherFeeAmount}
+              onChange={(e) => setDraft((prev) => ({ ...prev, otherFeeAmount: e.target.value }))}
             />
           </SettingsField>
         </div>

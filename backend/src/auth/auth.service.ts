@@ -1,18 +1,27 @@
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { AuditService } from '../audit/audit.service';
 import { MailService } from '../mail/mail.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UsersService } from '../users/users.service';
 import { UserDocument } from '../users/schemas/user.schema';
 import { JwtPayload } from './jwt-payload.interface';
 import { OAuthProfile, OAuthProviderName } from './oauth.service';
+import { lookupLocation, parseDeviceLabel } from './session-meta.util';
 
 const SALT_ROUNDS = 12;
 const VERIFY_OTP_TTL_MS = 10 * 60 * 1000;
 const RESET_OTP_TTL_MS = 15 * 60 * 1000;
 const GENERIC_OTP_ERROR = 'Invalid or expired code';
+
+export interface SessionMeta {
+  userAgent?: string;
+  ip?: string;
+}
+
+export type LoginResult = { status: 'ok'; accessToken: string } | { status: '2fa_required'; challengeToken: string };
 
 @Injectable()
 export class AuthService {
@@ -21,13 +30,14 @@ export class AuthService {
     private organizationsService: OrganizationsService,
     private jwtService: JwtService,
     private mailService: MailService,
+    private auditService: AuditService,
   ) {}
 
   /** Registration always creates a brand-new organization (+ its default
    * store) with this user as its owner — there's no "join an existing org"
    * flow yet; adding teammates afterward goes through POST /users (admin
    * panel), which scopes the new account to the caller's own org. */
-  async register(email: string, password: string, name: string, organizationName: string) {
+  async register(email: string, password: string, name: string, organizationName: string, meta: SessionMeta = {}) {
     const existing = await this.usersService.findByEmail(email);
     if (existing) {
       throw new ConflictException('An account with this email already exists');
@@ -52,7 +62,9 @@ export class AuthService {
     void this.sendVerificationOtp(user);
     void this.mailService.sendWelcomeEmail(user.email, user.name);
 
-    return this.issueToken(user);
+    // A brand-new account never has 2FA enabled yet — go straight to a real
+    // session rather than through issueTokenOrChallenge's branch.
+    return this.issueSessionToken(user, meta);
   }
 
   /** Generates a fresh OTP, stores its hash, and emails it — shared by
@@ -114,8 +126,18 @@ export class AuthService {
   /** Change-password for an already-authenticated user (Settings > Security)
    * — distinct from resetPassword() above, which is the unauthenticated
    * forgot-password/OTP flow. Requires the current password rather than an
-   * OTP, since the caller already proved identity via their JWT session. */
-  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+   * OTP, since the caller already proved identity via their JWT session.
+   * currentJti is the caller's own session — kept alive while every OTHER
+   * session is revoked, so a stolen-and-since-changed password can't be
+   * used to keep a hijacker's session alive, but the user isn't logged out
+   * of their own current device by changing their own password. */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    currentJti: string,
+    ip?: string,
+  ): Promise<void> {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('Invalid session');
@@ -133,9 +155,23 @@ export class AuthService {
     }
     const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
     await this.usersService.resetPassword(userId, passwordHash);
+    await this.usersService.revokeAllOtherSessions(userId, currentJti);
+    // Explicit call, not the global AuditInterceptor — /auth/* is skipped
+    // there by design (see audit.interceptor.ts's own comment on why: risk
+    // of ever accidentally widening that skip to capture credentials).
+    void this.auditService.log({
+      userId,
+      organizationId: user.organizationId,
+      method: 'POST',
+      route: '/auth/change-password',
+      statusCode: 200,
+      durationMs: 0,
+      ip,
+      action: 'password.change',
+    });
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, meta: SessionMeta = {}): Promise<LoginResult> {
     const user = await this.usersService.findByEmail(email);
     // !user.passwordHash covers OAuth-only accounts (see loginWithOAuth) —
     // bcrypt.compare throws on a non-string hash, and such an account can't
@@ -148,7 +184,7 @@ export class AuthService {
     if (user.active === false) {
       throw new UnauthorizedException('Account disabled');
     }
-    return this.issueToken(user);
+    return this.issueTokenOrChallenge(user, meta);
   }
 
   /** Finds-or-creates a user for a verified OAuth profile and issues the
@@ -156,8 +192,12 @@ export class AuthService {
    * provider id first (stable across email changes), then email (so an
    * existing password-auth user who clicks "Sign in with Google" gets that
    * provider linked to their account instead of a duplicate one), then
-   * finally creates a brand-new org+user exactly like register() does. */
-  async loginWithOAuth(provider: OAuthProviderName, profile: OAuthProfile) {
+   * finally creates a brand-new org+user exactly like register() does.
+   * Goes through the same issueTokenOrChallenge branch as password login —
+   * 2FA protects the account regardless of which sign-in path reached it,
+   * and there's exactly one place that decision is made so the two paths
+   * can never drift out of sync. */
+  async loginWithOAuth(provider: OAuthProviderName, profile: OAuthProfile, meta: SessionMeta = {}) {
     let user: UserDocument | null = await this.usersService.findByOAuthId(provider, profile.providerId);
 
     if (!user) {
@@ -173,7 +213,7 @@ export class AuthService {
     if (user.active === false) {
       throw new UnauthorizedException('Account disabled');
     }
-    return this.issueToken(user);
+    return this.issueTokenOrChallenge(user, meta);
   }
 
   private async registerOAuthUser(provider: OAuthProviderName, profile: OAuthProfile): Promise<UserDocument> {
@@ -196,7 +236,26 @@ export class AuthService {
     return user;
   }
 
-  private issueToken(user: UserDocument) {
+  /** Mints a real, session-backed access token — creates a SessionEntry
+   * (device/location/timestamps) the user can see and revoke later under
+   * Settings > Security > Active Sessions, and embeds that session's jti in
+   * the token so JwtStrategy.validate() can reject it the instant it's
+   * revoked, on the very next request. Not private: TwoFactorService calls
+   * this directly to finish issuing a real session once a login-2fa
+   * challenge is actually satisfied — same method either way, so a 2FA
+   * login's session is created identically to a non-2FA one. */
+  async issueSessionToken(user: UserDocument, meta: SessionMeta): Promise<{ accessToken: string }> {
+    const jti = randomUUID();
+    const now = new Date();
+    await this.usersService.addSession(user._id.toString(), {
+      jti,
+      device: parseDeviceLabel(meta.userAgent),
+      userAgent: meta.userAgent,
+      ip: meta.ip,
+      location: lookupLocation(meta.ip),
+      createdAt: now,
+      lastSeenAt: now,
+    });
     const payload: JwtPayload = {
       sub: user._id.toString(),
       email: user.email,
@@ -205,8 +264,45 @@ export class AuthService {
       storeId: user.storeId,
       assignedAgentId: user.assignedAgentId,
       department: user.department,
+      jti,
     };
     return { accessToken: this.jwtService.sign(payload) };
+  }
+
+  /** A short-lived, minimal-claim token proving "this is who just supplied
+   * valid credentials," nothing more — no roles/org/jti, so even if it
+   * leaked it couldn't authenticate a real request (JwtStrategy.validate()
+   * rejects any payload carrying `purpose` outright). Mirrors the existing
+   * `state` token pattern OAuthController already signs for its own
+   * CSRF-proofing round trip. */
+  private buildChallengeToken(user: UserDocument): string {
+    return this.jwtService.sign(
+      { sub: user._id.toString(), purpose: 'login-2fa-challenge' },
+      { expiresIn: '5m' },
+    );
+  }
+
+  /** The single shared branch point password login, OAuth login, and (once
+   * TwoFactorService exists) the login-2fa-challenge flow's own final step
+   * all funnel through — a session is only ever created once 2FA is
+   * actually satisfied (or was never required), never at credential-check
+   * time. Today this always resolves 'ok' (TwoFactorService/the
+   * twoFactorEnabled branch lands in a later step); the shape is already
+   * final so callers don't change again when that lands. */
+  async issueTokenOrChallenge(user: UserDocument, meta: SessionMeta = {}): Promise<LoginResult> {
+    if (user.twoFactorEnabled) {
+      return { status: '2fa_required', challengeToken: this.buildChallengeToken(user) };
+    }
+    const { accessToken } = await this.issueSessionToken(user, meta);
+    return { status: 'ok', accessToken };
+  }
+
+  /** Revokes exactly the caller's own current session — POST /auth/logout
+   * is the first time "logout" has been a real backend action rather than
+   * the frontend's previous no-op (stateless JWTs had nothing to revoke
+   * before sessions existed). */
+  logout(userId: string, jti: string): Promise<unknown> {
+    return this.usersService.revokeSession(userId, jti);
   }
 }
 

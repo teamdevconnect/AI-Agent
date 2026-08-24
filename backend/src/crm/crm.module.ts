@@ -14,9 +14,12 @@ import {
   CustomerActivityPersonalSummarySchema,
 } from './schemas/customer-activity-personal-summary.schema';
 import { Deal, DealSchema } from './schemas/deal.schema';
+import { DealOwnerMapping, DealOwnerMappingSchema } from './schemas/deal-owner-mapping.schema';
+import { EmailIntelligenceItem, EmailIntelligenceItemSchema } from '../email-intelligence/schemas/email-intelligence-item.schema';
 import { Note, NoteSchema } from './schemas/note.schema';
 import { Quote, QuoteSchema } from './schemas/quote.schema';
 import { QuoteCounter, QuoteCounterSchema } from './schemas/quote-counter.schema';
+import { QuotePayment, QuotePaymentSchema } from './schemas/quote-payment.schema';
 import { SalesTarget, SalesTargetSchema } from './schemas/sales-target.schema';
 import { Tag, TagSchema } from './schemas/tag.schema';
 import { BusinessDashboardController } from './business-dashboard.controller';
@@ -30,6 +33,8 @@ import { DealPerformanceDashboardService } from './deal-performance-dashboard.se
 import { DealsController } from './deals.controller';
 import { DealsExportService } from './deals-export.service';
 import { DealsService } from './deals.service';
+import { DealOwnerMappingService } from './deal-owner-mapping.service';
+import { QuotePaymentsService } from './quote-payments.service';
 import { QuotesService } from './quotes.service';
 import { SalesAnalyticsService } from './sales-analytics.service';
 import { SalesTargetController } from './sales-target.controller';
@@ -40,13 +45,24 @@ import { SalesTargetController } from './sales-target.controller';
       { name: Contact.name, schema: ContactSchema },
       { name: Account.name, schema: AccountSchema },
       { name: Deal.name, schema: DealSchema },
+      { name: DealOwnerMapping.name, schema: DealOwnerMappingSchema },
       { name: Quote.name, schema: QuoteSchema },
+      // Business Intelligence's Customer Quote & Payment Tracking (QuotePaymentsService,
+      // added in a later build phase alongside its write endpoints on QuotesController).
+      { name: QuotePayment.name, schema: QuotePaymentSchema },
       { name: Note.name, schema: NoteSchema },
       { name: Tag.name, schema: TagSchema },
       { name: SalesTarget.name, schema: SalesTargetSchema },
       { name: QuoteCounter.name, schema: QuoteCounterSchema },
       { name: CustomerActivitySummary.name, schema: CustomerActivitySummarySchema },
       { name: CustomerActivityPersonalSummary.name, schema: CustomerActivityPersonalSummarySchema },
+      // Read-only reuse of EmailIntelligenceModule's schema class (same
+      // precedent as that module's own OutlookConnection/AgentExecution
+      // reuse) — BusinessDashboardService's Employee Leaderboard needs
+      // sent/missed email counts per user, and CrmModule can never import
+      // EmailIntelligenceModule directly (EmailIntelligenceModule -> CrmModule
+      // is one-directional, see that module's own comment).
+      { name: EmailIntelligenceItem.name, schema: EmailIntelligenceItemSchema },
     ]),
     DashboardModule,
     OrganizationsModule,
@@ -78,6 +94,7 @@ import { SalesTargetController } from './sales-target.controller';
     BusinessDashboardService,
     DealsService,
     DealsExportService,
+    DealOwnerMappingService,
     // DealPerformanceDashboardService has no controller of its own anymore
     // (Deal Performance page removed) — kept as a provider purely because
     // AnalyticsDashboardService injects getConsultantPerformance/
@@ -86,11 +103,21 @@ import { SalesTargetController } from './sales-target.controller';
     DealPerformanceDashboardService,
     CustomerActivityService,
     QuotesService,
+    QuotePaymentsService,
   ],
   // Consumed by EmailIntelligenceModule: CustomerActivityService.gatherCorrelationContext
   // (Phase 14b) and QuotesService.createDraftQuote (Phase 14e, post-send actions).
   // BusinessDashboardService (Phase 16) is consumed by the new HomeDashboardModule,
   // which sits above both CrmModule and EmailIntelligenceModule.
-  exports: [CustomerActivityService, QuotesService, BusinessDashboardService, DealPerformanceDashboardService, SalesAnalyticsService],
+  // QuotePaymentsService is consumed by BusinessIntelligenceModule's
+  // customer-quote-payment.service.ts for the per-customer payment overlay.
+  exports: [
+    CustomerActivityService,
+    QuotesService,
+    QuotePaymentsService,
+    BusinessDashboardService,
+    DealPerformanceDashboardService,
+    SalesAnalyticsService,
+  ],
 })
 export class CrmModule {}

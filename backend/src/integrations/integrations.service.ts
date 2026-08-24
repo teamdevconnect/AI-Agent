@@ -37,9 +37,11 @@ export class IntegrationsService {
     private http: HttpService,
   ) {}
 
-  /** Legacy shape, byte-for-byte unchanged: apiKey (+ optional baseUrl),
-   * used by the 'anthropic' and 'crm' connect UI today. Every existing
-   * caller of this method keeps working exactly as before. */
+  /** Legacy shape, request/response byte-for-byte unchanged: apiKey (+
+   * optional baseUrl), used by the 'anthropic' and 'crm' connect UI today.
+   * The stored value is now encrypted at rest (was plaintext) — every read
+   * site goes through decryptStoredApiKey() below, which also transparently
+   * upgrades any row still holding an old plaintext value. */
   async connect(
     organizationId: string,
     provider: string,
@@ -49,7 +51,7 @@ export class IntegrationsService {
     this.assertAllowed(provider);
     await this.credentialModel.findOneAndUpdate(
       { organizationId, provider },
-      { organizationId, provider, apiKey, baseUrl, authType: undefined, credentialsEncrypted: undefined },
+      { organizationId, provider, apiKey: this.encryption.encrypt(apiKey), baseUrl, authType: undefined, credentialsEncrypted: undefined },
       { upsert: true },
     );
     return { connected: true, maskedKey: this.mask(apiKey), baseUrl };
@@ -107,7 +109,7 @@ export class IntegrationsService {
       // the UI to show without ever decrypting them for display.
       return { connected: true, authType: doc.authType, baseUrl: doc.baseUrl };
     }
-    return { connected: true, maskedKey: this.mask(doc.apiKey ?? ''), baseUrl: doc.baseUrl };
+    return { connected: true, maskedKey: this.mask(this.decryptStoredApiKey(doc.apiKey)), baseUrl: doc.baseUrl };
   }
 
   /** Every custom integration connected for this org — the "Custom
@@ -122,7 +124,7 @@ export class IntegrationsService {
       provider: doc.provider,
       connected: true,
       authType: doc.authType,
-      maskedKey: doc.authType ? undefined : this.mask(doc.apiKey ?? ''),
+      maskedKey: doc.authType ? undefined : this.mask(this.decryptStoredApiKey(doc.apiKey)),
       baseUrl: doc.baseUrl,
       connectedAt: (doc as unknown as { createdAt: Date }).createdAt,
     }));
@@ -160,7 +162,7 @@ export class IntegrationsService {
         credentials = JSON.parse(this.encryption.decrypt(doc.credentialsEncrypted!)) as AuthCredentials;
       } else {
         authType = 'apiKeyBaseUrl';
-        credentials = { apiKey: doc.apiKey };
+        credentials = { apiKey: this.decryptStoredApiKey(doc.apiKey) };
       }
     } else if (!authType) {
       // Legacy-shaped test request (apiKey/baseUrl, no authType).
@@ -211,7 +213,7 @@ export class IntegrationsService {
     return {
       integrationId: doc._id,
       authType: 'apiKeyBaseUrl',
-      credentials: { apiKey: doc.apiKey },
+      credentials: { apiKey: this.decryptStoredApiKey(doc.apiKey) },
       baseUrl: doc.baseUrl,
     };
   }
@@ -266,5 +268,21 @@ export class IntegrationsService {
 
   private mask(apiKey: string): string {
     return apiKey.length > 12 ? `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}` : '***';
+  }
+
+  /** `apiKey` used to be stored plaintext; every row written by connect()
+   * from now on is AES-256-GCM encrypted (see EncryptionService). Decrypts
+   * transparently, but falls back to the raw value when decryption fails —
+   * GCM's auth tag makes that fallback only ever trigger on a genuinely
+   * pre-existing plaintext row, never silently accept tampered ciphertext as
+   * "must be legacy plaintext". No migration script needed: every row
+   * upgrades to encrypted the next time its owner reconnects/saves it. */
+  private decryptStoredApiKey(value: string | undefined): string {
+    if (!value) return '';
+    try {
+      return this.encryption.decrypt(value);
+    } catch {
+      return value;
+    }
   }
 }

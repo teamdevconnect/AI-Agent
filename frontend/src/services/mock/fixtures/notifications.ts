@@ -8,7 +8,6 @@ export type NotificationEntityType =
   | 'deal'
   | 'task'
   | 'outlookAccount'
-  | 'workflowExecution'
   | 'dailyReport';
 
 export interface AppNotification {

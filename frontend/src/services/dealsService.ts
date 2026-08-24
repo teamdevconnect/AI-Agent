@@ -14,6 +14,15 @@ export interface Deal {
   monetaryValue: number;
   expectedClosingDate?: string;
   externalId?: string;
+  // The raw external-CRM owner reference this deal actually carries (see
+  // backend deal.schema.ts's own comment) — present on the wire for every
+  // deal-list endpoint today; previously undeclared here, which is why the
+  // Deal Assignment page couldn't tell "CRM has an owner, just not mapped
+  // yet" apart from "genuinely no owner" even though the data was already
+  // there.
+  externalOwnerRef?: string;
+  externalOwnerLabel?: string;
+  externalOwnerProvider?: string;
   // Phase 9a — manual-entry-only dimension fields (see backend deal.schema.ts).
   // Only ever set on natively created/edited deals; external-CRM-synced
   // deals never carry these.
@@ -37,8 +46,17 @@ export const REGIONS = ['north', 'south', 'east', 'west', 'central', 'internatio
 // the composite dashboard overview (dealPerformanceService.ts), so the two
 // never drift on what a filter param is called.
 export interface DealFilters {
+  // Free-text substring match against Deal.name only (see backend
+  // deal-filter.util.ts) — Deal has no first-class customer/account name
+  // field to search at the DB layer.
+  search?: string;
   dateFrom?: string;
   dateTo?: string;
+  // Which field dateFrom/dateTo range against — defaults server-side to
+  // createdAt. Pass 'expectedClosingDate' when reconciling against a figure
+  // computed from expectedClosingDate (e.g. the achievement/"Total Revenue"
+  // number), so the drill-down list matches what was actually summed.
+  dateField?: 'createdAt' | 'expectedClosingDate';
   ownerId?: string[];
   storeId?: string[];
   dealStatus?: ('open' | 'won' | 'lost')[];
@@ -76,6 +94,60 @@ export interface ListDealsResult {
   total: number;
   page: number;
   pageSize: number;
+}
+
+// Provider-agnostic external CRM owner mapping — one row per distinct raw
+// owner id seen across this org's synced deals (see backend deal.schema.ts's
+// comment on externalOwnerRef). `mapping` is null until an admin maps it.
+export interface ExternalOwnerRow {
+  provider: string;
+  externalOwnerRef: string;
+  externalOwnerLabel?: string;
+  dealCount: number;
+  mapping: { id: string; ownerId: string; ownerName?: string } | null;
+  // Best-effort employee match on the CRM's raw label — a suggestion only,
+  // never applied until the admin explicitly confirms it (see
+  // DealAssignmentSettings.tsx). Absent when no single employee matches.
+  suggestedOwnerId?: string;
+  suggestedOwnerName?: string;
+}
+
+// Settings → Deal Assignment's own per-deal row — a Deal plus everything
+// needed to render ownership accurately without re-deriving any of it
+// client-side (see backend deal-owner-mapping.service.ts's
+// listDealsForAssignment, the single source of this shape).
+export interface AssignmentDealRow {
+  _id: string;
+  name: string;
+  dealStatus: 'open' | 'won' | 'lost';
+  monetaryValue: number;
+  expectedClosingDate?: string;
+  ownerId?: string;
+  ownerName?: string;
+  externalOwnerRef?: string;
+  externalOwnerLabel?: string;
+  externalOwnerProvider?: string;
+  // 'assigned' — ownerId is set. 'pending_mapping' — the CRM has a real
+  // owner (externalOwnerRef) that just isn't linked to a user yet; this is
+  // NOT the same thing as no owner at all, and must never render as
+  // "Unassigned". 'unassigned' — neither is set: the only case that should.
+  ownershipStatus: 'assigned' | 'pending_mapping' | 'unassigned';
+  customerName?: string;
+  customerNameSource?: 'account' | 'quote_client_details' | 'deal_name_heuristic';
+}
+
+export interface ListAssignmentDealsResult {
+  items: AssignmentDealRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface UpsertOwnerMappingPayload {
+  provider: string;
+  externalOwnerRef: string;
+  externalOwnerLabel?: string;
+  ownerId: string;
 }
 
 // Arrays are sent as a single comma-separated query param (matches
@@ -121,6 +193,32 @@ export const dealsService = {
   async assign(dealId: string, ownerId: string | null): Promise<Deal> {
     const { data } = await axiosClient.patch<Deal>(`/crm/deals/${dealId}/assign`, { ownerId });
     return data;
+  },
+
+  async listOwnerMappings(): Promise<ExternalOwnerRow[]> {
+    const { data } = await axiosClient.get<ExternalOwnerRow[]>('/crm/deals/owner-mappings');
+    return data;
+  },
+
+  async listForAssignment(
+    filters: DealFilters,
+    page: number,
+    pageSize: number,
+    needsMapping?: boolean,
+  ): Promise<ListAssignmentDealsResult> {
+    const { data } = await axiosClient.get<ListAssignmentDealsResult>('/crm/deals/assignment', {
+      params: toDealFilterParams(filters, { page, pageSize, needsMapping: needsMapping || undefined }),
+    });
+    return data;
+  },
+
+  async upsertOwnerMapping(payload: UpsertOwnerMappingPayload): Promise<ExternalOwnerRow> {
+    const { data } = await axiosClient.post<ExternalOwnerRow>('/crm/deals/owner-mappings', payload);
+    return data;
+  },
+
+  async deleteOwnerMapping(mappingId: string): Promise<void> {
+    await axiosClient.delete(`/crm/deals/owner-mappings/${mappingId}`);
   },
 
   async downloadExport(format: 'csv' | 'xlsx' | 'pdf', filters: DealFilters): Promise<void> {

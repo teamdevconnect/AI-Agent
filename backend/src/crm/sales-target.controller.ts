@@ -30,7 +30,15 @@ export class SalesTargetController {
     return this.salesAnalyticsService.upsertTarget(user.organizationId, dto);
   }
 
+  // Was missing this guard entirely — scope/scopeId are client-supplied, so
+  // without it any authenticated caller (including a consultant) could ask
+  // for `?scope=org` (whole-org revenue) or `?scope=user&scopeId=<coworker>`
+  // (a specific colleague's personal figures). Same admin-only tier as list/
+  // upsert above — Manager/Consultant still only see their own computed
+  // achievement via their dashboard endpoints, never this raw route.
   @Get('achievement')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
   achievement(@CurrentUser() user: JwtPayload, @Query() query: GetAchievementQueryDto) {
     return this.salesAnalyticsService.getAchievement(user.organizationId, query.scope, query.scopeId, query.period);
   }

@@ -99,11 +99,14 @@ let OutlookService = class OutlookService {
     async handleCallback(code, userId, organizationId) {
         const tokens = await this.exchangeCode(code);
         const email = await this.fetchUserEmail(tokens.access_token);
+        const { tenantId: microsoftTenantId, userId: microsoftUserId } = this.decodeAccessTokenClaims(tokens.access_token);
         await this.connectionModel.updateMany({ userId }, { isActive: false });
         await this.connectionModel.findOneAndUpdate({ userId, email }, {
             userId,
             organizationId,
             email,
+            microsoftTenantId,
+            microsoftUserId,
             accessToken: this.encryption.encrypt(tokens.access_token),
             refreshToken: this.encryption.encrypt(tokens.refresh_token),
             expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
@@ -112,6 +115,16 @@ let OutlookService = class OutlookService {
             status: 'connected',
         }, { upsert: true });
         return { email };
+    }
+    decodeAccessTokenClaims(accessToken) {
+        try {
+            const payload = accessToken.split('.')[1];
+            const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+            return { tenantId: claims.tid, userId: claims.oid };
+        }
+        catch {
+            return {};
+        }
     }
     async getStatus(userId) {
         const active = await this.connectionModel.findOne({ userId, isActive: true }).select({ email: 1, scope: 1 });

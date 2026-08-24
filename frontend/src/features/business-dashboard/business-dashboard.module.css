@@ -141,6 +141,35 @@
   color: var(--color-text-primary);
 }
 
+.tableScroll {
+  overflow-x: auto;
+}
+
+.activityTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.activityTable th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.activityTable td {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.activityTable tr:last-child td {
+  border-bottom: none;
+}
+
 /* Phase 16 — Unified Home Dashboard sections */
 
 .stackList {

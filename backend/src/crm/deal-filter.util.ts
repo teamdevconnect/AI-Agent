@@ -19,6 +19,14 @@ export function buildDealMatchStage(
   const includeDateRange = options?.includeDateRange ?? true;
   const match: FilterQuery<Deal> = { organizationId };
 
+  // Escaped before use (same precedent as royalty/invoice-filter.util.ts's
+  // customerName search) — a raw, unescaped user string straight into
+  // $regex would let stray regex metacharacters throw or scan pathologically.
+  if (filters.search?.trim()) {
+    const escaped = filters.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    match.name = new RegExp(escaped, 'i');
+  }
+
   if (storeConstraint) {
     match.storeId = storeConstraint;
   } else if (filters.storeId?.length) {
@@ -42,11 +50,39 @@ export function buildDealMatchStage(
   // correctly createdAt-based. dateFrom/dateTo are plain "YYYY-MM-DD"
   // strings; dateTo is pushed to end-of-day so a date-only value doesn't
   // mean midnight and silently exclude that entire day's own records.
+  //
+  // filters.dateField opts a caller into expectedClosingDate instead —
+  // needed by callers reconciling against SalesAnalyticsService.getAchievement,
+  // which sums won deals by expectedClosingDate's own YYYY-MM prefix, not
+  // createdAt. Deliberately NOT a $gte/$lte range against dateFrom/dateTo:
+  // MonthYearFilterPopup caps dateTo at "today" for the current month
+  // (rangeForMonth — correct for createdAt, which can't be in the future),
+  // but expectedClosingDate is a forecast field that can legitimately fall
+  // later in the month than today. Ranging against the capped dateTo would
+  // silently exclude those deals from the drill-down while getAchievement's
+  // own regex still counts them — so this matches getAchievement exactly:
+  // the whole calendar month of dateFrom, via the same YYYY-MM prefix regex,
+  // ignoring dateTo entirely. dateFrom is always the 1st of that month here
+  // (every caller of dateField:'expectedClosingDate' sources it from
+  // MonthYearFilterPopup/defaultRange, both always whole-month-start).
   if (includeDateRange && (filters.dateFrom || filters.dateTo)) {
-    match.createdAt = {
-      ...(filters.dateFrom ? { $gte: new Date(filters.dateFrom) } : {}),
-      ...(filters.dateTo ? { $lte: new Date(new Date(filters.dateTo).setHours(23, 59, 59, 999)) } : {}),
-    };
+    if (filters.dateField === 'expectedClosingDate') {
+      const period = (filters.dateFrom ?? filters.dateTo)!.slice(0, 7);
+      match.expectedClosingDate = { $regex: `^${period}` };
+    } else {
+      // Explicit 'Z' (UTC) end-of-day, not `.setHours(23,59,59,999)` — that
+      // mutates in the server process's LOCAL timezone, so on any server not
+      // running in UTC it lands hours away from analytics-dashboard.service.ts's
+      // own `${dateTo}T23:59:59.999Z` boundary (used to compute wonValue/
+      // lostValue). That mismatch silently dropped deals created late in the
+      // last day of range from this list while the dashboard's own total
+      // still counted them — real user-reported bug (Won/Lost Revenue bar's
+      // drill-down popup missing deals the bar's own dollar total included).
+      match.createdAt = {
+        ...(filters.dateFrom ? { $gte: new Date(`${filters.dateFrom}T00:00:00.000Z`) } : {}),
+        ...(filters.dateTo ? { $lte: new Date(`${filters.dateTo}T23:59:59.999Z`) } : {}),
+      };
+    }
   }
 
   if (filters.valueMin !== undefined || filters.valueMax !== undefined) {

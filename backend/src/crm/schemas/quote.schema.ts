@@ -57,6 +57,16 @@ export class Quote {
   @Prop()
   quoteOwner?: string;
 
+  // Best-effort human-readable label for quoteOwner — ProspectConnect's
+  // quotes endpoint returns quote_owner as a nested {id, name, ...} profile
+  // object (unlike deals, which only ever expose a bare sales_person id; see
+  // deal.schema.ts's externalOwnerLabel comment). crm_mongo_sync.py captures
+  // it here and cross-references it back onto Deal.externalOwnerLabel for
+  // any deal sharing the same underlying CRM user id, since that's the only
+  // place this integration ever receives a real name for that id space.
+  @Prop()
+  quoteOwnerLabel?: string;
+
   // Set only for quotes mirrored in from an org's connected external CRM
   // (see python-agent/app/integrations/crm_mongo_sync.py's sync_quotes_for_org)
   // — the external record's own id, so re-syncing updates the same document
@@ -88,6 +98,41 @@ export class Quote {
   @Prop()
   lastActivityAt?: Date;
 
+  // --- Business Intelligence additions ---
+
+  // Set only by EmailIntelligenceService.createDraftQuoteFromItem, going
+  // forward from when this field was added — the real Enquiry->Quote
+  // traceability link. Quotes created before this field existed (and
+  // externally-synced quotes) have no value here; Enquiry Conversion
+  // reporting must treat that as "no exact link", not "definitely not
+  // enquiry-sourced" — see enquiry-conversion.service.ts's inferred-match
+  // fallback.
+  @Prop({ index: true })
+  sourceEmailIntelligenceItemId?: string;
+
+  // A real userId, distinct from quoteOwner above (free text, unreliable —
+  // only trustworthy for email-drafted quotes). Populated from
+  // CreateDraftQuoteInput.createdBy going forward. Historical/synced quotes
+  // will lack this — Employee Productivity's quote stats must report
+  // coveragePct honestly rather than silently undercounting as zero.
+  @Prop({ index: true })
+  ownerUserId?: string;
+
+  // Payment-expectation date — distinct from expirationDate above, which is
+  // quote *validity*, not when payment is due. Used for Accounts
+  // Receivable aging buckets.
+  @Prop()
+  dueDate?: string;
+
+  // Denormalized running total of non-voided QuotePayment.amount for this
+  // quote — recomputed (not incrementally $inc'd, to avoid drift across
+  // voids) by QuotePaymentsService on every payment create/void.
+  // outstandingAmount is deliberately NOT stored: always computed live as
+  // quoteAmount - paidAmount, matching finance-dashboard.service.ts's own
+  // "never trust a stored value for something date/amount-derived" convention.
+  @Prop({ default: 0 })
+  paidAmount: number;
+
   // Managed automatically by { timestamps: true } above — see deal.schema.ts's
   // identical comment.
   createdAt: Date;
@@ -100,4 +145,11 @@ export const QuoteSchema = SchemaFactory.createForClass(Quote);
 QuoteSchema.index(
   { organizationId: 1, externalId: 1 },
   { unique: true, partialFilterExpression: { externalId: { $exists: true } } },
+);
+// One email should draft at most one quote — same partialFilterExpression
+// idiom as externalId above (excludes every quote lacking this field from
+// the index entirely, rather than colliding on "missing").
+QuoteSchema.index(
+  { organizationId: 1, sourceEmailIntelligenceItemId: 1 },
+  { unique: true, partialFilterExpression: { sourceEmailIntelligenceItemId: { $exists: true } } },
 );

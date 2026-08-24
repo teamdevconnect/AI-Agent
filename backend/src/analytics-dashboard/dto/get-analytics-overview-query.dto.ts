@@ -1,11 +1,13 @@
 import { IsOptional, IsString, Matches } from 'class-validator';
 
-const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export class GetAnalyticsOverviewQueryDto {
-  @IsOptional()
-  @Matches(PERIOD, { message: 'period must be in "YYYY-MM" format' })
-  period?: string;
+  @Matches(DATE, { message: 'dateFrom must be in "YYYY-MM-DD" format' })
+  dateFrom: string;
+
+  @Matches(DATE, { message: 'dateTo must be in "YYYY-MM-DD" format' })
+  dateTo: string;
 
   // Owner/admin only — narrows org-wide scope down to one store. Ignored
   // (never trusted) for manager/consultant callers, whose scope is always

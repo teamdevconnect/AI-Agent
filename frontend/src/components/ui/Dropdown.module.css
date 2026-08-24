@@ -30,6 +30,14 @@
   bottom: calc(100% + 6px);
 }
 
+/* Portal mode: rendered into document.body, positioned via inline
+   top/bottom/left/right from the trigger's live getBoundingClientRect() —
+   escapes any ancestor's overflow:hidden clipping (e.g. AppLayout's
+   .shell), which position:absolute-within-wrapper can't do. */
+.menuPortal {
+  position: fixed;
+}
+
 .item {
   display: flex;
   align-items: center;

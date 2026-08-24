@@ -289,6 +289,11 @@ ROLE_EXTRACTION_TOOL = {
             "name": {"type": "string"},
             "department": {"type": "string"},
             "description": {"type": "string"},
+            "goals": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Outcome-shaped objectives (what success means), distinct from responsibilities/tasks below.",
+            },
             "responsibilities": {"type": "array", "items": {"type": "string"}},
             "dailyTasks": {"type": "array", "items": {"type": "string"}},
             "weeklyTasks": {"type": "array", "items": {"type": "string"}},
@@ -306,6 +311,7 @@ ROLE_EXTRACTION_TOOL = {
             "name",
             "department",
             "description",
+            "goals",
             "responsibilities",
             "dailyTasks",
             "weeklyTasks",
@@ -315,9 +321,15 @@ ROLE_EXTRACTION_TOOL = {
     },
 }
 
-ROLE_EXTRACTION_SYSTEM_PROMPT = """You are extracting a structured AI persona definition from a \
-business document (job description, SOP, or KPI sheet). Infer reasonable values for anything the \
-document doesn't state explicitly — never leave a field empty, never ask for clarification.
+# Shared by both extract_role (document) and extract_role_from_description
+# (short user prompt) below — same field set/house style either way, only
+# the source material differs.
+_ROLE_EXTRACTION_CORE_INSTRUCTIONS = """Infer reasonable values for anything not stated explicitly — never \
+leave a field empty, never ask for clarification.
+
+"goals" are outcome-shaped (what success looks like, e.g. "Increase sales conversion and reduce missed \
+follow-ups") — always genuinely distinct from "responsibilities"/"dailyTasks"/"weeklyTasks", which are \
+task-shaped (what the agent actually does day to day). Never just restate a responsibility as a goal.
 
 The "systemPrompt" field must match this house style exactly (it is appended to a shared base \
 prompt, same as two existing hand-written personas):
@@ -327,36 +339,49 @@ search_documents, etc.] to ... — [describe the framing/output style expected].
 Second person, present tense, names concrete tools, 3-5 sentences. Always call \
 extract_role_definition exactly once."""
 
+ROLE_EXTRACTION_SYSTEM_PROMPT = (
+    "You are extracting a structured AI persona definition from a business document "
+    "(job description, SOP, or KPI sheet).\n\n" + _ROLE_EXTRACTION_CORE_INSTRUCTIONS
+)
 
-def extract_role(document_text: str) -> dict:
-    """One-shot structured extraction (not the chat tool-loop). Forces the
-    single extraction tool via tool_choice so the reply is always a
-    schema-validated JSON object — no free-text JSON parsing needed for the
-    common case. Retries once on any failure (missing tool_use block,
-    transient API error) before surfacing a clear error to the caller.
-    """
-    api_key = _resolve_api_key()
-    if not api_key:
-        raise RuntimeError("No Anthropic API key configured")
+ROLE_EXTRACTION_FROM_DESCRIPTION_SYSTEM_PROMPT = (
+    "You are extracting a structured AI persona definition from a short natural-language description a "
+    'user typed (e.g. "Create an AI sales manager that monitors deals, analyzes customer emails, and '
+    'creates follow-up tasks"), not a full business document. It is fine — expected, even — for '
+    "responsibilities/dailyTasks/weeklyTasks/kpis to be shorter and more direct than a document-derived "
+    "role; don't pad the output with generic filler just because the input was brief.\n\n"
+    + _ROLE_EXTRACTION_CORE_INSTRUCTIONS
+)
 
-    last_error: Exception | None = None
-    for _ in range(2):
-        try:
-            response = _client(api_key).messages.create(
-                model=settings.anthropic_model,
-                max_tokens=4096,
-                system=ROLE_EXTRACTION_SYSTEM_PROMPT,
-                tools=[ROLE_EXTRACTION_TOOL],
-                tool_choice={"type": "tool", "name": "extract_role_definition"},
-                messages=[{"role": "user", "content": f"Document:\n\n{document_text[:60000]}"}],
-            )
-            block = next((b for b in response.content if b.type == "tool_use"), None)
-            if block is None:
-                raise ValueError("Model did not return a tool_use block")
-            return block.input
-        except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
-            last_error = exc
-    raise RuntimeError(f"Role extraction failed after retry: {last_error}")
+
+def extract_role(document_text: str, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """One-shot structured extraction (not the chat tool-loop) from an
+    uploaded document's text. Forces the single extraction tool via
+    tool_choice so the reply is always a schema-validated JSON object."""
+    return _run_forced_tool_extraction(
+        ROLE_EXTRACTION_SYSTEM_PROMPT,
+        ROLE_EXTRACTION_TOOL,
+        [{"type": "text", "text": f"Document:\n\n{document_text[:60000]}"}],
+        name="role_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+
+
+def extract_role_from_description(description: str, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """Agent Builder Phase 1's Describe method — same structured output as
+    extract_role, sourced from a short user-written prompt instead of a
+    document. Reuses the identical tool schema (including the same "goals"
+    field), so the frontend's review-before-save editor needs no branching
+    by creation method."""
+    return _run_forced_tool_extraction(
+        ROLE_EXTRACTION_FROM_DESCRIPTION_SYSTEM_PROMPT,
+        ROLE_EXTRACTION_TOOL,
+        [{"type": "text", "text": f"Description:\n\n{description[:4000]}"}],
+        name="role_extraction_from_description",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
 FINANCE_EXTRACTION_TOOL = {
@@ -428,24 +453,33 @@ expenseCategory using a short, human-readable label (e.g. "Software", "Travel", 
 force-fit into a closed list. Always call extract_finance_document exactly once."""
 
 
-def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: list[dict]) -> dict:
-    """Shared forced-tool-choice call — same retry-once-then-raise shape as
-    extract_role, but accepts content blocks (not just a string) since the
-    native vision/PDF path needs them. Generalized from the original
-    finance-only _run_finance_extraction once Business Knowledge document
-    extraction (Phase 14a) became a second real consumer of the identical
-    shape — pure DRY, zero behavior change for Finance's existing calls.
+def _run_forced_tool_extraction(
+    system_prompt: str,
+    tool: dict,
+    user_content: list[dict],
+    *,
+    name: str,
+    organization_id: str | None = None,
+    user_id: str = "",
+) -> dict:
+    """Shared forced-tool-choice call — the original retry-once-then-raise
+    shape extract_role established, generalized to accept content blocks
+    (not just a string) since the native vision/PDF path needs them, once
+    Business Knowledge document extraction (Phase 14a) became a second real
+    consumer of the identical shape. extract_role/extract_role_from_description
+    (Agent Builder Phase 1) were later migrated onto this shared helper too,
+    rather than keeping their own hand-rolled retry loop — pure DRY, zero
+    behavior change for Finance's or Business Knowledge's existing calls.
 
-    Wrapped in traced_llm_call so this cost is no longer invisible to the
-    admin billing console (see backend/src/billing) — deliberately without
-    organization_id/user_id/conversation_id/request_id, since none of this
-    function's many callers (finance/business-knowledge document extraction,
-    email analysis, ...) currently thread tenant context this deep; the rows
-    still count toward the platform-wide provider-cost total, just not
-    per-org. Full per-org attribution for these one-shot extraction calls is
-    a deliberate fast-follow, not done in this pass (see the billing plan's
-    scope cuts).
-    """
+    Phase 21 follow-up: each attempt is now traced (see
+    app.observability.tracing.traced_llm_call) — previously this whole
+    helper (and every caller: Finance/Business Knowledge document
+    extraction, Email Intelligence analysis) was invisible to Command
+    Center and had no real token/cost history anywhere, which is what
+    forced Email Sync's preview to show operation counts only instead of a
+    real estimate. `name` identifies which caller this is for in telemetry
+    (e.g. "email_analyze") — required, not optional, since every caller of
+    this shared helper should identify itself now that it's traced."""
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
@@ -453,7 +487,13 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     last_error: Exception | None = None
     for _ in range(2):
         try:
-            with traced_llm_call("extraction", provider="anthropic", model=settings.anthropic_model) as usage:
+            with traced_llm_call(
+                name,
+                organization_id=organization_id,
+                user_id=user_id,
+                provider="anthropic",
+                model=settings.anthropic_model,
+            ) as usage:
                 response = _client(api_key).messages.create(
                     model=settings.anthropic_model,
                     max_tokens=8192,
@@ -473,11 +513,20 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     raise RuntimeError(f"{tool['name']} extraction failed after retry: {last_error}")
 
 
-def _run_finance_extraction(user_content: list[dict]) -> dict:
-    return _run_forced_tool_extraction(FINANCE_EXTRACTION_SYSTEM_PROMPT, FINANCE_EXTRACTION_TOOL, user_content)
+def _run_finance_extraction(user_content: list[dict], *, organization_id: str | None = None, user_id: str = "") -> dict:
+    return _run_forced_tool_extraction(
+        FINANCE_EXTRACTION_SYSTEM_PROMPT,
+        FINANCE_EXTRACTION_TOOL,
+        user_content,
+        name="finance_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
-def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+def extract_finance_document(
+    file_bytes: bytes, mime_type: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """PDF/image-native path — sends the raw file as a document/image content
     block instead of pre-extracted text, so scanned/image documents work
     through the same code path as text-layer PDFs (no OCR library added)."""
@@ -489,15 +538,17 @@ def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -
         },
         {"type": "text", "text": f"Extract every financial field you can find from '{filename}' using the extract_finance_document tool."},
     ]
-    return _run_finance_extraction(content)
+    return _run_finance_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
-def extract_finance_document_from_text(document_text: str, filename: str) -> dict:
+def extract_finance_document_from_text(
+    document_text: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """Text path for spreadsheet/already-text formats (xlsx/xls/csv/docx) —
     spreadsheets aren't a vision problem, and app.rag.loader.load_text
     already gives pandas-clean structured text for them at zero extra cost."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
-    return _run_finance_extraction(content)
+    return _run_finance_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
 BUSINESS_DOCUMENT_EXTRACTION_TOOL = {
@@ -553,11 +604,22 @@ and any internal contradiction (e.g. two different prices for the same item) in 
 inconsistencyNotes. Always call extract_business_document exactly once."""
 
 
-def _run_business_document_extraction(user_content: list[dict]) -> dict:
-    return _run_forced_tool_extraction(BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT, BUSINESS_DOCUMENT_EXTRACTION_TOOL, user_content)
+def _run_business_document_extraction(
+    user_content: list[dict], *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
+    return _run_forced_tool_extraction(
+        BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT,
+        BUSINESS_DOCUMENT_EXTRACTION_TOOL,
+        user_content,
+        name="business_document_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
-def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+def extract_business_document(
+    file_bytes: bytes, mime_type: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """PDF/image-native path — identical construction to extract_finance_document,
     reusing the same base64 content-block approach for scanned/image documents."""
     block_type = "image" if mime_type.startswith("image/") else "document"
@@ -568,13 +630,15 @@ def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) 
         },
         {"type": "text", "text": f"Summarize and classify '{filename}' using the extract_business_document tool."},
     ]
-    return _run_business_document_extraction(content)
+    return _run_business_document_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
-def extract_business_document_from_text(document_text: str, filename: str) -> dict:
+def extract_business_document_from_text(
+    document_text: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """Text path for spreadsheet/already-text formats — mirrors extract_finance_document_from_text."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
-    return _run_business_document_extraction(content)
+    return _run_business_document_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
 REPORT_EXTRACTION_TOOL = {
@@ -1369,14 +1433,186 @@ other side — set it false if you have any real doubt, rather than guessing tru
 shouldDraft is false. Always call analyze_email exactly once."""
 
 
-def analyze_email(payload: dict) -> dict:
+def analyze_email(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
     """One-shot forced-tool-choice classification+draft pass for Phase 14b —
     reuses _run_forced_tool_extraction (already generalized in Phase 14a for
     exactly this system_prompt/tool/user_content shape), operating on one
     email plus its deterministically-gathered CRM correlation context (see
-    backend/src/email-intelligence/email-intelligence.service.ts)."""
+    backend/src/email-intelligence/email-intelligence.service.ts).
+
+    Phase 21 follow-up: now traced as "email_analyze" — real token/cost
+    history here is what lets Email Sync's preview show a genuine estimate
+    instead of just an operation count."""
     return _run_forced_tool_extraction(
         EMAIL_INTENT_SYSTEM_PROMPT,
         EMAIL_INTENT_TOOL,
         [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
+        name="email_analyze",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+
+
+# ---- Business Intelligence (Phase 7) — both use the traced
+# _run_forced_tool_extraction pattern (same as analyze_email/extract_role),
+# deliberately NOT the older untraced analyze_customer_activity/
+# analyze_finance_activity shape above, which predates the Phase 21 tracing
+# fix and was never migrated onto it. ----
+
+FOLLOWUP_PRIORITIES_TOOL = {
+    "name": "analyze_followup_priorities",
+    "description": "Analyze one day's real follow-up/quote/deal/customer-risk data and produce prioritized, actionable guidance.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "todaysPriorities": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "relatedId": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        "relatedType": {"type": "string", "enum": ["follow_up", "quote", "deal", "customer"]},
+                    },
+                    "required": ["title", "rationale", "relatedId", "relatedType"],
+                    "additionalProperties": False,
+                },
+            },
+            "overdueFollowUps": {
+                "type": "array",
+                "description": "Only follow-ups whose id appears verbatim in the input's followUpReminders — never invented.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "followUpId": {"type": "string"},
+                        "note": {"type": "string"},
+                    },
+                    "required": ["followUpId", "note"],
+                    "additionalProperties": False,
+                },
+            },
+            "highPriorityCustomers": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "businessName": {"type": "string"},
+                        "businessKey": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["businessName", "businessKey", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+            "recommendedActions": {"type": "array", "items": {"type": "string"}},
+            "aiSummary": {"type": "string"},
+        },
+        "required": ["todaysPriorities", "overdueFollowUps", "highPriorityCustomers", "recommendedActions", "aiSummary"],
+        "additionalProperties": False,
+    },
+}
+
+FOLLOWUP_PRIORITIES_SYSTEM_PROMPT = """You are analyzing a business's real, deterministically-gathered \
+follow-up/quote/deal/customer-risk data for one day, to help the team decide what needs attention first. \
+Use ONLY the records actually present in the input — never invent a follow-up, quote, deal, or customer \
+that isn't there, and never invent a dollar amount or date not present in the input.
+
+The input contains: followUpReminders (real EmailFollowUpReminder records, each with a real id — \
+overdueFollowUps must cite only ids that appear here, verbatim, never a fabricated id), overdueQuotes, \
+overdueDeals, and highRiskCustomers (already deterministically scored — reference and explain them, never \
+invent a new risk score).
+
+todaysPriorities should be the 3-8 most urgent/important items across all of these, each citing a real \
+relatedId when one genuinely exists (null only when not tied to one specific record). overdueFollowUps \
+must be a subset of the input's followUpReminders — one entry per genuinely overdue reminder, with a \
+short, specific note, never generic filler. highPriorityCustomers should draw from highRiskCustomers, \
+briefly explaining why each one matters right now. recommendedActions should be concrete next steps a \
+manager could hand to their team as-is. aiSummary is a 2-4 sentence executive narrative tying the day's \
+picture together. Always call analyze_followup_priorities exactly once."""
+
+
+def analyze_followup_priorities(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """Business Intelligence's AI Follow-Up Summary (section 6) — cached
+    per {organizationId, date} on the NestJS side, same shape as
+    FinanceSummaryService's own generate/regenerate cycle, but the LLM call
+    itself uses the traced forced-tool-choice pattern (see this module's
+    own header note), not FinanceSummaryService's older analyze_finance_activity."""
+    return _run_forced_tool_extraction(
+        FOLLOWUP_PRIORITIES_SYSTEM_PROMPT,
+        FOLLOWUP_PRIORITIES_TOOL,
+        [{"type": "text", "text": f"Follow-up/deal/quote/customer-risk data:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
+        name="followup_priorities_analyze",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+
+
+VENDOR_CUSTOMER_COMPARE_TOOL = {
+    "name": "compare_vendor_customer_pricing",
+    "description": "Compare vendor cost vs customer revenue across the supplied transaction rows and produce commentary — using only the real numbers supplied.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "transactionNotes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dealId": {"type": "string"},
+                        "commentary": {"type": "string"},
+                    },
+                    "required": ["dealId", "commentary"],
+                    "additionalProperties": False,
+                },
+            },
+            "aggregateNarrative": {"type": "string"},
+            "flaggedTransactions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dealId": {"type": "string"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["dealId", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["transactionNotes", "aggregateNarrative", "flaggedTransactions"],
+        "additionalProperties": False,
+    },
+}
+
+VENDOR_CUSTOMER_COMPARE_SYSTEM_PROMPT = """You are analyzing a set of real, already-computed vendor-cost \
+vs customer-revenue transaction rows for one business (each row: dealId, vendorCost, customerRevenue, \
+grossProfit, grossMarginPct — all real numbers already computed deterministically; never recompute or \
+contradict them). Use ONLY the dealIds and numbers actually present in the input — never invent a \
+transaction, dealId, or figure not present.
+
+transactionNotes should give one short, specific commentary per row that has something genuinely notable \
+to say (a very thin margin, a very strong margin, a cost that looks out of line with similar rows) — skip \
+rows with nothing notable rather than padding every row with generic text. aggregateNarrative is a 2-4 \
+sentence executive summary of the overall pricing/margin picture across every row. flaggedTransactions \
+should list only rows genuinely worth a human review (e.g. margin under 10%, or a cost that looks like a \
+data-entry error relative to similar transactions) with a specific, real reason — never flag a row just \
+to have something in the list. Always call compare_vendor_customer_pricing exactly once."""
+
+
+def compare_vendor_customer_pricing(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """Vendor Profitability's on-demand, stateless AI-compare (section 5's
+    AI layer) — traced, forced-tool-choice, scoped to whatever filtered
+    transaction set the caller is currently viewing. No cache (unlike the
+    daily-snapshot Follow-Up Summary above) — arbitrary filter combinations,
+    not a fixed daily snapshot, so caching by date would be meaningless here."""
+    return _run_forced_tool_extraction(
+        VENDOR_CUSTOMER_COMPARE_SYSTEM_PROMPT,
+        VENDOR_CUSTOMER_COMPARE_TOOL,
+        [{"type": "text", "text": f"Vendor/customer transaction rows:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
+        name="vendor_customer_pricing_compare",
+        organization_id=organization_id,
+        user_id=user_id,
     )

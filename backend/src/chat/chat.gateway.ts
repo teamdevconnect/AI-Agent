@@ -11,6 +11,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { UsersService } from '../users/users.service';
 import { ChatService } from './chat.service';
 
 interface AuthedSocket extends Socket {
@@ -27,21 +28,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private chatService: ChatService,
     private jwtService: JwtService,
+    private usersService: UsersService,
   ) {}
 
-  handleConnection(client: AuthedSocket) {
+  async handleConnection(client: AuthedSocket) {
     const token =
       (client.handshake.auth?.token as string | undefined) ??
       (client.handshake.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
 
     try {
       const payload = this.jwtService.verify<JwtPayload>(token);
+      // Sockets bypass Passport/JwtStrategy entirely (this is a manual
+      // jwtService.verify, not the HTTP guard chain), so the session-revoked
+      // check has to be re-implemented here — mirrors JwtStrategy's own
+      // "never trust the token alone" philosophy. A special-purpose token
+      // (2FA challenge, OAuth state) has no jti and is rejected the same way
+      // a revoked one is.
+      if (payload.purpose) throw new Error('special-purpose token');
+      const user = await this.usersService.findById(payload.sub);
+      if (!user || user.active === false) throw new Error('inactive or missing user');
+      if (!payload.jti || !user.sessions.some((s) => s.jti === payload.jti)) {
+        throw new Error('revoked or missing session');
+      }
       client.data.user = payload;
       client.data.token = token;
       // Per-user room (Socket.IO auto-creates it on first join) — lets
       // emitToUser() below push to every tab/device a user has open,
-      // without either side tracking socket ids itself.
+      // without either side tracking socket ids itself. Per-session room
+      // additionally lets SessionsService.revoke() disconnect exactly the
+      // socket(s) for one revoked session without touching the user's other
+      // open tabs/devices.
       client.join(payload.sub);
+      client.join(`session:${payload.jti}`);
     } catch {
       this.logger.warn(`Rejected unauthenticated socket ${client.id}`);
       client.emit('error', { message: 'Unauthorized' });
@@ -60,6 +78,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * missed the live event. */
   emitToUser(userId: string, event: string, payload: unknown) {
     this.server.to(userId).emit(event, payload);
+  }
+
+  /** Used by SessionsService when a session is revoked — emits a
+   * 'session-revoked' event first (so an open tab on that device can show
+   * "you were signed out" before losing its connection), then force-
+   * disconnects exactly that session's socket(s), leaving every other
+   * session's connections untouched. HTTP access is already cut off on the
+   * next request via JwtStrategy regardless of whether this fires — this
+   * only closes the gap for an already-open, unused-since socket. */
+  disconnectSession(jti: string) {
+    const room = `session:${jti}`;
+    this.server.to(room).emit('session-revoked');
+    this.server.in(room).disconnectSockets(true);
   }
 
   @SubscribeMessage('message')
