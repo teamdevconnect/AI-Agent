@@ -11,6 +11,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const agent_role_schema_1 = require("../agent-roles/schemas/agent-role.schema");
 const user_schema_1 = require("./schemas/user.schema");
+const admin_users_controller_1 = require("./admin-users.controller");
 const users_controller_1 = require("./users.controller");
 const users_service_1 = require("./users.service");
 let UsersModule = class UsersModule {
@@ -24,7 +25,7 @@ exports.UsersModule = UsersModule = __decorate([
                 { name: agent_role_schema_1.AgentRole.name, schema: agent_role_schema_1.AgentRoleSchema },
             ]),
         ],
-        controllers: [users_controller_1.UsersController],
+        controllers: [users_controller_1.UsersController, admin_users_controller_1.AdminUsersController],
         providers: [users_service_1.UsersService],
         exports: [users_service_1.UsersService],
     })

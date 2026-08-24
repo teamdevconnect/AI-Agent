@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AgentRole, AgentRoleSchema } from '../agent-roles/schemas/agent-role.schema';
 import { User, UserSchema } from './schemas/user.schema';
+import { AdminUsersController } from './admin-users.controller';
 import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 
@@ -16,7 +17,10 @@ import { UsersService } from './users.service';
       { name: AgentRole.name, schema: AgentRoleSchema },
     ]),
   ],
-  controllers: [UsersController],
+  // AdminUsersController is the cross-org platform_admin management surface
+  // (Admin-haive's Admin Users page) — separate from UsersController, which
+  // stays strictly org-scoped.
+  controllers: [UsersController, AdminUsersController],
   providers: [UsersService],
   exports: [UsersService],
 })

@@ -19,4 +19,19 @@ export declare class AuditService {
     }> & {
         __v: number;
     })[]>;
+    listAll(filters: {
+        userId?: string;
+        route?: string;
+        page?: number;
+        limit?: number;
+    }): Promise<{
+        items: (import("mongoose").Document<unknown, {}, AuditLogDocument, {}, {}> & AuditLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
+            _id: import("mongoose").Types.ObjectId;
+        }> & {
+            __v: number;
+        })[];
+        total: number;
+        page: number;
+        limit: number;
+    }>;
 }
