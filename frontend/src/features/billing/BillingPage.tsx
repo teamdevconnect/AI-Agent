@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { FiChevronDown, FiChevronUp, FiCreditCard, FiDatabase, FiPieChart, FiZap } from 'react-icons/fi';
-import { SectionCard, StatTile } from '@/components/ui';
+import { FiCheckCircle, FiChevronDown, FiChevronUp, FiCreditCard, FiDatabase, FiPieChart, FiZap } from 'react-icons/fi';
+import { Badge, SectionCard, StatTile } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { billingService } from '@/services/billingService';
 import type {
   CustomerTransaction,
+  EntitlementAccess,
   PaymentMethod,
   SubscriptionSummary,
   UsageSummary,
@@ -40,6 +41,7 @@ export function BillingPage() {
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [transactions, setTransactions] = useState<CustomerTransaction[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [entitlements, setEntitlements] = useState<EntitlementAccess[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUsage, setShowUsage] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -51,13 +53,15 @@ export function BillingPage() {
       billingService.getUsageSummary(),
       billingService.listTransactions(50),
       canManageBilling ? billingService.listPaymentMethods() : Promise.resolve([]),
+      billingService.getEntitlements(),
     ])
-      .then(([w, sub, u, t, m]) => {
+      .then(([w, sub, u, t, m, ent]) => {
         setWallet(w);
         setSubscription(sub);
         setUsage(u);
         setTransactions(t);
         setPaymentMethods(m);
+        setEntitlements(ent);
       })
       .catch((error) => toast.error(extractErrorMessage(error)))
       .finally(() => setLoading(false));
@@ -80,6 +84,40 @@ export function BillingPage() {
         onUpgrade={() => navigate(ROUTES.pricing)}
         onAddCredits={() => navigate(ROUTES.addCredits)}
       />
+
+      {entitlements.length > 0 && (
+        <SectionCard title="Usage & Access" icon={FiCheckCircle}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {entitlements.map((e) => (
+              <div key={e.key} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <span>{e.name}</span>
+                  {e.type === 'boolean' ? (
+                    <Badge variant={e.allowed ? 'success' : 'neutral'}>{e.allowed ? 'Included' : 'Not included'}</Badge>
+                  ) : e.limit === undefined ? (
+                    <span className={styles.muted}>Unlimited</span>
+                  ) : (
+                    <span className={styles.muted}>
+                      {(e.used ?? 0).toLocaleString()} / {e.limit.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                {e.type === 'numeric' && e.limit !== undefined && (
+                  <div style={{ height: 6, borderRadius: 999, background: 'var(--color-bg-subtle)', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(100, ((e.used ?? 0) / e.limit) * 100)}%`,
+                        background: e.allowed ? 'var(--color-accent)' : 'var(--color-danger)',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
 
       {canManageBilling && (
         <SectionCard title="Payment Method & Auto Recharge" icon={FiZap}>

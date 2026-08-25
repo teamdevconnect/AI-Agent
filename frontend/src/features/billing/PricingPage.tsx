@@ -80,15 +80,6 @@ export function PricingPage() {
     return recurring.find((p) => p.billingCycle === activeCycle) ?? recurring[0];
   };
 
-  // A plan with no price configured for any cycle can't actually be
-  // subscribed to (the CTA below was already disabled for it via
-  // `!price`) — showing it as a full card next to real, purchasable plans
-  // is misleading, so it's left out of the public listing entirely rather
-  // than rendered in a disabled/incomplete state. `active`/`isPublic` are
-  // already enforced server-side by GET /billing/plans; this only adds the
-  // "has pricing" condition on top, client-side.
-  const purchasablePlans = plans.filter((plan) => priceForPlan(plan) !== undefined);
-
   if (loading) {
     return (
       <div className={styles.page} style={themeStyle}>
@@ -126,13 +117,19 @@ export function PricingPage() {
         </div>
       )}
 
-      {purchasablePlans.length === 0 ? (
+      {plans.length === 0 ? (
         <Card className={styles.emptyState}>No plans are published yet. Check back soon.</Card>
       ) : (
         <div className={styles.planGrid}>
-          {purchasablePlans.map((plan) => {
-            const price = priceForPlan(plan) as PlanPrice;
+          {plans.map((plan) => {
+            const price = priceForPlan(plan);
             const isCurrentPlan = subscription?.plan?.id === plan.id;
+            // Already subscribed to a DIFFERENT plan — clicking this now
+            // switches to it (BillingSubscriptionsService.checkout allows a
+            // different plan through and supersedes the old subscription on
+            // activation), not a first-time subscribe, so the CTA reads
+            // "Switch Plan" instead of the generic first-subscribe copy.
+            const isSwitch = Boolean(subscription) && !isCurrentPlan;
             return (
               <Card
                 key={plan.id}
@@ -147,12 +144,19 @@ export function PricingPage() {
                 <div className={styles.planName}>{plan.name}</div>
                 {plan.shortDescription && <div className={styles.planDescription}>{plan.shortDescription}</div>}
 
-                <div className={styles.planPrice}>
-                  <span className={styles.planPriceAmount}>{formatCurrency(price.amount, price.currencyCode)}</span>
-                  <span className={styles.planPriceCycle}>/ {CYCLE_LABELS[price.billingCycle]}</span>
-                </div>
-
-                <div className={styles.muted}>{price.creditsGranted.toLocaleString()} Haive Credits included</div>
+                {price ? (
+                  <>
+                    <div className={styles.planPrice}>
+                      <span className={styles.planPriceAmount}>{formatCurrency(price.amount, price.currencyCode)}</span>
+                      <span className={styles.planPriceCycle}>/ {CYCLE_LABELS[price.billingCycle]}</span>
+                    </div>
+                    <div className={styles.muted}>{price.creditsGranted.toLocaleString()} Haive Credits included</div>
+                  </>
+                ) : (
+                  <div className={styles.planPrice}>
+                    <span className={styles.muted}>Pricing coming soon</span>
+                  </div>
+                )}
 
                 {plan.features.filter((f) => f.enabled).length > 0 && (
                   <ul className={styles.featureList}>
@@ -160,7 +164,7 @@ export function PricingPage() {
                       .filter((f) => f.enabled)
                       .map((f) => (
                         <li key={f.featureKey}>
-                          <FiCheck /> {f.valueOverride ?? f.featureKey}
+                          <FiCheck /> {f.valueOverride ?? f.name ?? f.featureKey}
                         </li>
                       ))}
                   </ul>
@@ -168,10 +172,10 @@ export function PricingPage() {
 
                 <Button
                   className={styles.planCta}
-                  disabled={isCurrentPlan || Boolean(subscription)}
-                  onClick={() => setCheckoutTarget({ plan, price })}
+                  disabled={!price || isCurrentPlan}
+                  onClick={() => price && setCheckoutTarget({ plan, price })}
                 >
-                  {isCurrentPlan ? 'Current Plan' : (pageConfig?.ctaButtonText ?? 'Get Started')}
+                  {isCurrentPlan ? 'Current Plan' : isSwitch ? 'Switch Plan' : (pageConfig?.ctaButtonText ?? 'Get Started')}
                 </Button>
               </Card>
             );

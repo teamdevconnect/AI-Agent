@@ -16,6 +16,7 @@ import { billingAdminService, type AdminAnalytics, type AdminDashboard } from '@
 import { extractErrorMessage } from '@/utils/errors';
 import { AdminRangeControl } from './AdminRangeControl';
 import { AdminLineChart } from './components/AdminLineChart';
+import styles from './AdminDashboardPage.module.css';
 
 export function AdminDashboardPage() {
   const [days, setDays] = useState(30);
@@ -35,37 +36,42 @@ export function AdminDashboardPage() {
   }, [days]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 'var(--text-2xl)', fontWeight: 700 }}>Dashboard</h1>
-          <p style={{ margin: '4px 0 0', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
-            Platform-wide activity across every organization.
-          </p>
+    <div className={styles.page}>
+      <div className={styles.hero}>
+        <span className={styles.liveBadge}>
+          <span className={styles.liveDot} />
+          Live Platform Data
+        </span>
+        <div className={styles.topRow}>
+          <div>
+            <h1 className={styles.title}>Dashboard</h1>
+            <p className={styles.subtitle}>Platform-wide activity across every organization.</p>
+          </div>
+          <AdminRangeControl days={days} onChange={setDays} />
         </div>
-        <AdminRangeControl days={days} onChange={setDays} />
       </div>
 
       {loading || !dashboard ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--space-4)' }}>
+        <div className={styles.statsGrid}>
           {Array.from({ length: 12 }).map((_, i) => (
             <Skeleton key={i} height={92} />
           ))}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 'var(--space-4)' }}>
-          <StatTile icon={FiUsers} value={dashboard.totalOrganizations.toLocaleString()} label="Total Organizations" />
-          <StatTile icon={FiCheckCircle} value={dashboard.activeOrganizations.toLocaleString()} label="Active Organizations" />
-          <StatTile icon={FiUsers} value={dashboard.totalUsers.toLocaleString()} label="Total Users" />
-          <StatTile icon={FiRepeat} value={dashboard.activeSubscriptions.toLocaleString()} label="Active Subscriptions" />
-          <StatTile icon={FiDollarSign} value={`$${dashboard.revenueUsd.toFixed(2)}`} label="Total Revenue" />
-          <StatTile icon={FiCheckCircle} value={dashboard.successfulPaymentsCount.toLocaleString()} label="Successful Payments" />
-          <StatTile icon={FiAlertCircle} value={dashboard.failedPaymentsCount.toLocaleString()} label="Failed Payments" />
-          <StatTile icon={FiRefreshCw} value={dashboard.refundedPaymentsCount.toLocaleString()} label="Refunded Payments" />
-          <StatTile icon={FiCreditCard} value={dashboard.creditsSold.toLocaleString()} label="Credits Sold" />
-          <StatTile icon={FiActivity} value={dashboard.creditsUsed.toLocaleString()} label="Credits Consumed" />
-          <StatTile icon={FiArchive} value={dashboard.creditsOutstanding.toLocaleString()} label="Credits Outstanding" />
+        <div className={styles.statsGrid}>
+          <StatTile glass icon={FiUsers} value={dashboard.totalOrganizations.toLocaleString()} label="Total Organizations" />
+          <StatTile glass icon={FiCheckCircle} value={dashboard.activeOrganizations.toLocaleString()} label="Active Organizations" />
+          <StatTile glass icon={FiUsers} value={dashboard.totalUsers.toLocaleString()} label="Total Users" />
+          <StatTile glass icon={FiRepeat} value={dashboard.activeSubscriptions.toLocaleString()} label="Active Subscriptions" />
+          <StatTile glass icon={FiDollarSign} value={`$${dashboard.revenueUsd.toFixed(2)}`} label="Total Revenue" />
+          <StatTile glass icon={FiCheckCircle} value={dashboard.successfulPaymentsCount.toLocaleString()} label="Successful Payments" />
+          <StatTile glass icon={FiAlertCircle} value={dashboard.failedPaymentsCount.toLocaleString()} label="Failed Payments" />
+          <StatTile glass icon={FiRefreshCw} value={dashboard.refundedPaymentsCount.toLocaleString()} label="Refunded Payments" />
+          <StatTile glass icon={FiCreditCard} value={dashboard.creditsSold.toLocaleString()} label="Credits Sold" />
+          <StatTile glass icon={FiActivity} value={dashboard.creditsUsed.toLocaleString()} label="Credits Consumed" />
+          <StatTile glass icon={FiArchive} value={dashboard.creditsOutstanding.toLocaleString()} label="Credits Outstanding" />
           <StatTile
+            glass
             icon={FiRefreshCw}
             value={dashboard.autoRechargeEventsInPeriod.toLocaleString()}
             label="Auto-Recharge Events"
@@ -74,17 +80,17 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 'var(--space-5)' }}>
-        <SectionCard title="Revenue Over Time">
+      <div className={styles.chartsGrid}>
+        <SectionCard glass title="Revenue Over Time" icon={FiDollarSign}>
           {loading || !analytics ? <Skeleton height={220} /> : <AdminLineChart data={analytics.revenueSeries} color="#5b8def" valueFormatter={(v) => `$${v.toFixed(0)}`} />}
         </SectionCard>
-        <SectionCard title="Credit Usage Over Time">
+        <SectionCard glass title="Credit Usage Over Time" icon={FiActivity}>
           {loading || !analytics ? <Skeleton height={220} /> : <AdminLineChart data={analytics.creditUsageSeries} color="#4ade80" />}
         </SectionCard>
-        <SectionCard title="New Organizations Over Time">
+        <SectionCard glass title="New Organizations Over Time" icon={FiUsers}>
           {loading || !analytics ? <Skeleton height={220} /> : <AdminLineChart data={analytics.newOrganizationsSeries} color="#fbbf24" />}
         </SectionCard>
-        <SectionCard title="Subscription Growth">
+        <SectionCard glass title="Subscription Growth" icon={FiRepeat}>
           {loading || !analytics ? <Skeleton height={220} /> : <AdminLineChart data={analytics.subscriptionGrowthSeries} color="#a78bfa" />}
         </SectionCard>
       </div>

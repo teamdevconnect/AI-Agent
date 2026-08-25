@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminCouponsService } from './billing-admin-coupons.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
@@ -11,8 +9,7 @@ import { UpdateCouponDto } from './dto/update-coupon.dto';
 // data). Nothing here is reachable by a customer-scoped route — customers
 // only ever interact with a coupon by submitting its code at checkout (see
 // billing.controller.ts's credits/purchase and subscription/checkout routes).
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/coupons')
 export class BillingAdminCouponsController {
   constructor(private couponsService: BillingAdminCouponsService) {}

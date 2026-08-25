@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminPackagesService } from './billing-admin-packages.service';
 import { CreateCreditPackageDto } from './dto/create-credit-package.dto';
 import { UpdateCreditPackageDto } from './dto/update-credit-package.dto';
@@ -10,8 +8,7 @@ import { UpdateCreditPackageDto } from './dto/update-credit-package.dto';
 // every other billing-admin-*.controller.ts's gate. This is the sole source
 // of what the customer-facing "Add Credits" modal shows (GET
 // /billing/packages); nothing here is reachable from a customer-scoped route.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/packages')
 export class BillingAdminPackagesController {
   constructor(private packagesService: BillingAdminPackagesService) {}

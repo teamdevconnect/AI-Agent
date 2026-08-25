@@ -62,6 +62,7 @@ export const ADMIN_ROUTES = {
   plans: '/Admin-haive/plans',
   packages: '/Admin-haive/packages',
   features: '/Admin-haive/features',
+  entitlements: '/Admin-haive/entitlements',
   prices: '/Admin-haive/prices',
   subscriptions: '/Admin-haive/subscriptions',
   payments: '/Admin-haive/payments',

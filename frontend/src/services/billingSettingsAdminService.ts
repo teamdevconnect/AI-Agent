@@ -1,4 +1,4 @@
-import { axiosClient } from '@/api/axiosClient';
+import { adminAxiosClient } from '@/api/adminAxiosClient';
 
 export interface BillingSettings {
   companyName: string;
@@ -27,12 +27,12 @@ export interface BillingSettings {
 // autoRecharge bounds) are stored/returned only, not yet enforced anywhere.
 export const billingSettingsAdminService = {
   async get(): Promise<BillingSettings> {
-    const { data } = await axiosClient.get<BillingSettings>('/billing/admin/settings');
+    const { data } = await adminAxiosClient.get<BillingSettings>('/billing/admin/settings');
     return data;
   },
 
   async update(dto: Partial<BillingSettings>): Promise<BillingSettings> {
-    const { data } = await axiosClient.put<BillingSettings>('/billing/admin/settings', dto);
+    const { data } = await adminAxiosClient.put<BillingSettings>('/billing/admin/settings', dto);
     return data;
   },
 };

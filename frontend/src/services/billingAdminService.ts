@@ -1,4 +1,4 @@
-import { axiosClient } from '@/api/axiosClient';
+import { adminAxiosClient } from '@/api/adminAxiosClient';
 
 // Haive-internal only — every method here hits a @Roles('platform_admin')
 // route (backend/src/billing/billing-admin.controller.ts). Never called
@@ -202,27 +202,27 @@ export interface AdminPaymentRecord {
 
 export const billingAdminService = {
   async getOverview(days?: number): Promise<AdminOverview> {
-    const { data } = await axiosClient.get<AdminOverview>('/billing/admin/overview', { params: { days } });
+    const { data } = await adminAxiosClient.get<AdminOverview>('/billing/admin/overview', { params: { days } });
     return data;
   },
 
   async getDashboard(days?: number): Promise<AdminDashboard> {
-    const { data } = await axiosClient.get<AdminDashboard>('/billing/admin/dashboard', { params: { days } });
+    const { data } = await adminAxiosClient.get<AdminDashboard>('/billing/admin/dashboard', { params: { days } });
     return data;
   },
 
   async getAnalytics(days?: number): Promise<AdminAnalytics> {
-    const { data } = await axiosClient.get<AdminAnalytics>('/billing/admin/analytics', { params: { days } });
+    const { data } = await adminAxiosClient.get<AdminAnalytics>('/billing/admin/analytics', { params: { days } });
     return data;
   },
 
   async getSubscriptionMetrics(days?: number): Promise<SubscriptionMetrics> {
-    const { data } = await axiosClient.get<SubscriptionMetrics>('/billing/admin/subscription-metrics', { params: { days } });
+    const { data } = await adminAxiosClient.get<SubscriptionMetrics>('/billing/admin/subscription-metrics', { params: { days } });
     return data;
   },
 
   async getOrganizations(days?: number): Promise<OrganizationBilling[]> {
-    const { data } = await axiosClient.get<OrganizationBilling[]>('/billing/admin/organizations', { params: { days } });
+    const { data } = await adminAxiosClient.get<OrganizationBilling[]>('/billing/admin/organizations', { params: { days } });
     return data;
   },
 
@@ -233,22 +233,22 @@ export const billingAdminService = {
     search?: string;
     sortBy?: 'name' | 'createdAt' | 'revenueUsd' | 'userCount';
   }): Promise<PagedResult<OrganizationBilling>> {
-    const { data } = await axiosClient.get<PagedResult<OrganizationBilling>>('/billing/admin/organizations', { params });
+    const { data } = await adminAxiosClient.get<PagedResult<OrganizationBilling>>('/billing/admin/organizations', { params });
     return data;
   },
 
   async getOrganizationDetail(organizationId: string): Promise<OrganizationDetail> {
-    const { data } = await axiosClient.get<OrganizationDetail>(`/billing/admin/organizations/${organizationId}`);
+    const { data } = await adminAxiosClient.get<OrganizationDetail>(`/billing/admin/organizations/${organizationId}`);
     return data;
   },
 
   async getOrganizationUsers(organizationId: string) {
-    const { data } = await axiosClient.get(`/billing/admin/organizations/${organizationId}/users`);
+    const { data } = await adminAxiosClient.get(`/billing/admin/organizations/${organizationId}/users`);
     return data;
   },
 
   async listWallets(params?: { search?: string; page?: number; limit?: number }): Promise<PagedResult<AdminWalletRow>> {
-    const { data } = await axiosClient.get<PagedResult<AdminWalletRow>>('/billing/admin/wallets', { params });
+    const { data } = await adminAxiosClient.get<PagedResult<AdminWalletRow>>('/billing/admin/wallets', { params });
     return data;
   },
 
@@ -262,7 +262,7 @@ export const billingAdminService = {
     minAmount?: number;
     maxAmount?: number;
   }): Promise<AdminWalletTransaction[]> {
-    const { data } = await axiosClient.get<AdminWalletTransaction[]>('/billing/admin/transactions', { params });
+    const { data } = await adminAxiosClient.get<AdminWalletTransaction[]>('/billing/admin/transactions', { params });
     return data;
   },
 
@@ -275,7 +275,7 @@ export const billingAdminService = {
     dateFrom?: string;
     dateTo?: string;
   }): Promise<AdminPaymentRecord[]> {
-    const { data } = await axiosClient.get<AdminPaymentRecord[]>('/billing/admin/payments', { params });
+    const { data } = await adminAxiosClient.get<AdminPaymentRecord[]>('/billing/admin/payments', { params });
     return data;
   },
 
@@ -285,34 +285,34 @@ export const billingAdminService = {
     page?: number;
     limit?: number;
   }): Promise<PagedResult<AdminSubscriptionSummary>> {
-    const { data } = await axiosClient.get<PagedResult<AdminSubscriptionSummary>>('/billing/admin/subscriptions', { params });
+    const { data } = await adminAxiosClient.get<PagedResult<AdminSubscriptionSummary>>('/billing/admin/subscriptions', { params });
     return data;
   },
 
   async cancelSubscription(id: string): Promise<AdminSubscriptionSummary> {
-    const { data } = await axiosClient.post<AdminSubscriptionSummary>(`/billing/admin/subscriptions/${id}/cancel`);
+    const { data } = await adminAxiosClient.post<AdminSubscriptionSummary>(`/billing/admin/subscriptions/${id}/cancel`);
     return data;
   },
 
   async reactivateSubscription(id: string): Promise<AdminSubscriptionSummary> {
-    const { data } = await axiosClient.post<AdminSubscriptionSummary>(`/billing/admin/subscriptions/${id}/reactivate`);
+    const { data } = await adminAxiosClient.post<AdminSubscriptionSummary>(`/billing/admin/subscriptions/${id}/reactivate`);
     return data;
   },
 
   async listInvoices(params?: { organizationId?: string; status?: string; limit?: number }): Promise<AdminInvoice[]> {
-    const { data } = await axiosClient.get<AdminInvoice[]>('/billing/admin/invoices', { params });
+    const { data } = await adminAxiosClient.get<AdminInvoice[]>('/billing/admin/invoices', { params });
     return data;
   },
 
   async voidInvoice(id: string, reason?: string): Promise<AdminInvoice> {
-    const { data } = await axiosClient.post<AdminInvoice>(`/billing/admin/invoices/${id}/void`, { reason });
+    const { data } = await adminAxiosClient.post<AdminInvoice>(`/billing/admin/invoices/${id}/void`, { reason });
     return data;
   },
 
   // Same authenticated blob-download pattern as royaltyReportService.downloadExport
   // — a plain <a href> can't carry the bearer token this route requires.
   async downloadInvoice(id: string, invoiceNumber: string, format: 'pdf' | 'csv'): Promise<void> {
-    const response = await axiosClient.get(`/billing/admin/invoices/${id}/${format}`, { responseType: 'blob' });
+    const response = await adminAxiosClient.get(`/billing/admin/invoices/${id}/${format}`, { responseType: 'blob' });
     const url = URL.createObjectURL(response.data as Blob);
     const a = document.createElement('a');
     a.href = url;
@@ -322,12 +322,12 @@ export const billingAdminService = {
   },
 
   async listRefunds(params?: { organizationId?: string; paymentRecordId?: string; limit?: number }): Promise<AdminRefund[]> {
-    const { data } = await axiosClient.get<AdminRefund[]>('/billing/admin/refunds', { params });
+    const { data } = await adminAxiosClient.get<AdminRefund[]>('/billing/admin/refunds', { params });
     return data;
   },
 
   async createRefund(dto: { paymentRecordId: string; amount?: number; reason?: string }): Promise<AdminRefund> {
-    const { data } = await axiosClient.post<AdminRefund>('/billing/admin/refunds', dto);
+    const { data } = await adminAxiosClient.post<AdminRefund>('/billing/admin/refunds', dto);
     return data;
   },
 };

@@ -3,21 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { FiLock, FiMail, FiShield } from 'react-icons/fi';
 import { Button, Input } from '@/components/ui';
-import { useAuthStore } from '@/stores/authStore';
-import { hasRole } from '@/utils/roles';
+import { useAdminAuthStore } from '@/stores/adminAuthStore';
 import { extractErrorMessage } from '@/utils/errors';
 import { ADMIN_ROUTES } from '@/constants/routes';
 import styles from './AdminSignInPage.module.css';
 
-// Its own sign-in screen, but authenticates through the exact same
-// POST /auth/login the customer app uses (via useAuthStore.login) — there is
-// no second credential store. The only admin-specific behavior is the role
-// check below: a real login that succeeds but lacks platform_admin is
-// immediately logged back out rather than left half-authenticated in a
-// session that has no admin data access anyway.
+// Authenticates through POST /auth/admin/login — a fully separate
+// credential from the customer app's login (see adminAuthStore.ts /
+// adminAuthService.ts). A successful call here means the account IS an
+// admin account; there's no post-login role check to fail, unlike the old
+// design where any customer account could attempt this form.
 export function AdminSignInPage() {
-  const login = useAuthStore((state) => state.login);
-  const logout = useAuthStore((state) => state.logout);
+  const login = useAdminAuthStore((state) => state.login);
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,13 +26,7 @@ export function AdminSignInPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await login({ email, password, rememberMe: true });
-      const signedInUser = useAuthStore.getState().user;
-      if (!hasRole(signedInUser, 'platform_admin')) {
-        await logout();
-        setError('This account does not have platform admin access.');
-        return;
-      }
+      await login(email, password);
       toast.success('Welcome back');
       navigate(ADMIN_ROUTES.dashboard, { replace: true });
     } catch (err) {

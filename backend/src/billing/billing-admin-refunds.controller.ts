@@ -1,8 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { CreateRefundDto } from './dto/create-refund.dto';
 import { RefundService } from './refund.service';
@@ -12,8 +10,7 @@ import { RefundService } from './refund.service';
 // through the original gateway and claws back wallet credits — the
 // strictest-consequence admin action in this module, same RBAC tier as
 // billing-admin.controller.ts's provider cost/revenue view.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/refunds')
 export class BillingAdminRefundsController {
   constructor(private refundService: RefundService) {}

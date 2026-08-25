@@ -2,27 +2,28 @@ import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import { FiChevronDown, FiChevronUp, FiLogOut, FiMenu, FiShield, FiUser, FiX } from 'react-icons/fi';
+import { FiChevronDown, FiChevronUp, FiLogOut, FiMenu, FiUser, FiX } from 'react-icons/fi';
 import { Dropdown } from '@/components/ui';
-import { useAuthStore } from '@/stores/authStore';
+import { useAdminAuthStore } from '@/stores/adminAuthStore';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { ADMIN_ROUTES } from '@/constants/routes';
 import { ADMIN_NAV_ITEMS, ADMIN_NAV_MORE_SECTION, ADMIN_NAV_SECTIONS } from '../adminNav';
 import styles from './AdminLayout.module.css';
 
 // Deliberately its own shell — not AppLayout — so this area is visually and
-// structurally separate from the customer app, per the request. Still reads
-// the same useAuthStore session; only the chrome differs.
+// structurally separate from the customer app, per the request. Reads
+// useAdminAuthStore — a fully separate credential from the customer app's
+// session, not just a separate UI area over the same login.
 export function AdminLayout() {
   const isMobile = useMediaQuery('(max-width: 960px)');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
+  const admin = useAdminAuthStore((state) => state.admin);
+  const logout = useAdminAuthStore((state) => state.logout);
   const navigate = useNavigate();
 
-  const handleLogout = async () => {
-    await logout();
+  const handleLogout = () => {
+    logout();
     toast.success('Signed out');
     navigate(ADMIN_ROUTES.signin, { replace: true });
   };
@@ -81,7 +82,7 @@ export function AdminLayout() {
         <aside className={styles.sidebar}>
           <div className={styles.brand}>
             <span className={styles.brandMark}>
-              <FiShield size={16} />
+              <img src="/haive-logo.png" alt="" className={styles.brandMarkImg} />
             </span>
             <div>
               <div className={styles.brandTitle}>Haive Admin</div>
@@ -112,7 +113,7 @@ export function AdminLayout() {
                 <span className={styles.userAvatar}>
                   <FiUser size={14} />
                 </span>
-                <span className={styles.userName}>{user ? `${user.firstName} ${user.lastName}`.trim() : 'Admin'}</span>
+                <span className={styles.userName}>{admin?.name ?? 'Admin'}</span>
               </button>
             }
             items={[{ id: 'logout', label: 'Sign out', icon: <FiLogOut size={14} />, danger: true, onSelect: handleLogout }]}
@@ -129,7 +130,7 @@ export function AdminLayout() {
             <div className={styles.mobileSidebarHeader}>
               <div className={styles.brand}>
                 <span className={styles.brandMark}>
-                  <FiShield size={16} />
+                  <img src="/haive-logo.png" alt="" className={styles.brandMarkImg} />
                 </span>
                 <div>
                   <div className={styles.brandTitle}>Haive Admin</div>

@@ -15,6 +15,8 @@ import { BillingAdminCouponsController } from './billing-admin-coupons.controlle
 import { BillingAdminCouponsService } from './billing-admin-coupons.service';
 import { BillingAdminCurrenciesController } from './billing-admin-currencies.controller';
 import { BillingAdminCurrenciesService } from './billing-admin-currencies.service';
+import { BillingAdminEntitlementsController } from './billing-admin-entitlements.controller';
+import { BillingAdminEntitlementsService } from './billing-admin-entitlements.service';
 import { BillingAdminGatewaysController } from './billing-admin-gateways.controller';
 import { BillingAdminGatewaysService } from './billing-admin-gateways.service';
 import { BillingAdminInvoicesController } from './billing-admin-invoices.controller';
@@ -46,6 +48,8 @@ import { BillingWebhookController } from './billing-webhook.controller';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 import { CouponsService } from './coupons.service';
+import { EntitlementsService } from './entitlements.service';
+import { EntitlementsUsageAggregationService } from './entitlements-usage-aggregation.service';
 import { RefundService } from './refund.service';
 import { CashfreePaymentProvider } from './providers/cashfree-payment.provider';
 import { PAYMENT_PROVIDER } from './providers/payment-provider.interface';
@@ -78,6 +82,9 @@ import { PaymentMethod, PaymentMethodSchema } from './schemas/payment-method.sch
 import { PaymentRecord, PaymentRecordSchema } from './schemas/payment-record.schema';
 import { ProviderPricing, ProviderPricingSchema } from './schemas/provider-pricing.schema';
 import { Refund, RefundSchema } from './schemas/refund.schema';
+import { Entitlement, EntitlementSchema } from './schemas/entitlement.schema';
+import { UsageRecord, UsageRecordSchema } from './schemas/usage-record.schema';
+import { UsageAggregationCursor, UsageAggregationCursorSchema } from './schemas/usage-aggregation-cursor.schema';
 import { Wallet, WalletSchema } from './schemas/wallet.schema';
 import { WalletTransaction, WalletTransactionSchema } from './schemas/wallet-transaction.schema';
 import { WebhookEvent, WebhookEventSchema } from './schemas/webhook-event.schema';
@@ -110,6 +117,9 @@ import { WebhookEvent, WebhookEventSchema } from './schemas/webhook-event.schema
       { name: BillingPageConfig.name, schema: BillingPageConfigSchema },
       { name: Refund.name, schema: RefundSchema },
       { name: BillingGatewayConfig.name, schema: BillingGatewayConfigSchema },
+      { name: Entitlement.name, schema: EntitlementSchema },
+      { name: UsageRecord.name, schema: UsageRecordSchema },
+      { name: UsageAggregationCursor.name, schema: UsageAggregationCursorSchema },
       // Registered here too (already registered in CommandCenterModule) —
       // Mongoose doesn't mind the same schema/collection being bound to a
       // model in more than one module; ReservationService/BillingAdminService
@@ -137,6 +147,7 @@ import { WebhookEvent, WebhookEventSchema } from './schemas/webhook-event.schema
     BillingAdminGatewaysController,
     BillingAdminSubscriptionsController,
     BillingAdminPackagesController,
+    BillingAdminEntitlementsController,
     BillingWebhookController,
   ],
   providers: [
@@ -148,6 +159,9 @@ import { WebhookEvent, WebhookEventSchema } from './schemas/webhook-event.schema
     BillingAdminService,
     BillingAdminPlansService,
     BillingAdminPackagesService,
+    EntitlementsService,
+    EntitlementsUsageAggregationService,
+    BillingAdminEntitlementsService,
     RefundService,
     BillingAdminGatewaysService,
     BillingMigrationService,

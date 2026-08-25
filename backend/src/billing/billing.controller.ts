@@ -12,6 +12,7 @@ import { BillingPageConfigService } from './billing-page-config.service';
 import { BillingService } from './billing.service';
 import { BillingSubscriptionsService } from './billing-subscriptions.service';
 import { BillingThemeService } from './billing-theme.service';
+import { EntitlementsService } from './entitlements.service';
 import { ReservationService } from './reservation.service';
 import { AutoPaySettingsDto } from './dto/autopay-settings.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
@@ -60,6 +61,7 @@ export class BillingController {
     private invoicePdfService: BillingInvoicePdfService,
     private themeService: BillingThemeService,
     private pageConfigService: BillingPageConfigService,
+    private entitlementsService: EntitlementsService,
     private config: ConfigService,
   ) {}
 
@@ -137,6 +139,16 @@ export class BillingController {
   async updateAutoPay(@CurrentUser() user: JwtPayload, @Body() dto: AutoPaySettingsDto) {
     const wallet = await this.autoPayService.updateSettings(this.tenantKey(user), dto);
     return wallet.autoPay;
+  }
+
+  // --- Phase 0 of the ChatGPT-style entitlements migration (see
+  // entitlements.service.ts) — a new read-only "what can I access" surface
+  // built alongside the wallet above, not wired into reserve/settle/release
+  // or any enforcement path yet. ---
+
+  @Get('entitlements')
+  listEntitlements(@CurrentUser() user: JwtPayload) {
+    return this.entitlementsService.listForOrganization(this.tenantKey(user));
   }
 
   // --- Phase 2: Subscriptions (layer on top of the same wallet above — a

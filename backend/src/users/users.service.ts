@@ -51,55 +51,6 @@ export class UsersService {
     return this.userModel.find({ organizationId }).exec();
   }
 
-  /** Platform admin management (Admin-haive's Admin Users page) —
-   * deliberately cross-org, unlike every other query in this service. Only
-   * reachable via admin-users.controller.ts's @Roles('platform_admin')
-   * gate; platform_admin has no self-serve grant path (see
-   * billing-admin.controller.ts's header comment), so this only lets an
-   * EXISTING platform_admin manage subsequent ones — bootstrapping the
-   * first one stays a manual DB step. */
-  async listPlatformAdmins(filters: { search?: string; page?: number; limit?: number }) {
-    const page = filters.page ?? 1;
-    const limit = filters.limit ?? 25;
-    const query: Record<string, unknown> = { roles: 'platform_admin' };
-    if (filters.search) {
-      const escaped = filters.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      query.$or = [{ name: { $regex: escaped, $options: 'i' } }, { email: { $regex: escaped, $options: 'i' } }];
-    }
-    const [users, total] = await Promise.all([
-      this.userModel.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).exec(),
-      this.userModel.countDocuments(query).exec(),
-    ]);
-    return { items: users.map((u) => this.toPublic(u)), total, page, limit };
-  }
-
-  /** Cross-org user search, backing the Admin Users page's "grant to..."
-   * lookup — finding a candidate to promote isn't limited to existing
-   * platform_admins the way listPlatformAdmins is. */
-  async searchAllUsers(search: string, limit = 20) {
-    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const users = await this.userModel
-      .find({ $or: [{ name: { $regex: escaped, $options: 'i' } }, { email: { $regex: escaped, $options: 'i' } }] })
-      .limit(limit)
-      .exec();
-    return users.map((u) => this.toPublic(u));
-  }
-
-  async grantPlatformAdmin(userId: string) {
-    const updated = await this.userModel.findByIdAndUpdate(userId, { $addToSet: { roles: 'platform_admin' } }, { new: true }).exec();
-    if (!updated) throw new NotFoundException('User not found');
-    return this.toPublic(updated);
-  }
-
-  async revokePlatformAdmin(userId: string, callerId: string) {
-    if (userId === callerId) {
-      throw new BadRequestException("Can't revoke your own platform admin access.");
-    }
-    const updated = await this.userModel.findByIdAndUpdate(userId, { $pull: { roles: 'platform_admin' } }, { new: true }).exec();
-    if (!updated) throw new NotFoundException('User not found');
-    return this.toPublic(updated);
-  }
-
   create(data: {
     email: string;
     passwordHash?: string;

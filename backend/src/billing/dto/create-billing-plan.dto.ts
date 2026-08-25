@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, MinLength, ValidateNested } from 'class-validator';
-import { BillingPlanFeatureGrantDto, BillingPlanLimitGrantDto } from './billing-plan-grant.dto';
+import { BillingPlanEntitlementGrantDto, BillingPlanFeatureGrantDto, BillingPlanLimitGrantDto } from './billing-plan-grant.dto';
 
 // Admin-only (see billing-admin-plans.controller.ts) — creates a catalog
 // entry. Has no price yet: prices are added separately via
@@ -41,4 +41,10 @@ export class CreateBillingPlanDto {
   @ValidateNested({ each: true })
   @Type(() => BillingPlanLimitGrantDto)
   limits?: BillingPlanLimitGrantDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BillingPlanEntitlementGrantDto)
+  entitlements?: BillingPlanEntitlementGrantDto[];
 }

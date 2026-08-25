@@ -33,6 +33,20 @@ export interface WalletSummary {
   autoRechargePolicy: AutoRechargePolicy;
 }
 
+// Phase 0 of the ChatGPT-style entitlements migration — the payload behind
+// GET /billing/entitlements (EntitlementsService.canAccess/listForOrganization
+// on the backend). Separate from WalletSummary; not wired into any
+// enforcement path yet.
+export interface EntitlementAccess {
+  key: string;
+  name: string;
+  type: 'boolean' | 'numeric';
+  allowed: boolean;
+  limit?: number;
+  used?: number;
+  remaining?: number;
+}
+
 export interface CreditPackage {
   _id: string;
   key: string;
@@ -118,6 +132,10 @@ export interface PlanFeatureGrant {
   featureKey: string;
   enabled: boolean;
   valueOverride?: string;
+  // Resolved server-side from the Feature catalog for display — the plan
+  // itself only ever stores featureKey (see BillingPlanFeatureGrantDto);
+  // absent if the catalog entry was since deleted.
+  name?: string;
 }
 
 export interface PlanLimitGrant {
@@ -291,6 +309,15 @@ export const billingService = {
 
   async updateAutoPay(payload: AutoPaySettingsUpdate): Promise<AutoPaySettings> {
     const { data } = await axiosClient.put<AutoPaySettings>('/billing/autopay', payload);
+    return data;
+  },
+
+  // --- Phase 0 of the ChatGPT-style entitlements migration: a new
+  // read-only "what can I access" surface, built alongside the wallet
+  // above (not a replacement for it) ---
+
+  async getEntitlements(): Promise<EntitlementAccess[]> {
+    const { data } = await axiosClient.get<EntitlementAccess[]>('/billing/entitlements');
     return data;
   },
 

@@ -16,6 +16,7 @@ const AdminPaymentsPage = lazy(() => import('./payments/AdminPaymentsPage').then
 const AdminPlansPage = lazy(() => import('./catalog/AdminPlansPage').then((m) => ({ default: m.AdminPlansPage })));
 const AdminCreditPackagesPage = lazy(() => import('./catalog/AdminCreditPackagesPage').then((m) => ({ default: m.AdminCreditPackagesPage })));
 const AdminFeaturesPage = lazy(() => import('./catalog/AdminFeaturesPage').then((m) => ({ default: m.AdminFeaturesPage })));
+const AdminEntitlementsPage = lazy(() => import('./catalog/AdminEntitlementsPage').then((m) => ({ default: m.AdminEntitlementsPage })));
 const AdminPricesPage = lazy(() => import('./catalog/AdminPricesPage').then((m) => ({ default: m.AdminPricesPage })));
 const AdminCouponsPage = lazy(() => import('./catalog/AdminCouponsPage').then((m) => ({ default: m.AdminCouponsPage })));
 const AdminSubscriptionsPage = lazy(() => import('./subscriptions/AdminSubscriptionsPage').then((m) => ({ default: m.AdminSubscriptionsPage })));
@@ -53,6 +54,7 @@ export function AdminRoutes() {
             <Route path="plans" element={<AdminPlansPage />} />
             <Route path="packages" element={<AdminCreditPackagesPage />} />
             <Route path="features" element={<AdminFeaturesPage />} />
+            <Route path="entitlements" element={<AdminEntitlementsPage />} />
             <Route path="prices" element={<AdminPricesPage />} />
             <Route path="subscriptions" element={<AdminSubscriptionsPage />} />
             <Route path="payments" element={<AdminPaymentsPage />} />

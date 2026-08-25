@@ -31,3 +31,20 @@ export class BillingPlanLimitGrantDto {
   @Min(0)
   value?: number;
 }
+
+// Mirrors BillingPlanEntitlementGrant's embedded-subdocument shape (see
+// schemas/billing-plan.schema.ts) — Phase 0 of the entitlements migration.
+export class BillingPlanEntitlementGrantDto {
+  @IsString()
+  @MinLength(1)
+  key: string;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  value?: number;
+}

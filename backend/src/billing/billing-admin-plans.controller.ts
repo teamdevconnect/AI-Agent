@@ -1,7 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminPlansService } from './billing-admin-plans.service';
 import { CreateBillingFeatureDto } from './dto/create-billing-feature.dto';
 import { CreateBillingPlanDto } from './dto/create-billing-plan.dto';
@@ -16,8 +14,7 @@ import { UpdateBillingPlanDto } from './dto/update-billing-plan.dto';
 // catalog, not one customer's data). Nothing here is reachable by a
 // customer-scoped route yet; that arrives once a future
 // GET /billing/plans is added.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin')
 export class BillingAdminPlansController {
   constructor(private plansService: BillingAdminPlansService) {}

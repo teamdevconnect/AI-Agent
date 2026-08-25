@@ -26,14 +26,6 @@ let AuditController = class AuditController {
     list(user) {
         return this.auditService.list(user.organizationId);
     }
-    listAll(userId, route, page, limit) {
-        return this.auditService.listAll({
-            userId,
-            route,
-            page: page ? Number.parseInt(page, 10) : undefined,
-            limit: limit ? Number.parseInt(limit, 10) : undefined,
-        });
-    }
 };
 exports.AuditController = AuditController;
 __decorate([
@@ -43,17 +35,6 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], AuditController.prototype, "list", null);
-__decorate([
-    (0, common_1.Get)('all'),
-    (0, roles_decorator_1.Roles)('platform_admin'),
-    __param(0, (0, common_1.Query)('userId')),
-    __param(1, (0, common_1.Query)('route')),
-    __param(2, (0, common_1.Query)('page')),
-    __param(3, (0, common_1.Query)('limit')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String]),
-    __metadata("design:returntype", void 0)
-], AuditController.prototype, "listAll", null);
 exports.AuditController = AuditController = __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
     (0, roles_decorator_1.Roles)('admin'),

@@ -8,14 +8,4 @@ export declare class AuditController {
     }> & {
         __v: number;
     })[]>;
-    listAll(userId?: string, route?: string, page?: string, limit?: string): Promise<{
-        items: (import("mongoose").Document<unknown, {}, import("./schemas/audit-log.schema").AuditLogDocument, {}, {}> & import("./schemas/audit-log.schema").AuditLog & import("mongoose").Document<import("mongoose").Types.ObjectId, any, any, Record<string, any>, {}> & Required<{
-            _id: import("mongoose").Types.ObjectId;
-        }> & {
-            __v: number;
-        })[];
-        total: number;
-        page: number;
-        limit: number;
-    }>;
 }

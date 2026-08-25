@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminTaxesService } from './billing-admin-taxes.service';
 import { CreateTaxRateDto } from './dto/create-tax-rate.dto';
 import { UpdateTaxRateDto } from './dto/update-tax-rate.dto';
@@ -9,8 +7,7 @@ import { UpdateTaxRateDto } from './dto/update-tax-rate.dto';
 // Phase 1 catalog admin surface — platform_admin only, matching every other
 // billing-admin-*.controller.ts's gate (global catalog, not one customer's
 // data). Nothing here is reachable by a customer-scoped route yet.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/taxes')
 export class BillingAdminTaxesController {
   constructor(private taxesService: BillingAdminTaxesService) {}

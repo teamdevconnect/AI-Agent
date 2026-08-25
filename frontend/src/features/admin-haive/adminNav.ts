@@ -2,6 +2,7 @@ import type { IconType } from 'react-icons';
 import {
   FiActivity,
   FiBarChart2,
+  FiCheckSquare,
   FiCreditCard,
   FiFileText,
   FiGift,
@@ -52,6 +53,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { id: 'settings', label: 'Settings', path: ADMIN_ROUTES.settings, icon: FiSettings, section: 'Platform' },
 
   { id: 'features', label: 'Features', path: ADMIN_ROUTES.features, icon: FiTag, section: 'More' },
+  { id: 'entitlements', label: 'Entitlements', path: ADMIN_ROUTES.entitlements, icon: FiCheckSquare, section: 'More' },
   { id: 'prices', label: 'Prices & Currencies', path: ADMIN_ROUTES.prices, icon: FiPercent, section: 'More' },
   { id: 'coupons', label: 'Coupons', path: ADMIN_ROUTES.coupons, icon: FiTag, section: 'More' },
   { id: 'refunds', label: 'Refunds', path: ADMIN_ROUTES.refunds, icon: FiRefreshCw, section: 'More' },

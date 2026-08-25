@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
-import { BillingPlanFeatureGrantDto, BillingPlanLimitGrantDto } from './billing-plan-grant.dto';
+import { BillingPlanEntitlementGrantDto, BillingPlanFeatureGrantDto, BillingPlanLimitGrantDto } from './billing-plan-grant.dto';
 
 // Hand-written, every field optional (no @nestjs/mapped-types dependency in
 // this repo — see crm/dto/update-deal.dto.ts's identical rationale). `key`
@@ -34,4 +34,10 @@ export class UpdateBillingPlanDto {
   @ValidateNested({ each: true })
   @Type(() => BillingPlanLimitGrantDto)
   limits?: BillingPlanLimitGrantDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BillingPlanEntitlementGrantDto)
+  entitlements?: BillingPlanEntitlementGrantDto[];
 }

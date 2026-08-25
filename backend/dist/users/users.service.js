@@ -78,43 +78,6 @@ let UsersService = class UsersService {
     async findAll(organizationId) {
         return this.userModel.find({ organizationId }).exec();
     }
-    async listPlatformAdmins(filters) {
-        const page = filters.page ?? 1;
-        const limit = filters.limit ?? 25;
-        const query = { roles: 'platform_admin' };
-        if (filters.search) {
-            const escaped = filters.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            query.$or = [{ name: { $regex: escaped, $options: 'i' } }, { email: { $regex: escaped, $options: 'i' } }];
-        }
-        const [users, total] = await Promise.all([
-            this.userModel.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).exec(),
-            this.userModel.countDocuments(query).exec(),
-        ]);
-        return { items: users.map((u) => this.toPublic(u)), total, page, limit };
-    }
-    async searchAllUsers(search, limit = 20) {
-        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const users = await this.userModel
-            .find({ $or: [{ name: { $regex: escaped, $options: 'i' } }, { email: { $regex: escaped, $options: 'i' } }] })
-            .limit(limit)
-            .exec();
-        return users.map((u) => this.toPublic(u));
-    }
-    async grantPlatformAdmin(userId) {
-        const updated = await this.userModel.findByIdAndUpdate(userId, { $addToSet: { roles: 'platform_admin' } }, { new: true }).exec();
-        if (!updated)
-            throw new common_1.NotFoundException('User not found');
-        return this.toPublic(updated);
-    }
-    async revokePlatformAdmin(userId, callerId) {
-        if (userId === callerId) {
-            throw new common_1.BadRequestException("Can't revoke your own platform admin access.");
-        }
-        const updated = await this.userModel.findByIdAndUpdate(userId, { $pull: { roles: 'platform_admin' } }, { new: true }).exec();
-        if (!updated)
-            throw new common_1.NotFoundException('User not found');
-        return this.toPublic(updated);
-    }
     create(data) {
         return this.userModel.create(data);
     }

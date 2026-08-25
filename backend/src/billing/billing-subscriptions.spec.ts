@@ -228,13 +228,45 @@ describe('Subscriptions (real Mongo)', () => {
       expect(daysUntilPeriodEnd).toBeLessThanOrEqual(31);
     });
 
-    it('rejects a second subscribe while one is already active/trialing/past_due', async () => {
-      const { plan, price } = await createPlanWithPrice({ key: `${TEST_PREFIX}-pro-dup` });
-      const org = `${TEST_PREFIX}-org-checkout`; // reuses the org from the previous test — already subscribed
+    it('rejects re-checkout of the exact same plan already subscribed to', async () => {
+      const org = `${TEST_PREFIX}-org-checkout`; // already subscribed (first test in this suite)
+      const currentSubscription = await subscriptionModel.findOne({ organizationId: org, status: 'active' }).exec();
+      const currentPrice = await priceModel.findOne({ planId: currentSubscription!.planId }).exec();
 
       await expect(
-        subscriptionsService.checkout(org, 'user-1', { planId: plan._id.toString(), priceId: price._id.toString() }),
-      ).rejects.toThrow();
+        subscriptionsService.checkout(org, 'user-1', { planId: currentSubscription!.planId, priceId: currentPrice!._id.toString() }),
+      ).rejects.toThrow('Already subscribed to this plan.');
+    });
+
+    it('switching to a DIFFERENT plan while one is active supersedes the old one instead of rejecting', async () => {
+      const org = `${TEST_PREFIX}-org-checkout`; // already active on the -pro plan from the first test
+      const before = await subscriptionModel.findOne({ organizationId: org, status: 'active' }).exec();
+      const oldSubscriptionId = before!._id.toString();
+
+      const { plan: upgradePlan, price: upgradePrice } = await createPlanWithPrice({ key: `${TEST_PREFIX}-pro-upgrade`, amount: 1999, creditsGranted: 8000 });
+      const result = await subscriptionsService.checkout(org, 'user-1', {
+        planId: upgradePlan._id.toString(),
+        priceId: upgradePrice._id.toString(),
+      });
+
+      expect(result.activatedImmediately).toBe(true);
+      expect(result.subscription?.plan?.key).toBe(upgradePlan.key);
+      expect(result.subscription?.id).not.toBe(oldSubscriptionId);
+
+      const oldSubscription = await subscriptionModel.findById(oldSubscriptionId).exec();
+      expect(oldSubscription?.status).toBe('canceled');
+      const supersededEvent = await eventModel.findOne({ subscriptionId: oldSubscriptionId, type: 'canceled' }).exec();
+      expect(supersededEvent?.metadata.reason).toBe('superseded_by_upgrade');
+
+      // Exactly one active subscription for the org — the unique partial
+      // index invariant held throughout the swap.
+      const activeCount = await subscriptionModel.countDocuments({ organizationId: org, status: { $in: ['trialing', 'active', 'past_due'] } });
+      expect(activeCount).toBe(1);
+
+      // Prepaid wallet balance is additive, not reset — 5000 from the
+      // original plan (first test in this suite) + 8000 from the upgrade.
+      const wallet = await walletModel.findOne({ organizationId: org }).exec();
+      expect(wallet?.balanceCredits).toBe(13000);
     });
 
     it('rejects a one_time price for a subscription checkout', async () => {

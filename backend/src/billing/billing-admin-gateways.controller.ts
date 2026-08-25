@@ -1,7 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminGatewaysService } from './billing-admin-gateways.service';
 import { UpsertBillingGatewayConfigDto } from './dto/upsert-billing-gateway-config.dto';
 import { PaymentProviderKey } from './providers/payment-provider.interface';
@@ -11,8 +9,7 @@ import { PaymentProviderKey } from './providers/payment-provider.interface';
 // this entire module (accepts raw gateway secrets), and correspondingly the
 // only one whose GET response is deliberately never the raw request body
 // shape — see BillingAdminGatewaysService.toStatus.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/gateways')
 export class BillingAdminGatewaysController {
   constructor(private gatewaysService: BillingAdminGatewaysService) {}

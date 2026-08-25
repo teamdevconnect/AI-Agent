@@ -1,17 +1,13 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminService } from './billing-admin.service';
 
-// Haive-internal only — every route here requires the platform_admin role,
-// a NEW role distinct from every existing 'admin'/'owner' check in this
-// codebase (which are always scoped to a customer's own organization).
-// platform_admin has no self-serve grant path; it's assigned manually in
-// Mongo. This is the one place provider cost/revenue/margin data is ever
-// returned by an API — never reachable from a customer-scoped route.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+// Haive-internal only — gated by a fully separate admin credential (see
+// AdminJwtAuthGuard/AdminAccount), never reachable by a customer login no
+// matter what roles it carries. This is the one place provider cost/
+// revenue/margin data is ever returned by an API — never reachable from a
+// customer-scoped route.
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin')
 export class BillingAdminController {
   constructor(private adminService: BillingAdminService) {}

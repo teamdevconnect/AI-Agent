@@ -43,6 +43,28 @@ export class BillingPlanLimitGrant {
 }
 const BillingPlanLimitGrantSchema = SchemaFactory.createForClass(BillingPlanLimitGrant);
 
+// Phase 0 of the ChatGPT-style entitlements migration (see
+// entitlements.service.ts) — additive, parallel to features/limits above,
+// which stay exactly as they are. References Entitlement.key by value, same
+// no-populate convention as BillingPlanFeatureGrant.featureKey.
+@Schema({ _id: false })
+export class BillingPlanEntitlementGrant {
+  @Prop({ required: true })
+  key: string;
+
+  // Boolean entitlements: this IS the grant (on/off). Numeric entitlements:
+  // gates the grant independently of `value` — a numeric entitlement can be
+  // present with enabled:false to explicitly deny it regardless of limit.
+  @Prop({ default: true })
+  enabled: boolean;
+
+  // Numeric entitlements only: the plan's cap for this period (e.g. monthly
+  // token limit). Omitted means unlimited. Ignored for boolean entitlements.
+  @Prop()
+  value?: number;
+}
+const BillingPlanEntitlementGrantSchema = SchemaFactory.createForClass(BillingPlanEntitlementGrant);
+
 // Platform-global plan catalog (no organizationId — same precedent as
 // CreditPackage/ProviderPricing). A plan's actual price(s) live in
 // BillingPlanPrice (one plan can have several: per currency/billing cycle),
@@ -104,6 +126,9 @@ export class BillingPlan {
 
   @Prop({ type: [BillingPlanLimitGrantSchema], default: [] })
   limits: BillingPlanLimitGrant[];
+
+  @Prop({ type: [BillingPlanEntitlementGrantSchema], default: [] })
+  entitlements: BillingPlanEntitlementGrant[];
 }
 
 export const BillingPlanSchema = SchemaFactory.createForClass(BillingPlan);

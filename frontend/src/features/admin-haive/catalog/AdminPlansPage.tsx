@@ -4,6 +4,8 @@ import { FiArchive, FiCheckCircle, FiChevronDown, FiChevronUp, FiPlus, FiTrash2 
 import { Badge, Button, Input, Modal, Skeleton, Switch, Tabs } from '@/components/ui';
 import {
   billingCatalogAdminService,
+  type AdminEntitlement,
+  type AdminEntitlementGrant,
   type AdminFeature,
   type AdminFeatureGrant,
   type AdminLimitGrant,
@@ -29,6 +31,7 @@ const emptyForm = {
 export function AdminPlansPage() {
   const [plans, setPlans] = useState<AdminPlan[]>([]);
   const [features, setFeatures] = useState<AdminFeature[]>([]);
+  const [entitlementCatalog, setEntitlementCatalog] = useState<AdminEntitlement[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -38,10 +41,11 @@ export function AdminPlansPage() {
   const [form, setForm] = useState(emptyForm);
   const [featureGrants, setFeatureGrants] = useState<AdminFeatureGrant[]>([]);
   const [limitGrants, setLimitGrants] = useState<AdminLimitGrant[]>([]);
+  const [entitlementGrants, setEntitlementGrants] = useState<AdminEntitlementGrant[]>([]);
   const [prices, setPrices] = useState<AdminPlanPrice[]>([]);
   const [newPrice, setNewPrice] = useState({ currencyCode: 'INR', billingCycle: 'monthly', amount: '', creditsGranted: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'features' | 'prices'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'features' | 'entitlements' | 'prices'>('details');
   // 'simple' is the default create experience — one screen (price, currency,
   // cycle, credits, feature checkboxes, active) instead of the 3-tab
   // Details/Features & Limits/Prices editor. Nothing is removed: 'advanced'
@@ -51,10 +55,11 @@ export function AdminPlansPage() {
 
   const load = () => {
     setLoading(true);
-    Promise.all([billingCatalogAdminService.listPlans(), billingCatalogAdminService.listFeatures()])
-      .then(([p, f]) => {
+    Promise.all([billingCatalogAdminService.listPlans(), billingCatalogAdminService.listFeatures(), billingCatalogAdminService.listEntitlements()])
+      .then(([p, f, e]) => {
         setPlans(p);
         setFeatures(f);
+        setEntitlementCatalog(e);
       })
       .catch((error) => toast.error(extractErrorMessage(error)))
       .finally(() => setLoading(false));
@@ -67,6 +72,7 @@ export function AdminPlansPage() {
     setForm(emptyForm);
     setFeatureGrants([]);
     setLimitGrants([]);
+    setEntitlementGrants([]);
     setPrices([]);
     setNewPrice({ currencyCode: 'INR', billingCycle: 'monthly', amount: '', creditsGranted: '' });
     setActiveTab('details');
@@ -93,6 +99,7 @@ export function AdminPlansPage() {
     });
     setFeatureGrants(plan.features);
     setLimitGrants(plan.limits);
+    setEntitlementGrants(plan.entitlements ?? []);
     setModalOpen(true);
     try {
       setPrices(await billingCatalogAdminService.listPrices(plan._id));
@@ -114,6 +121,25 @@ export function AdminPlansPage() {
     setLimitGrants((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   const removeLimit = (index: number) => setLimitGrants((prev) => prev.filter((_, i) => i !== index));
 
+  // Boolean entitlement: enabled toggles the grant on/off, no value.
+  // Numeric entitlement: enabled gates the grant; value is the plan's cap
+  // for that period (omitted means unlimited) — see billing-plan.schema.ts's
+  // BillingPlanEntitlementGrant comment.
+  const toggleEntitlement = (key: string, enabled: boolean) => {
+    setEntitlementGrants((prev) => {
+      const existing = prev.find((g) => g.key === key);
+      if (existing) return prev.map((g) => (g.key === key ? { ...g, enabled } : g));
+      return [...prev, { key, enabled }];
+    });
+  };
+  const setEntitlementValue = (key: string, value: number | undefined) => {
+    setEntitlementGrants((prev) => {
+      const existing = prev.find((g) => g.key === key);
+      if (existing) return prev.map((g) => (g.key === key ? { ...g, value } : g));
+      return [...prev, { key, enabled: true, value }];
+    });
+  };
+
   const submit = async () => {
     if (!form.key.trim() || !form.name.trim()) {
       toast.error('Key and name are required.');
@@ -134,6 +160,7 @@ export function AdminPlansPage() {
       recommended: form.recommended,
       features: featureGrants,
       limits: limitGrants.filter((l) => l.limitKey.trim()),
+      entitlements: entitlementGrants,
     };
     try {
       if (editing) {
@@ -359,6 +386,7 @@ export function AdminPlansPage() {
                 items={[
                   { id: 'details', label: 'Details' },
                   { id: 'features', label: 'Features & Limits' },
+                  { id: 'entitlements', label: 'Entitlements' },
                   { id: 'prices', label: 'Prices' },
                 ]}
                 activeId={activeTab}
@@ -418,6 +446,34 @@ export function AdminPlansPage() {
                     </Button>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'entitlements' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                {entitlementCatalog.length === 0 && (
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 0 }}>
+                    No entitlements in the catalog yet — create one under Entitlements first.
+                  </p>
+                )}
+                {entitlementCatalog.map((e) => {
+                  const grant = entitlementGrants.find((g) => g.key === e.key);
+                  return (
+                    <div key={e._id} style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+                      <Switch checked={grant?.enabled ?? false} onChange={(enabled) => toggleEntitlement(e.key, enabled)} label={e.name} />
+                      {e.type === 'numeric' && (
+                        <Input
+                          type="number"
+                          placeholder="Unlimited"
+                          style={{ width: 120 }}
+                          disabled={!grant?.enabled}
+                          value={grant?.value ?? ''}
+                          onChange={(ev) => setEntitlementValue(e.key, ev.target.value ? Number.parseInt(ev.target.value, 10) : undefined)}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

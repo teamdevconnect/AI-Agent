@@ -1,9 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import PDFDocument from 'pdfkit';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingAdminInvoicesService } from './billing-admin-invoices.service';
 import { BillingInvoicePdfService } from './billing-invoice-pdf.service';
 import { BillingInvoiceService } from './billing-invoice.service';
@@ -13,8 +11,7 @@ import { VoidInvoiceDto } from './dto/void-invoice.dto';
 // billing-admin-*.controller.ts's gate. Unlike the customer-facing
 // GET /billing/invoices (org-scoped), this sees every organization's
 // invoices — never reachable from a customer-scoped route.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/invoices')
 export class BillingAdminInvoicesController {
   constructor(

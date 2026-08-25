@@ -1,5 +1,4 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { PAYMENT_PROVIDER, PaymentProviderAdapter } from './providers/payment-provider.interface';
@@ -9,6 +8,7 @@ import { BillingInvoiceService } from './billing-invoice.service';
 import { CouponsService } from './coupons.service';
 import { ConfirmSubscriptionDto } from './dto/confirm-subscription.dto';
 import { SubscriptionCheckoutDto } from './dto/subscription-checkout.dto';
+import { BillingFeature, BillingFeatureDocument } from './schemas/billing-feature.schema';
 import { BillingPlan, BillingPlanDocument } from './schemas/billing-plan.schema';
 import { BillingCycle, BillingPlanPrice, BillingPlanPriceDocument } from './schemas/billing-plan-price.schema';
 import { BillingSubscriptionEvent, BillingSubscriptionEventDocument } from './schemas/billing-subscription-event.schema';
@@ -23,6 +23,11 @@ export interface PublicPlanPrice {
   creditsGranted: number;
 }
 
+// Same {featureKey, enabled, valueOverride} shape stored on BillingPlan,
+// plus `name` resolved from the BillingFeature catalog purely for display —
+// the underlying grant/storage shape on the plan document is untouched.
+export type PublicPlanFeature = BillingPlan['features'][number] & { name?: string };
+
 export interface PublicPlanListing {
   id: string;
   key: string;
@@ -36,7 +41,7 @@ export interface PublicPlanListing {
   planColor?: string;
   recommended: boolean;
   trialDays?: number;
-  features: BillingPlan['features'];
+  features: PublicPlanFeature[];
   limits: BillingPlan['limits'];
   prices: PublicPlanPrice[];
 }
@@ -74,6 +79,7 @@ export class BillingSubscriptionsService {
   constructor(
     @InjectModel(BillingPlan.name) private planModel: Model<BillingPlanDocument>,
     @InjectModel(BillingPlanPrice.name) private priceModel: Model<BillingPlanPriceDocument>,
+    @InjectModel(BillingFeature.name) private featureModel: Model<BillingFeatureDocument>,
     @InjectModel(BillingSubscription.name) private subscriptionModel: Model<BillingSubscriptionDocument>,
     @InjectModel(BillingSubscriptionEvent.name) private eventModel: Model<BillingSubscriptionEventDocument>,
     @InjectModel(PaymentRecord.name) private paymentRecordModel: Model<PaymentRecordDocument>,
@@ -81,24 +87,34 @@ export class BillingSubscriptionsService {
     private wallet: WalletService,
     private coupons: CouponsService,
     private invoices: BillingInvoiceService,
-    private config: ConfigService,
   ) {}
 
   /** Public catalog — active + isPublic plans only, with their currently
-   * active price(s) in the requested (or platform-default) currency. Never
-   * returns BillingPlan.internalDescription — same admin-only-context-never-
-   * leaves-the-server discipline as BillingService.listCustomerTransactions
-   * stripping WalletTransaction.metadata. */
+   * active price(s). Never returns BillingPlan.internalDescription — same
+   * admin-only-context-never-leaves-the-server discipline as
+   * BillingService.listCustomerTransactions stripping WalletTransaction.metadata.
+   *
+   * Currency: when a specific currencyCode IS requested, only that
+   * currency's prices are returned (unchanged behavior). When none is
+   * requested — the public /pricing page's own call — every active
+   * currency a plan happens to be priced in is returned, not just one
+   * hardcoded/env-default currency; previously a plan priced only in a
+   * non-default currency (e.g. USD when the env default was INR) silently
+   * had zero prices and was filtered off the page entirely. Each price
+   * still carries its own currencyCode, so the frontend renders whatever
+   * currency it actually is — this doesn't do cross-currency conversion or
+   * change what a plan's checkout ever charges.
+   */
   async listPublicPlans(currencyCode?: string): Promise<PublicPlanListing[]> {
-    const currency = (currencyCode || this.config.get<string>('billing.currency') || 'INR').toUpperCase();
     const plans = await this.planModel.find({ active: true, isPublic: true }).sort({ sortOrder: 1 }).exec();
     if (plans.length === 0) return [];
 
     const planIds = plans.map((p) => p._id.toString());
-    const prices = await this.priceModel
-      .find({ planId: { $in: planIds }, currencyCode: currency, active: true, effectiveTo: null })
-      .sort({ billingCycle: 1 })
-      .exec();
+    const priceQuery: Record<string, unknown> = { planId: { $in: planIds }, active: true, effectiveTo: null };
+    if (currencyCode) {
+      priceQuery.currencyCode = currencyCode.toUpperCase();
+    }
+    const prices = await this.priceModel.find(priceQuery).sort({ billingCycle: 1 }).exec();
 
     const pricesByPlan = new Map<string, BillingPlanPriceDocument[]>();
     for (const price of prices) {
@@ -106,6 +122,17 @@ export class BillingSubscriptionsService {
       list.push(price);
       pricesByPlan.set(price.planId, list);
     }
+
+    // Resolves each grant's featureKey to the catalog's display name —
+    // plans only ever store the key (see BillingPlanFeatureGrantDto), so
+    // without this the public page had nothing but the raw internal slug
+    // to show for any feature that didn't have an explicit valueOverride.
+    const allFeatureKeys = new Set<string>();
+    for (const plan of plans) {
+      for (const grant of plan.features) allFeatureKeys.add(grant.featureKey);
+    }
+    const featureDocs = allFeatureKeys.size > 0 ? await this.featureModel.find({ key: { $in: [...allFeatureKeys] } }).exec() : [];
+    const featureNameByKey = new Map(featureDocs.map((f) => [f.key, f.name]));
 
     return plans.map((plan) => ({
       id: plan._id.toString(),
@@ -120,7 +147,7 @@ export class BillingSubscriptionsService {
       planColor: plan.planColor,
       recommended: plan.recommended,
       trialDays: plan.trialDays,
-      features: plan.features,
+      features: plan.features.map((grant) => ({ ...grant, name: featureNameByKey.get(grant.featureKey) })),
       limits: plan.limits,
       prices: (pricesByPlan.get(plan._id.toString()) ?? []).map((price) => ({
         id: price._id.toString(),
@@ -158,13 +185,17 @@ export class BillingSubscriptionsService {
       throw new BadRequestException('This price is a one-time price, not a recurring subscription — use a credit package purchase instead.');
     }
 
+    // A DIFFERENT plan while one is already active is allowed through — an
+    // upgrade/switch — and handled in activateFromCheckoutPayment below,
+    // which immediately supersedes the old subscription right before
+    // inserting the new one (the unique partial index only allows one
+    // active subscription per org at a time). Re-checking out the exact
+    // same currently-active plan is still rejected; there's nothing to do.
     const existing = await this.subscriptionModel
       .findOne({ organizationId, status: { $in: ['trialing', 'active', 'past_due'] } })
       .exec();
-    if (existing) {
-      throw new BadRequestException(
-        'This organization already has an active subscription. Cancel it before subscribing to a different plan.',
-      );
+    if (existing && existing.planId === dto.planId) {
+      throw new BadRequestException('Already subscribed to this plan.');
     }
 
     let amount = price.amount;
@@ -299,6 +330,28 @@ export class BillingSubscriptionsService {
 
     const now = new Date();
     const periodEnd = addBillingCycle(now, price.billingCycle as RecurringBillingCycle);
+
+    // Upgrade/switch case — checkout() already allowed this through when it
+    // was for a different plan than whatever's currently active. Terminate
+    // the old subscription right now (immediate, not the usual soft
+    // cancelAtPeriodEnd) so the unique partial index — one active
+    // subscription per org — is satisfied before the new one inserts below.
+    // No credit clawback: this is a prepaid wallet, the balance simply
+    // carries over; only the recurring grant going forward changes.
+    const superseded = await this.subscriptionModel
+      .findOne({ organizationId: record.organizationId, status: { $in: ['trialing', 'active', 'past_due'] } })
+      .exec();
+    if (superseded) {
+      superseded.status = 'canceled';
+      superseded.cancelAtPeriodEnd = true;
+      await superseded.save();
+      await this.eventModel.create({
+        subscriptionId: superseded._id.toString(),
+        organizationId: record.organizationId,
+        type: 'canceled',
+        metadata: { reason: 'superseded_by_upgrade', newPlanId: planId },
+      });
+    }
 
     let subscription: BillingSubscriptionDocument;
     try {

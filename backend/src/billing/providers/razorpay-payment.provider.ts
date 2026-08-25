@@ -188,6 +188,18 @@ export class RazorpayPaymentProvider implements PaymentProviderAdapter, OnModule
         order_id: order.id,
         name: 'Haive',
         description: `${creditPackageKey} credit package`,
+        // Without this, Checkout.js never shows the "save this card"
+        // consent and Razorpay never tokenizes the payment regardless of
+        // method chosen — saveMethodFromCheckout's payment.token_id lookup
+        // below then always comes back empty, so a card saved for Auto
+        // Recharge silently never happens no matter how the customer pays.
+        // Stripe's createCheckoutOrder already sets the equivalent flag
+        // (setup_future_usage: 'off_session'); this brings Razorpay's
+        // checkout up to the same behavior. Only card payments can actually
+        // be tokenized this way (Razorpay has no reusable token for
+        // Netbanking/UPI/wallet) — that's a real gateway constraint, not
+        // something this flag changes.
+        save: 1,
         // Haive's brand palette (frontend/src/styles/variables.css —
         // --brand-accent-primary/--brand-bg-primary, "do not rename") — kept
         // in sync manually since Checkout.js can't read the app's CSS

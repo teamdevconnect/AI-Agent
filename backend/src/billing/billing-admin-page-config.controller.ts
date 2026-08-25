@@ -1,12 +1,9 @@
 import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
-import { Roles } from '../common/decorators/roles.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { AdminJwtAuthGuard } from '../common/guards/admin-jwt-auth.guard';
 import { BillingPageConfigService } from './billing-page-config.service';
 import { UpdateBillingPageConfigDto } from './dto/update-billing-page-config.dto';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('platform_admin')
+@UseGuards(AdminJwtAuthGuard)
 @Controller('billing/admin/page-config')
 export class BillingAdminPageConfigController {
   constructor(private pageConfigService: BillingPageConfigService) {}

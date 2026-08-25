@@ -19,59 +19,6 @@ export declare class UsersService {
     }) | null>;
     findIdsByOrgAndStore(organizationId: string, storeId: string): Promise<string[]>;
     findAll(organizationId: string): Promise<UserDocument[]>;
-    listPlatformAdmins(filters: {
-        search?: string;
-        page?: number;
-        limit?: number;
-    }): Promise<{
-        items: {
-            id: string;
-            email: string;
-            name: string;
-            organizationId: string;
-            storeId: string | undefined;
-            roles: string[];
-            assignedAgentId: string | undefined;
-            department: string | undefined;
-            active: boolean;
-        }[];
-        total: number;
-        page: number;
-        limit: number;
-    }>;
-    searchAllUsers(search: string, limit?: number): Promise<{
-        id: string;
-        email: string;
-        name: string;
-        organizationId: string;
-        storeId: string | undefined;
-        roles: string[];
-        assignedAgentId: string | undefined;
-        department: string | undefined;
-        active: boolean;
-    }[]>;
-    grantPlatformAdmin(userId: string): Promise<{
-        id: string;
-        email: string;
-        name: string;
-        organizationId: string;
-        storeId: string | undefined;
-        roles: string[];
-        assignedAgentId: string | undefined;
-        department: string | undefined;
-        active: boolean;
-    }>;
-    revokePlatformAdmin(userId: string, callerId: string): Promise<{
-        id: string;
-        email: string;
-        name: string;
-        organizationId: string;
-        storeId: string | undefined;
-        roles: string[];
-        assignedAgentId: string | undefined;
-        department: string | undefined;
-        active: boolean;
-    }>;
     create(data: {
         email: string;
         passwordHash?: string;

@@ -1,4 +1,4 @@
-import { axiosClient } from '@/api/axiosClient';
+import { adminAxiosClient } from '@/api/adminAxiosClient';
 
 // Platform-wide audit read — backend/src/audit/audit.controller.ts's
 // GET /audit-logs/all (@Roles('platform_admin'), separate from the org-scoped
@@ -26,7 +26,7 @@ export interface PagedAuditLogs {
 
 export const auditLogsAdminService = {
   async listAll(params?: { userId?: string; route?: string; page?: number; limit?: number }): Promise<PagedAuditLogs> {
-    const { data } = await axiosClient.get<PagedAuditLogs>('/audit-logs/all', { params });
+    const { data } = await adminAxiosClient.get<PagedAuditLogs>('/audit-logs/all', { params });
     return data;
   },
 };

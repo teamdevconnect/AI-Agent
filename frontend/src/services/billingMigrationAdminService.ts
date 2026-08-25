@@ -1,4 +1,4 @@
-import { axiosClient } from '@/api/axiosClient';
+import { adminAxiosClient } from '@/api/adminAxiosClient';
 
 export interface WalletMergeSourceSummary {
   walletId: string;
@@ -26,7 +26,7 @@ export interface MigrationRunResult {
 // real run; the caller must explicitly confirm before dryRun=false is sent.
 export const billingMigrationAdminService = {
   async run(dryRun: boolean, organizationId?: string): Promise<MigrationRunResult> {
-    const { data } = await axiosClient.post<MigrationRunResult>('/billing/admin/migrate-organization-wallets', null, {
+    const { data } = await adminAxiosClient.post<MigrationRunResult>('/billing/admin/migrate-organization-wallets', null, {
       params: { dryRun, organizationId },
     });
     return data;
