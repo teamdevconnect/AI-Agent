@@ -6,16 +6,77 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { correlateSingleEmail, EmailCorrelationContext } from '../crm/customer-grouping.util';
+import { periodToDateRange } from '../common/period.util';
+import { classifyEmailDeterministically } from './email-preclassification.util';
 import { CustomerActivityService, TodaysEmail } from '../crm/customer-activity.service';
+import { QuotesService } from '../crm/quotes.service';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UserDocument } from '../users/schemas/user.schema';
+import { UsersService } from '../users/users.service';
+import {
+  EmailFollowUpReminder,
+  EmailFollowUpReminderDocument,
+} from './schemas/email-follow-up-reminder.schema';
 import { EmailIntelligenceItem, EmailIntelligenceItemDocument } from './schemas/email-intelligence-item.schema';
 
 const DUPLICATE_KEY_ERROR = 11000;
 const EMAIL_HISTORY_LIMIT = 50;
 const RECENT_SENTIMENT_WINDOW_DAYS = 30;
+const FOLLOW_UP_DEFAULT_DAYS = 3;
+
+// Same allow-list as frontend/src/services/emailIntelligenceService.ts's
+// RELEVANT_EMAIL_INTENTS (Phase 16's off-plan noise-filter fix) — the
+// vendor/customer/enquiry-type intents a salesperson actually acts on, vs.
+// payment/purchase_order/refund/internal/spam/other noise. Deliberately an
+// allow-list, not an exclude-list, so a new intent value added later
+// defaults to excluded from "business mail" analytics until deliberately
+// added here. Phase 19's email activity widget uses this to analyze real
+// business mail only, never every message a connected mailbox receives.
+export const RELEVANT_EMAIL_INTENTS = [
+  'vendor', 'existing_customer', 'new_enquiry', 'quotation_request', 'price_negotiation',
+  'complaint', 'technical_support', 'escalation', 'meeting_request',
+];
+
+const RELEVANT_INTENT_LABELS: Record<string, string> = {
+  vendor: 'Vendor',
+  existing_customer: 'Existing Customer',
+  new_enquiry: 'New Enquiry',
+  quotation_request: 'Quotation Request',
+  price_negotiation: 'Price Negotiation',
+  complaint: 'Complaint',
+  technical_support: 'Technical Support',
+  escalation: 'Escalation',
+  meeting_request: 'Meeting Request',
+};
 
 type RelationshipView = Awaited<ReturnType<CustomerActivityService['getRelationshipView']>>;
+
+// The narrow subset computeRiskScore actually reads — widened (Business
+// Intelligence's AI Follow-Up Summary, section 6) so the same heuristic can
+// score every business in an org at once from raw Deal/Quote documents
+// (getHighRiskCustomers below), not just one at a time from a full
+// RelationshipView (getCustomerTimeline's own shape still satisfies this
+// structurally, zero behavior change there).
+interface RiskScoreInput {
+  deals: { dealStatus: string; createdAt?: Date | string | null }[];
+  quotes: { createdAt?: Date | string | null }[];
+}
+
+// Same roster-eligibility set as deal-performance-dashboard.service.ts's own
+// (private, unexported) SALES_ROLES — Employee Productivity (Business
+// Intelligence section 3) composes email analytics with deals/quotes
+// per-employee, so all three must agree on who counts as "an employee".
+const EMAIL_ROSTER_ROLES = new Set(['manager', 'consultant']);
+
+export interface EmployeeEmailAnalyticsRow {
+  userId: string;
+  userName: string;
+  count: number;
+  byPriority?: { value: string; count: number }[];
+  byUrgency?: { value: string; count: number }[];
+  ageBuckets?: { bucket: string; count: number }[];
+}
 
 const DRAFTABLE_INTENT_LABELS: Record<string, string> = {
   new_enquiry: 'New enquiry',
@@ -38,8 +99,11 @@ export class EmailIntelligenceService {
 
   constructor(
     @InjectModel(EmailIntelligenceItem.name) private itemModel: Model<EmailIntelligenceItemDocument>,
+    @InjectModel(EmailFollowUpReminder.name) private followUpModel: Model<EmailFollowUpReminderDocument>,
     private notificationsService: NotificationsService,
     private customerActivityService: CustomerActivityService,
+    private quotesService: QuotesService,
+    private usersService: UsersService,
     private http: HttpService,
     private jwt: JwtService,
     private config: ConfigService,
@@ -49,6 +113,20 @@ export class EmailIntelligenceService {
 
   async itemExists(userId: string, externalMessageId: string): Promise<boolean> {
     return !!(await this.itemModel.exists({ userId, externalMessageId }));
+  }
+
+  // Phase 21 follow-up — a read-only dry-run of the same two deterministic
+  // gates analyzeAndCreate/regenerate apply below (Phase 17 Layer 1 self-send
+  // + Phase 18 Layer 0 pre-filter), used by EmailIntelligenceSyncService's
+  // previewSync to count how many "new" items would actually spend an LLM
+  // call before anything runs. Deliberately NOT a refactor of those two
+  // already-verified methods to share this — the persisted-field shape
+  // differs per gate and isn't needed here, only the boolean answer, so
+  // mirroring these two simple conditions is a smaller, safer footprint than
+  // restructuring production-critical branching logic.
+  wouldSkipLlmAnalysis(email: { from: string; subject: string; preview: string }, mailboxEmail: string): boolean {
+    if (email.from.trim().toLowerCase() === mailboxEmail.trim().toLowerCase()) return true;
+    return !!classifyEmailDeterministically({ from: email.from, subject: email.subject, preview: email.preview });
   }
 
   // Correlates the email, calls python-agent for classification+draft,
@@ -63,35 +141,91 @@ export class EmailIntelligenceService {
     context: EmailCorrelationContext,
   ): Promise<EmailIntelligenceItemDocument | null> {
     const { correlation, matchedBusinessSummary } = this.correlate(email, context);
-    const deterministicInput = this.buildAnalysisPayload(email, correlation, matchedBusinessSummary);
-    const result = await this.callAnalyze(organizationId, userId, deterministicInput);
+
+    const baseFields = {
+      organizationId,
+      userId,
+      mailboxEmail,
+      externalMessageId: email.id,
+      receivedAt: new Date(email.receivedAt),
+      subject: email.subject,
+      fromAddress: email.from,
+      toAddresses: email.to,
+      bodyPreview: email.preview,
+      isRead: email.isRead,
+      importance: email.importance,
+      matchConfidence: correlation?.matchConfidence ?? 'none',
+      matchedBusinessKey: correlation?.matchedBusinessKey,
+      matchedBusinessName: correlation?.matchedBusinessName,
+      resolvedGroupKey: correlation?.resolvedGroupKey ?? undefined,
+      matchedBusinessSummary,
+    };
 
     try {
+      // Phase 17, Layer 1 — deterministic pre-gate, before any LLM call. A
+      // message sent FROM our own mailbox is never something we owe a reply
+      // to; skip the (costly) LLM call entirely rather than asking the model
+      // to work this out from raw from/to text, which is exactly what
+      // produced customer/vendor-voiced drafts before this fix.
+      if (email.from.trim().toLowerCase() === mailboxEmail.trim().toLowerCase()) {
+        return await this.itemModel.create({
+          ...baseFields,
+          intent: 'internal',
+          priority: 'low',
+          urgency: 'low',
+          sentiment: 'neutral',
+          recommendedAction: 'No action needed — this message was sent from your own mailbox.',
+          shouldDraft: false,
+          fromRole: 'internal',
+          aiStatus: 'no_reply_needed',
+          expectedNextAction: 'awaiting_customer',
+          reason: 'This message was sent from your own connected mailbox — no reply needed.',
+          deterministicInput: { skippedLlmCall: true, reasonForSkip: 'fromAddress matches mailboxEmail' },
+          result: {},
+        });
+      }
+
+      // Deterministic pre-filter — bounce/auto-reply/marketing mail never
+      // needs an LLM call to know it needs no reply. Skips straight to
+      // persistence, same shape/reasoning as the Layer 1 gate above.
+      const preFilterMatch = classifyEmailDeterministically({ from: email.from, subject: email.subject, preview: email.preview });
+      if (preFilterMatch) {
+        return await this.itemModel.create({
+          ...baseFields,
+          intent: 'other',
+          priority: 'low',
+          urgency: 'low',
+          sentiment: 'neutral',
+          recommendedAction: preFilterMatch.reason,
+          shouldDraft: false,
+          fromRole: 'external_other',
+          aiStatus: 'no_reply_needed',
+          expectedNextAction: 'no_action_required',
+          reason: preFilterMatch.reason,
+          deterministicInput: { skippedLlmCall: true, reasonForSkip: `deterministic pre-filter: ${preFilterMatch.ruleName}` },
+          result: {},
+        });
+      }
+
+      const salesperson = await this.usersService.findById(userId);
+      const deterministicInput = this.buildAnalysisPayload(email, correlation, matchedBusinessSummary, mailboxEmail, salesperson?.name);
+      const result = await this.callAnalyze(organizationId, userId, deterministicInput);
+      const decision = this.applyPerspectiveValidation(email.id, email.from, result.intent as string, result);
+
       const created = await this.itemModel.create({
-        organizationId,
-        userId,
-        mailboxEmail,
-        externalMessageId: email.id,
-        receivedAt: new Date(email.receivedAt),
-        subject: email.subject,
-        fromAddress: email.from,
-        toAddresses: email.to,
-        bodyPreview: email.preview,
-        isRead: email.isRead,
-        importance: email.importance,
-        matchConfidence: correlation?.matchConfidence ?? 'none',
-        matchedBusinessKey: correlation?.matchedBusinessKey,
-        matchedBusinessName: correlation?.matchedBusinessName,
-        resolvedGroupKey: correlation?.resolvedGroupKey ?? undefined,
-        matchedBusinessSummary,
+        ...baseFields,
         intent: result.intent,
         priority: result.priority,
         urgency: result.urgency,
         sentiment: result.sentiment,
         recommendedAction: result.recommendedAction,
-        shouldDraft: result.shouldDraft,
-        draftReply: result.draftReply ?? undefined,
+        shouldDraft: decision.shouldDraftFinal,
+        draftReply: decision.draftReply,
         draftReasoning: result.draftReasoning ?? undefined,
+        fromRole: decision.fromRole,
+        aiStatus: decision.aiStatus,
+        expectedNextAction: decision.expectedNextAction,
+        reason: decision.reason,
         deterministicInput,
         result,
       });
@@ -103,6 +237,8 @@ export class EmailIntelligenceService {
           title: `New ${intentLabel(result.intent as string).toLowerCase()} email needs review`,
           description: `${email.subject || '(no subject)'} — ${result.priority} priority`,
           source: 'email-intelligence',
+          entityType: 'email',
+          entityId: created._id.toString(),
         },
         organizationId,
       );
@@ -114,6 +250,69 @@ export class EmailIntelligenceService {
       if ((err as { code?: number }).code === DUPLICATE_KEY_ERROR) return null;
       throw err;
     }
+  }
+
+  private deriveFromRole(intent: string): 'customer' | 'vendor' | 'external_other' {
+    if (intent === 'vendor') return 'vendor';
+    const customerIntents = new Set([
+      'new_enquiry', 'existing_customer', 'quotation_request', 'price_negotiation',
+      'complaint', 'technical_support', 'escalation', 'meeting_request',
+    ]);
+    return customerIntents.has(intent) ? 'customer' : 'external_other';
+  }
+
+  // Phase 17, Layer 2 — never trust the model's own shouldDraft blindly.
+  // draftWrittenFromOurPerspective is the model's explicit, forced self-check
+  // (see EMAIL_INTENT_TOOL/EMAIL_INTENT_SYSTEM_PROMPT); if it drafted a reply
+  // but flagged doubt about perspective, the draft is discarded here — never
+  // shown as ready — and the failure is logged for debugging, matching the
+  // reported bug's exact "do not generate the draft, log the issue" ask.
+  private applyPerspectiveValidation(
+    itemIdForLog: string,
+    fromAddress: string,
+    intent: string,
+    result: Record<string, unknown>,
+  ): {
+    fromRole: 'customer' | 'vendor' | 'external_other';
+    shouldDraftFinal: boolean;
+    draftReply: string | undefined;
+    aiStatus: 'draft_ready' | 'no_reply_needed' | 'validation_failed';
+    expectedNextAction: 'company_reply' | 'no_action_required';
+    reason: string;
+  } {
+    const fromRole = this.deriveFromRole(intent);
+    const llmShouldDraft = !!result.shouldDraft;
+    // EMAIL_INTENT_TOOL now sets strict:true, which guarantees this key is
+    // always present (never silently omitted — the exact failure mode a live
+    // test caught before strict mode was added). With presence guaranteed,
+    // requiring an explicit true is the correct, fully-closed check — a
+    // missing/null/false value all correctly fail the draft rather than
+    // defaulting to "ok".
+    const perspectiveOk = result.draftWrittenFromOurPerspective === true;
+
+    if (llmShouldDraft && !perspectiveOk) {
+      this.logger.warn(
+        `Draft perspective self-check failed for email ${itemIdForLog} (from ${fromAddress}) — discarding generated draft.`,
+      );
+      return {
+        fromRole,
+        shouldDraftFinal: false,
+        draftReply: undefined,
+        aiStatus: 'validation_failed',
+        expectedNextAction: 'no_action_required',
+        reason: 'The AI drafted a reply but failed its own perspective self-check — discarded for manual review.',
+      };
+    }
+
+    const shouldDraftFinal = llmShouldDraft && perspectiveOk;
+    return {
+      fromRole,
+      shouldDraftFinal,
+      draftReply: shouldDraftFinal ? ((result.draftReply as string) ?? undefined) : undefined,
+      aiStatus: shouldDraftFinal ? 'draft_ready' : 'no_reply_needed',
+      expectedNextAction: shouldDraftFinal ? 'company_reply' : 'no_action_required',
+      reason: (result.draftReasoning as string) || (result.recommendedAction as string) || '',
+    };
   }
 
   private correlate(email: TodaysEmail, context: EmailCorrelationContext) {
@@ -146,8 +345,19 @@ export class EmailIntelligenceService {
     email: TodaysEmail,
     correlation: ReturnType<typeof correlateSingleEmail>,
     matchedBusinessSummary: ReturnType<EmailIntelligenceService['correlate']>['matchedBusinessSummary'],
+    mailboxEmail: string,
+    salespersonName?: string,
   ) {
     return {
+      // Phase 17 — the single missing signal that let drafts get written in
+      // the wrong voice: without this, the model had no way to know which
+      // address is "us" versus the external party. Never remove without a
+      // new correctness pass (see EMAIL_INTENT_SYSTEM_PROMPT's own comment).
+      ourEmail: mailboxEmail,
+      // Real first name of the mailbox owner, when known — lets the draft
+      // sign off as an actual person ("Best, Sanjay") instead of a generic
+      // business-name signature, part of making drafts read as human-written.
+      ourName: salespersonName || null,
       email: {
         subject: email.subject,
         from: email.from,
@@ -174,12 +384,411 @@ export class EmailIntelligenceService {
     return data;
   }
 
-  list(userId: string, status?: 'pending' | 'approved' | 'rejected') {
+  // Phase 19 — Unified Analytics Dashboard's email activity widget, reworked
+  // twice after live feedback: (1) restricted to RELEVANT_EMAIL_INTENTS —
+  // "business mail" only, same allow-list the AI Email Inbox's own
+  // "Relevant" tab already filters to, never spam/internal/bounce noise;
+  // (2) generalized from a locked calendar-month period to an arbitrary
+  // [start, end) Date range, since email activity is naturally a daily-
+  // rolling concept ("how many did I send today") unlike the rest of this
+  // dashboard's inherently-monthly revenue/target concepts — this widget
+  // gets its own independent day-based filter on the frontend, decoupled
+  // from the page's month picker. sentCount is scoped by sentAt falling in
+  // range (replies actually dispatched); missedCount/newEnquiryCount/
+  // byIntent are scoped by receivedAt falling in range. "Missed" = still
+  // status:'pending' more than 24h after receivedAt — status:'pending'
+  // alone already implies sentAt is unset (send() requires
+  // status==='approved' first).
+  async getActivityStats(
+    organizationId: string,
+    start: Date,
+    end: Date,
+    storeConstraint?: string,
+    personalConstraint?: string,
+  ): Promise<{
+    totalRelevantCount: number;
+    sentCount: number;
+    missedCount: number;
+    newEnquiryCount: number;
+    byIntent: { intent: string; label: string; receivedCount: number; sentCount: number }[];
+  }> {
+    const userFilter = await this.resolveMonthlyUserFilter(organizationId, storeConstraint, personalConstraint);
+
+    // receivedRows analyzes the inbox side (what arrived, by category);
+    // sentRows analyzes the "sent box" the same way — replies actually
+    // dispatched in this range, by the category of the item they answered.
+    // sentAt reflects when a reply went out, independent of when its
+    // original email was received, so a category's sentCount can include
+    // items received before this range but replied to within it — the
+    // honest, real meaning of "analyze the sent box for this window".
+    const [sentCount, missedCount, receivedRows, sentRows] = await Promise.all([
+      this.itemModel.countDocuments(this.buildActivityKindMatch(organizationId, 'sent', start, end, userFilter)).exec(),
+      this.itemModel.countDocuments(this.buildActivityKindMatch(organizationId, 'missed', start, end, userFilter)).exec(),
+      this.itemModel
+        .aggregate<{ _id: string; count: number }>([
+          {
+            $match: {
+              organizationId,
+              ...userFilter,
+              intent: { $in: RELEVANT_EMAIL_INTENTS },
+              receivedAt: { $gte: start, $lt: end },
+            },
+          },
+          { $group: { _id: '$intent', count: { $sum: 1 } } },
+        ])
+        .exec(),
+      this.itemModel
+        .aggregate<{ _id: string; count: number }>([
+          {
+            $match: {
+              organizationId,
+              ...userFilter,
+              intent: { $in: RELEVANT_EMAIL_INTENTS },
+              sentAt: { $gte: start, $lt: end },
+            },
+          },
+          { $group: { _id: '$intent', count: { $sum: 1 } } },
+        ])
+        .exec(),
+    ]);
+
+    const receivedByIntent = new Map(receivedRows.map((r) => [r._id, r.count]));
+    const sentByIntent = new Map(sentRows.map((r) => [r._id, r.count]));
+    // Zero-filled across every relevant intent (never just the ones with a
+    // hit) — same "list every known category, never fabricate/hide a row"
+    // convention this app's other breakdown widgets already follow.
+    const byIntent = RELEVANT_EMAIL_INTENTS.map((intent) => ({
+      intent,
+      label: RELEVANT_INTENT_LABELS[intent],
+      receivedCount: receivedByIntent.get(intent) ?? 0,
+      sentCount: sentByIntent.get(intent) ?? 0,
+    }));
+    const totalRelevantCount = byIntent.reduce((sum, r) => sum + r.receivedCount, 0);
+    const newEnquiryCount = receivedByIntent.get('new_enquiry') ?? 0;
+
+    return { totalRelevantCount, sentCount, missedCount, newEnquiryCount, byIntent };
+  }
+
+  // Back-compat convenience for callers that still think in calendar months
+  // (AnalyticsDashboardService's composite overview) — converts to a range
+  // and delegates, so the two never compute this differently.
+  async getMonthlyStats(organizationId: string, period: string, storeConstraint?: string, personalConstraint?: string) {
+    const { start, end } = periodToDateRange(period);
+    return this.getActivityStats(organizationId, start, end, storeConstraint, personalConstraint);
+  }
+
+  // Phase 19 — the Unified Analytics Dashboard's email drill-down. Reuses
+  // the exact same match-building logic getActivityStats' counts already
+  // use (via the shared buildActivityKindMatch helper below), so the
+  // drill-down list can never drift out of sync with the stat tile's own
+  // number. kind:'intent' drills into one specific relevant intent bucket
+  // (pass intent:'new_enquiry' for the New Enquiries headline stat too).
+  async listActivity(
+    organizationId: string,
+    kind: 'sent' | 'missed' | 'intent',
+    start: Date,
+    end: Date,
+    storeConstraint?: string,
+    personalConstraint?: string,
+    intent?: string,
+  ): Promise<EmailIntelligenceItemDocument[]> {
+    const userFilter = await this.resolveMonthlyUserFilter(organizationId, storeConstraint, personalConstraint);
     return this.itemModel
-      .find({ userId, ...(status ? { status } : {}) })
+      .find(this.buildActivityKindMatch(organizationId, kind, start, end, userFilter, intent))
       .sort({ receivedAt: -1 })
-      .limit(100)
+      .limit(200)
       .exec();
+  }
+
+  private async resolveMonthlyUserFilter(
+    organizationId: string,
+    storeConstraint?: string,
+    personalConstraint?: string,
+  ): Promise<Record<string, unknown>> {
+    let userIds: string[] | undefined;
+    if (personalConstraint) {
+      userIds = [personalConstraint];
+    } else if (storeConstraint) {
+      const users = await this.usersService.findAll(organizationId);
+      userIds = users.filter((u) => u.storeId === storeConstraint).map((u) => u._id.toString());
+    }
+    return userIds ? { userId: { $in: userIds } } : {};
+  }
+
+  // sentCount/missedCount/byIntent's exact definitions, factored out so
+  // getActivityStats (counts) and listActivity (drill-down records) can
+  // never disagree. Both 'sent' and 'missed' are restricted to RELEVANT_
+  // EMAIL_INTENTS — business mail only, matching the widget's whole point.
+  private buildActivityKindMatch(
+    organizationId: string,
+    kind: 'sent' | 'missed' | 'intent',
+    start: Date,
+    end: Date,
+    userFilter: Record<string, unknown>,
+    intent?: string,
+  ): Record<string, unknown> {
+    // An explicit single intent narrows 'sent' to one category's sent-box
+    // drill-down (e.g. "Vendor emails replied to this range"); otherwise
+    // every relevant category, matching the headline sentCount stat.
+    const relevantFilter = {
+      intent: intent && RELEVANT_EMAIL_INTENTS.includes(intent) ? intent : { $in: RELEVANT_EMAIL_INTENTS },
+    };
+    if (kind === 'sent') {
+      return { organizationId, ...userFilter, ...relevantFilter, sentAt: { $gte: start, $lt: end } };
+    }
+    if (kind === 'missed') {
+      const missedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      return {
+        organizationId,
+        ...userFilter,
+        ...relevantFilter,
+        status: 'pending',
+        receivedAt: { $gte: start, $lt: end, $lte: missedCutoff },
+      };
+    }
+    return {
+      organizationId,
+      ...userFilter,
+      intent: intent && RELEVANT_EMAIL_INTENTS.includes(intent) ? intent : { $in: RELEVANT_EMAIL_INTENTS },
+      receivedAt: { $gte: start, $lt: end },
+    };
+  }
+
+  // ---- Business Intelligence: Sent/Missed Email Analytics (sections 1+2) ----
+  //
+  // Lives here, not duplicated in BusinessIntelligenceModule, since that
+  // module can freely import EmailIntelligenceModule (one-directional, zero
+  // cycle risk — see business-intelligence.module.ts's own comment).
+
+  async getEmailAnalyticsByEmployee(
+    organizationId: string,
+    kind: 'sent' | 'missed',
+    start: Date,
+    end: Date,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<{ rows: EmployeeEmailAnalyticsRow[]; totalCount: number }> {
+    const roster = await this.resolveEmailRoster(organizationId, filters);
+    const rosterIds = roster.map((u) => u._id.toString());
+    const match = { ...this.buildActivityKindMatch(organizationId, kind, start, end, {}), userId: { $in: rosterIds } };
+
+    if (kind === 'sent') {
+      const rows = await this.itemModel
+        .aggregate<{ _id: string; count: number }>([{ $match: match }, { $group: { _id: '$userId', count: { $sum: 1 } } }])
+        .exec();
+      const byUser = new Map(rows.map((r) => [r._id, r.count]));
+      const result = roster
+        .map((u) => ({ userId: u._id.toString(), userName: u.name, count: byUser.get(u._id.toString()) ?? 0 }))
+        .sort((a, b) => b.count - a.count);
+      return { rows: result, totalCount: result.reduce((sum, r) => sum + r.count, 0) };
+    }
+
+    // kind === 'missed' also needs a priority/urgency/age-bucket breakdown —
+    // pulled and reduced in application code rather than a deeper aggregation
+    // pipeline, same "small enough dataset, fetch and reduce" choice
+    // listActivity's own 200-record cap already makes; missed mail per
+    // employee is bounded by real overdue volume, not org-wide message count.
+    const items = await this.itemModel.find(match).select('userId priority urgency receivedAt').exec();
+    const byUser = new Map<string, EmailIntelligenceItemDocument[]>();
+    for (const item of items) {
+      const uid = item.userId;
+      if (!byUser.has(uid)) byUser.set(uid, []);
+      byUser.get(uid)!.push(item);
+    }
+
+    const now = Date.now();
+    const result = roster
+      .map((u) => {
+        const uid = u._id.toString();
+        const userItems = byUser.get(uid) ?? [];
+        return {
+          userId: uid,
+          userName: u.name,
+          count: userItems.length,
+          byPriority: this.tallyBy(userItems, 'priority'),
+          byUrgency: this.tallyBy(userItems, 'urgency'),
+          ageBuckets: this.tallyAgeBuckets(userItems, now),
+        };
+      })
+      .sort((a, b) => b.count - a.count);
+
+    return { rows: result, totalCount: result.reduce((sum, r) => sum + r.count, 0) };
+  }
+
+  private tallyBy(items: EmailIntelligenceItemDocument[], field: 'priority' | 'urgency'): { value: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const v = (item[field] as string) ?? 'unknown';
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
+  }
+
+  // Buckets are always 24h+ (kind:'missed' only ever matches items already
+  // past the 24h missedCutoff — see buildActivityKindMatch), so there is no
+  // 0-24h bucket here by design, not omission.
+  private tallyAgeBuckets(items: EmailIntelligenceItemDocument[], now: number): { bucket: string; count: number }[] {
+    const buckets = { '24-48h': 0, '48-72h': 0, '72h+': 0 };
+    for (const item of items) {
+      const ageHours = (now - item.receivedAt.getTime()) / 3_600_000;
+      if (ageHours < 48) buckets['24-48h'] += 1;
+      else if (ageHours < 72) buckets['48-72h'] += 1;
+      else buckets['72h+'] += 1;
+    }
+    return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
+  }
+
+  // Same roster-eligibility rule as deal-performance-dashboard.service.ts's
+  // own SALES_ROLES (manager+consultant) — Employee Productivity (section 3)
+  // composes this exact per-employee breakdown, so the two must never use a
+  // different roster definition. storeConstraint/employeeConstraint (server-
+  // forced, from scopeBiFilters) always fully REPLACE the client-supplied
+  // filter for that dimension rather than intersecting with it — same
+  // "constraint replaces, never merely narrows" idiom as deals.controller.ts's
+  // canOverride pattern, so a scoped caller can never broaden past their own
+  // constraint by also supplying a filter value.
+  private async resolveEmailRoster(
+    organizationId: string,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<UserDocument[]> {
+    const users = await this.usersService.findAll(organizationId);
+    return users.filter(
+      (u) =>
+        u.roles.some((r) => EMAIL_ROSTER_ROLES.has(r)) &&
+        (!filters.storeId?.length || (u.storeId && filters.storeId.includes(u.storeId))) &&
+        (!filters.employeeId?.length || filters.employeeId.includes(u._id.toString())),
+    );
+  }
+
+  // Generalizes resolveMonthlyUserFilter to array-valued employeeId/storeId
+  // filters (the BI global filter bar's multi-select) — left resolveMonthlyUserFilter
+  // itself untouched since AnalyticsDashboardService's already-verified
+  // getActivityStats/listActivity callers still pass single-value constraints.
+  private async resolveEmployeeUserFilter(
+    organizationId: string,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<Record<string, unknown>> {
+    if (filters.employeeId?.length) return { userId: { $in: filters.employeeId } };
+    if (filters.storeId?.length) {
+      const users = await this.usersService.findAll(organizationId);
+      const ids = users.filter((u) => u.storeId && filters.storeId!.includes(u.storeId)).map((u) => u._id.toString());
+      return { userId: { $in: ids } };
+    }
+    return {};
+  }
+
+  // Paginated superset of listActivity's 200-cap drill-down — the BI Sent/
+  // Missed Email pages' full record browser (section 1/2's "full list,
+  // filters"). kind:'all' means every relevant received email in range
+  // (buildActivityKindMatch's own 'intent' branch with no specific intent).
+  async listEmailsFiltered(
+    organizationId: string,
+    kind: 'sent' | 'missed' | 'all',
+    start: Date,
+    end: Date,
+    filters: { employeeId?: string[]; storeId?: string[]; intent?: string },
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: EmailIntelligenceItemDocument[]; total: number; page: number; pageSize: number }> {
+    const userFilter = await this.resolveEmployeeUserFilter(organizationId, filters);
+    const internalKind = kind === 'all' ? 'intent' : kind;
+    const match = this.buildActivityKindMatch(organizationId, internalKind, start, end, userFilter, filters.intent);
+    const sortField = kind === 'sent' ? 'sentAt' : 'receivedAt';
+
+    const [items, total] = await Promise.all([
+      this.itemModel
+        .find(match)
+        .sort({ [sortField]: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .exec(),
+      this.itemModel.countDocuments(match).exec(),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  // Business Intelligence's Employee Productivity (section 3) — Assigned
+  // (received in range, regardless of status), Completed (sentAt in range —
+  // same as kind:'sent'), Pending (still-open, within the 24h SLA window),
+  // Overdue (kind:'missed' — already past the 24h SLA window). Pending and
+  // Overdue are computed against the SAME missedCutoff buildActivityKindMatch
+  // uses, so they can never disagree with the Sent/Missed Email pages'
+  // own numbers for the same employee/range.
+  async getEmailProductivityStats(
+    organizationId: string,
+    start: Date,
+    end: Date,
+    filters: { employeeId?: string[]; storeId?: string[] },
+  ): Promise<{ userId: string; userName: string; assigned: number; completed: number; pending: number; overdue: number }[]> {
+    const roster = await this.resolveEmailRoster(organizationId, filters);
+    const rosterIds = roster.map((u) => u._id.toString());
+    const rosterFilter = { userId: { $in: rosterIds } };
+    const missedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const assignedMatch = {
+      organizationId,
+      ...rosterFilter,
+      intent: { $in: RELEVANT_EMAIL_INTENTS },
+      receivedAt: { $gte: start, $lt: end },
+    };
+    const pendingMatch = { ...assignedMatch, status: 'pending', receivedAt: { $gte: start, $lt: end, $gt: missedCutoff } };
+    const completedMatch = this.buildActivityKindMatch(organizationId, 'sent', start, end, rosterFilter);
+    const overdueMatch = this.buildActivityKindMatch(organizationId, 'missed', start, end, rosterFilter);
+
+    const groupByUser = (match: Record<string, unknown>) =>
+      this.itemModel
+        .aggregate<{ _id: string; count: number }>([{ $match: match }, { $group: { _id: '$userId', count: { $sum: 1 } } }])
+        .exec();
+
+    const [assignedRows, completedRows, pendingRows, overdueRows] = await Promise.all([
+      groupByUser(assignedMatch),
+      groupByUser(completedMatch),
+      groupByUser(pendingMatch),
+      groupByUser(overdueMatch),
+    ]);
+
+    const toMap = (rows: { _id: string; count: number }[]) => new Map(rows.map((r) => [r._id, r.count]));
+    const assigned = toMap(assignedRows);
+    const completed = toMap(completedRows);
+    const pending = toMap(pendingRows);
+    const overdue = toMap(overdueRows);
+
+    return roster.map((u) => {
+      const uid = u._id.toString();
+      return {
+        userId: uid,
+        userName: u.name,
+        assigned: assigned.get(uid) ?? 0,
+        completed: completed.get(uid) ?? 0,
+        pending: pending.get(uid) ?? 0,
+        overdue: overdue.get(uid) ?? 0,
+      };
+    });
+  }
+
+  // Org-scoped (not user-scoped like getOne) — the BI detail modal is opened
+  // by a manager/owner/admin viewing any employee's email, not just their own.
+  async getOneForOrg(organizationId: string, id: string): Promise<EmailIntelligenceItemDocument> {
+    const item = await this.itemModel.findOne({ _id: id, organizationId }).exec();
+    if (!item) throw new NotFoundException('Email intelligence item not found');
+    return item;
+  }
+
+  list(userId: string, status?: 'pending' | 'approved' | 'rejected', from?: string, to?: string) {
+    const query: Record<string, unknown> = { userId, ...(status ? { status } : {}) };
+    // receivedAt is a real Date field (unlike TimelineEvent.occurredAt's
+    // plain string) — `to` must be pushed to the end of that calendar day,
+    // otherwise a date-only value (e.g. "2026-08-05" from DateRangeControl)
+    // means midnight and silently excludes that entire day's own emails.
+    if (from || to) {
+      query.receivedAt = {
+        ...(from ? { $gte: new Date(from) } : {}),
+        // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the
+        // server process's local timezone, which drifts hours off this
+        // boundary on any server not running in UTC.
+        ...(to ? { $lte: new Date(`${to}T23:59:59.999Z`) } : {}),
+      };
+    }
+    return this.itemModel.find(query).sort({ receivedAt: -1 }).limit(100).exec();
   }
 
   async getOne(userId: string, id: string): Promise<EmailIntelligenceItemDocument> {
@@ -228,7 +837,149 @@ export class EmailIntelligenceService {
     item.sentAt = new Date();
     item.sendError = undefined;
     await item.save();
+
+    // Phase 14e — best-effort enrichment on top of an already-completed
+    // action, never a transaction: a failure here must not roll back the
+    // already-sent email or fail this response. Each internal step also
+    // self-catches, this is a final safety net only.
+    this.runPostSendActions(item).catch((err) =>
+      this.logger.error(`Post-send actions failed for ${item._id.toString()}: ${(err as Error).message}`),
+    );
+
     return item;
+  }
+
+  // ---- Phase 14e — Post-Send Actions: CRM update, manager notification,
+  // follow-up reminder, native draft Quote creation ----
+
+  private async runPostSendActions(item: EmailIntelligenceItemDocument): Promise<void> {
+    const salesperson = await this.usersService.findById(item.userId);
+    if (!salesperson) return;
+
+    let dealId: string | undefined;
+    if (item.resolvedGroupKey) {
+      try {
+        const touch = await this.customerActivityService.touchBusinessActivity(item.organizationId, item.resolvedGroupKey);
+        dealId = touch.dealId;
+      } catch (err) {
+        this.logger.error(`CRM activity touch failed for ${item._id.toString()}: ${(err as Error).message}`);
+      }
+    }
+
+    try {
+      await this.notifyManagers(item.organizationId, salesperson, item);
+    } catch (err) {
+      this.logger.error(`Manager notification failed for ${item._id.toString()}: ${(err as Error).message}`);
+    }
+
+    try {
+      await this.createFollowUpReminder(item);
+    } catch (err) {
+      this.logger.error(`Follow-up reminder creation failed for ${item._id.toString()}: ${(err as Error).message}`);
+    }
+
+    if (item.intent === 'quotation_request') {
+      try {
+        await this.createDraftQuoteFromItem(item, dealId);
+      } catch (err) {
+        this.logger.error(`Draft quote creation failed for ${item._id.toString()}: ${(err as Error).message}`);
+      }
+    }
+  }
+
+  // Mirrors finance-documents.service.ts's notifyAndEnqueue() exactly: role
+  // filter, Promise.allSettled, fire-and-forget error handling. Falls back
+  // to owner/admin when the salesperson's store has no manager — a
+  // zero-manager store is a real, confirmed-possible case, not an edge case
+  // to ignore. Never notifies the salesperson about their own send (they
+  // already got the original review-queue notification).
+  private async notifyManagers(organizationId: string, salesperson: UserDocument, item: EmailIntelligenceItemDocument): Promise<void> {
+    const users = await this.usersService.findAll(organizationId);
+    const salespersonId = salesperson._id.toString();
+
+    let targets = users.filter(
+      (u) => u._id.toString() !== salespersonId && u.roles.includes('manager') && u.storeId === salesperson.storeId,
+    );
+    if (targets.length === 0) {
+      targets = users.filter((u) => u._id.toString() !== salespersonId && (u.roles.includes('owner') || u.roles.includes('admin')));
+    }
+
+    const businessLabel = item.matchedBusinessName ?? item.fromAddress;
+    await Promise.allSettled(
+      targets.map((u) =>
+        this.notificationsService.create(
+          u._id.toString(),
+          {
+            kind: 'system',
+            title: `Reply sent to ${businessLabel}`,
+            description: item.subject || '(no subject)',
+            source: 'email-intelligence-manager-notify',
+          },
+          organizationId,
+        ),
+      ),
+    );
+  }
+
+  private async createFollowUpReminder(item: EmailIntelligenceItemDocument): Promise<void> {
+    await this.followUpModel.create({
+      organizationId: item.organizationId,
+      userId: item.userId,
+      emailIntelligenceItemId: item._id.toString(),
+      businessName: item.matchedBusinessName,
+      title: `Follow up: ${item.subject || '(no subject)'}`,
+      dueDate: new Date(Date.now() + FOLLOW_UP_DEFAULT_DAYS * 86_400_000),
+      status: 'pending',
+    });
+  }
+
+  // Only called for intent === 'quotation_request'. requestedItems comes
+  // from analyze_email's own result (python-agent, never invented — see
+  // EMAIL_INTENT_TOOL's system prompt) and may be absent; the created Quote
+  // is always an honest, unpriced draft shell (quoteAmount: 0) regardless.
+  private async createDraftQuoteFromItem(item: EmailIntelligenceItemDocument, dealId?: string): Promise<void> {
+    const requestedItems = (item.result as Record<string, unknown> | undefined)?.requestedItems as string | undefined;
+    await this.quotesService.createDraftQuote(item.organizationId, {
+      dealId,
+      businessName: item.matchedBusinessName ?? item.fromAddress,
+      contactEmail: item.fromAddress,
+      requestedItems: requestedItems ?? undefined,
+      createdBy: item.userId,
+      // The real Enquiry->Quote Conversion traceability link (Business
+      // Intelligence section 4) — see CreateDraftQuoteInput's own comment.
+      sourceEmailIntelligenceItemId: item._id.toString(),
+    });
+  }
+
+  listFollowUps(userId: string) {
+    return this.followUpModel.find({ userId, status: 'pending' }).sort({ dueDate: 1 }).exec();
+  }
+
+  // Business Intelligence's AI Follow-Up Summary (section 6) — org-wide
+  // counterpart to listFollowUps' self-scoped list. Always shown directly on
+  // the BI page regardless of AI generation state (see the plan's own note)
+  // — AI adds prioritization/narrative on top, never replaces this real list.
+  async listFollowUpsForOrg(
+    organizationId: string,
+    filters: { employeeId?: string[]; storeId?: string[] } = {},
+  ): Promise<EmailFollowUpReminderDocument[]> {
+    const match: Record<string, unknown> = { organizationId, status: 'pending' };
+    if (filters.employeeId?.length) {
+      match.userId = { $in: filters.employeeId };
+    } else if (filters.storeId?.length) {
+      const users = await this.usersService.findAll(organizationId);
+      const ids = users.filter((u) => u.storeId && filters.storeId!.includes(u.storeId)).map((u) => u._id.toString());
+      match.userId = { $in: ids };
+    }
+    return this.followUpModel.find(match).sort({ dueDate: 1 }).exec();
+  }
+
+  async markFollowUpDone(userId: string, id: string): Promise<EmailFollowUpReminderDocument> {
+    const reminder = await this.followUpModel.findOne({ _id: id, userId }).exec();
+    if (!reminder) throw new NotFoundException('Follow-up reminder not found');
+    reminder.status = 'done';
+    await reminder.save();
+    return reminder;
   }
 
   async reject(userId: string, id: string, reason?: string): Promise<EmailIntelligenceItemDocument> {
@@ -257,24 +1008,71 @@ export class EmailIntelligenceService {
       importance: item.importance,
     };
     const { correlation, matchedBusinessSummary } = this.correlate(email, context);
-    const deterministicInput = this.buildAnalysisPayload(email, correlation, matchedBusinessSummary);
-    const result = await this.callAnalyze(item.organizationId, userId, deterministicInput);
 
     item.matchConfidence = correlation?.matchConfidence ?? 'none';
     item.matchedBusinessKey = correlation?.matchedBusinessKey;
     item.matchedBusinessName = correlation?.matchedBusinessName;
     item.resolvedGroupKey = correlation?.resolvedGroupKey ?? undefined;
     item.matchedBusinessSummary = matchedBusinessSummary;
-    item.intent = result.intent as string;
-    item.priority = result.priority as string;
-    item.urgency = result.urgency as string;
-    item.sentiment = result.sentiment as string;
-    item.recommendedAction = result.recommendedAction as string;
-    item.shouldDraft = result.shouldDraft as boolean;
-    item.draftReply = (result.draftReply as string) ?? undefined;
-    item.draftReasoning = (result.draftReasoning as string) ?? undefined;
-    item.deterministicInput = deterministicInput;
-    item.result = result;
+
+    const preFilterMatch = classifyEmailDeterministically({ from: email.from, subject: email.subject, preview: email.preview });
+
+    // Phase 17, Layer 1 — same deterministic pre-gate as analyzeAndCreate.
+    if (item.fromAddress.trim().toLowerCase() === item.mailboxEmail.trim().toLowerCase()) {
+      item.intent = 'internal';
+      item.priority = 'low';
+      item.urgency = 'low';
+      item.sentiment = 'neutral';
+      item.recommendedAction = 'No action needed — this message was sent from your own mailbox.';
+      item.shouldDraft = false;
+      item.draftReply = undefined;
+      item.draftReasoning = undefined;
+      item.fromRole = 'internal';
+      item.aiStatus = 'no_reply_needed';
+      item.expectedNextAction = 'awaiting_customer';
+      item.reason = 'This message was sent from your own connected mailbox — no reply needed.';
+      item.deterministicInput = { skippedLlmCall: true, reasonForSkip: 'fromAddress matches mailboxEmail' };
+      item.result = {};
+    } else if (preFilterMatch) {
+      // Deterministic pre-filter — applied here too so a manual "regenerate"
+      // on an already-stored bounce/auto-reply/marketing message doesn't
+      // burn an LLM call either.
+      item.intent = 'other';
+      item.priority = 'low';
+      item.urgency = 'low';
+      item.sentiment = 'neutral';
+      item.recommendedAction = preFilterMatch.reason;
+      item.shouldDraft = false;
+      item.draftReply = undefined;
+      item.draftReasoning = undefined;
+      item.fromRole = 'external_other';
+      item.aiStatus = 'no_reply_needed';
+      item.expectedNextAction = 'no_action_required';
+      item.reason = preFilterMatch.reason;
+      item.deterministicInput = { skippedLlmCall: true, reasonForSkip: `deterministic pre-filter: ${preFilterMatch.ruleName}` };
+      item.result = {};
+    } else {
+      const salesperson = await this.usersService.findById(userId);
+      const deterministicInput = this.buildAnalysisPayload(email, correlation, matchedBusinessSummary, item.mailboxEmail, salesperson?.name);
+      const result = await this.callAnalyze(item.organizationId, userId, deterministicInput);
+      const decision = this.applyPerspectiveValidation(item._id.toString(), email.from, result.intent as string, result);
+
+      item.intent = result.intent as string;
+      item.priority = result.priority as string;
+      item.urgency = result.urgency as string;
+      item.sentiment = result.sentiment as string;
+      item.recommendedAction = result.recommendedAction as string;
+      item.shouldDraft = decision.shouldDraftFinal;
+      item.draftReply = decision.draftReply;
+      item.draftReasoning = (result.draftReasoning as string) ?? undefined;
+      item.fromRole = decision.fromRole;
+      item.aiStatus = decision.aiStatus;
+      item.expectedNextAction = decision.expectedNextAction;
+      item.reason = decision.reason;
+      item.deterministicInput = deterministicInput;
+      item.result = result;
+    }
+
     item.regeneratedCount += 1;
     item.lastRegeneratedAt = new Date();
     if (item.status === 'rejected') item.status = 'pending';
@@ -326,7 +1124,7 @@ export class EmailIntelligenceService {
   // at-a-glance number, matching business-dashboard.service.ts's
   // businessHealthScore convention exactly, not a model.
   private computeRiskScore(
-    relationship: RelationshipView,
+    relationship: RiskScoreInput,
     emailHistory: EmailIntelligenceItemDocument[],
   ): { score: number; label: string } {
     let score = 100;
@@ -361,6 +1159,49 @@ export class EmailIntelligenceService {
     score = Math.max(0, Math.min(100, score));
     const label = score >= 80 ? 'Healthy' : score >= 50 ? 'Needs Attention' : 'At Risk';
     return { score, label };
+  }
+
+  // Business Intelligence's AI Follow-Up Summary (section 6) — "high-priority
+  // customers" reuses this same deterministic MVP heuristic (never a second
+  // definition of risk), scored across every business in the org at once
+  // rather than one at a time like getCustomerTimeline. gatherCorrelationContext
+  // already builds every BusinessGroup's real deals/quotes (org-wide, the
+  // same computation the scheduled poller uses); email history is fetched
+  // once here and grouped by resolvedGroupKey rather than N+1 queried.
+  async getHighRiskCustomers(
+    organizationId: string,
+    limit = 10,
+  ): Promise<{ businessKey: string; businessName: string; riskScore: number; riskLabel: string }[]> {
+    const context = await this.customerActivityService.gatherCorrelationContext(organizationId);
+    const emails = await this.itemModel
+      .find({ organizationId, resolvedGroupKey: { $exists: true, $ne: null } })
+      .select('resolvedGroupKey receivedAt sentiment intent status')
+      .sort({ receivedAt: -1 })
+      .limit(5000)
+      .exec();
+
+    const emailsByGroup = new Map<string, EmailIntelligenceItemDocument[]>();
+    for (const e of emails) {
+      if (!e.resolvedGroupKey) continue;
+      if (!emailsByGroup.has(e.resolvedGroupKey)) emailsByGroup.set(e.resolvedGroupKey, []);
+      emailsByGroup.get(e.resolvedGroupKey)!.push(e);
+    }
+
+    const results: { businessKey: string; businessName: string; riskScore: number; riskLabel: string }[] = [];
+    for (const [key, group] of context.groups) {
+      const emailHistory = emailsByGroup.get(key) ?? [];
+      // A group with no real activity at all contributes no signal — never
+      // scored, never shown, rather than reporting a fabricated "At Risk"
+      // for a business with nothing on record.
+      if (group.deals.length === 0 && group.quotes.length === 0 && emailHistory.length === 0) continue;
+      const { score, label } = this.computeRiskScore({ deals: group.deals, quotes: group.quotes }, emailHistory);
+      results.push({ businessKey: key, businessName: group.businessName, riskScore: score, riskLabel: label });
+    }
+
+    return results
+      .filter((r) => r.riskLabel !== 'Healthy')
+      .sort((a, b) => a.riskScore - b.riskScore)
+      .slice(0, limit);
   }
 
   // Merges deals/quotes (created dates) and email history into one

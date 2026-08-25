@@ -5,7 +5,7 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const app_module_1 = require("./app.module");
 async function bootstrap() {
-    const app = await core_1.NestFactory.create(app_module_1.AppModule, { cors: false });
+    const app = await core_1.NestFactory.create(app_module_1.AppModule, { cors: false, rawBody: true });
     const config = app.get(config_1.ConfigService);
     app.enableCors({
         origin: config.get('corsOrigin'),

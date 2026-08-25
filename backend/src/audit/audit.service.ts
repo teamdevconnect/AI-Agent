@@ -11,6 +11,11 @@ export interface AuditEntry {
   statusCode: number;
   durationMs: number;
   ip?: string;
+  // Only ever populated by explicit calls made directly from application
+  // code (see audit-log.schema.ts's own comment) — AuditInterceptor's
+  // auto-logged entries never set these.
+  action?: string;
+  metadata?: Record<string, unknown>;
 }
 
 @Injectable()

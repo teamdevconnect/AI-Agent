@@ -6,4 +6,20 @@ export interface JwtPayload {
   storeId?: string;
   assignedAgentId?: string;
   department?: string;
+  // Present on real session-backed access tokens (see AuthService.issueSessionToken)
+  // — matched against User.sessions in JwtStrategy.validate() so a revoked
+  // session is rejected on its very next request. Absent on API-token-authenticated
+  // requests (see JwtAuthGuard's PAT branch) and on special-purpose tokens.
+  jti?: string;
+  // Set by JwtStrategy.validate() ('session') and by JwtAuthGuard's PAT
+  // branch ('api_token') — never set by the client, never trusted from an
+  // incoming token. Consumed by RequireSessionAuthGuard to block API tokens
+  // from managing security settings.
+  authMethod?: 'session' | 'api_token';
+  // Only ever set on special-purpose, non-access tokens (the login-2FA
+  // challenge token, OAuth's own `state` token) — never a real access
+  // token. JwtStrategy.validate() rejects any incoming bearer token where
+  // this is set, so a leaked challenge token can never be used as a real
+  // Bearer credential even though it carries a valid `sub`.
+  purpose?: string;
 }

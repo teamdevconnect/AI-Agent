@@ -42,6 +42,14 @@ __decorate([
     (0, mongoose_1.Prop)(),
     __metadata("design:type", String)
 ], AuditLog.prototype, "ip", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], AuditLog.prototype, "action", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ type: Object }),
+    __metadata("design:type", Object)
+], AuditLog.prototype, "metadata", void 0);
 exports.AuditLog = AuditLog = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'audit_logs' })
 ], AuditLog);

@@ -1,6 +1,17 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FiArrowLeft } from 'react-icons/fi';
-import { Badge, Button, Skeleton } from '@/components/ui';
+import {
+  FiArrowLeft,
+  FiBarChart2,
+  FiChevronDown,
+  FiChevronUp,
+  FiClock,
+  FiFileText,
+  FiLink2,
+  FiMail,
+  FiTrendingUp,
+} from 'react-icons/fi';
+import { Badge, Button, SectionCard, Skeleton } from '@/components/ui';
 import type { BadgeVariant } from '@/components/ui';
 import { formatStageLabel } from '@/utils/stageLabel';
 import { customerActivityService } from '@/services/customerActivityService';
@@ -53,6 +64,10 @@ export function RelationshipDrillDown({
     queryFn: () =>
       personal ? customerActivityService.getPersonalCustomerTimeline(businessKey) : customerActivityService.getCustomerTimeline(businessKey),
   });
+  // Same collapse mechanics as DealFilterBar's "More filters" (Phase 15) —
+  // overview/quotes/deals stay always visible; the three most detail-heavy,
+  // least-at-a-glance-useful sections collapse behind this toggle.
+  const [showDetails, setShowDetails] = useState(false);
 
   return (
     <div className={styles.tabContent}>
@@ -70,32 +85,34 @@ export function RelationshipDrillDown({
         <Skeleton height={280} />
       ) : (
         <>
-          <div className={styles.statsGrid}>
-            <div className={styles.card}>
-              <div className={styles.fieldLabel}>Lifetime Value</div>
-              <span>{data.lifetimeValue}</span>
+          <SectionCard title="Relationship Overview" icon={FiBarChart2}>
+            <div className={styles.statsGrid}>
+              <div className={styles.card}>
+                <div className={styles.fieldLabel}>Lifetime Value</div>
+                <span>{data.lifetimeValue}</span>
+              </div>
+              <div className={styles.card}>
+                <div className={styles.fieldLabel}>Relationship Health</div>
+                <Badge variant={RISK_VARIANT[data.riskLabel]}>
+                  {data.riskLabel} ({data.riskScore})
+                </Badge>
+              </div>
             </div>
-            <div className={styles.card}>
-              <div className={styles.fieldLabel}>Relationship Health</div>
-              <Badge variant={RISK_VARIANT[data.riskLabel]}>
-                {data.riskLabel} ({data.riskScore})
-              </Badge>
-            </div>
-          </div>
+          </SectionCard>
 
           {data.account && (
-            <div className={styles.faqRow}>
-              <span className={styles.fieldLabel}>Linked Account</span>
-              <span>{data.account.name}</span>
-              <span className={styles.pageSubtitle}>
-                {[data.account.domain, data.account.city, data.account.industry].filter(Boolean).join(' · ') || 'No further details'}
-                {typeof data.account.revenue === 'number' ? ` · Revenue: ${data.account.revenue}` : ''}
-              </span>
-            </div>
+            <SectionCard title="Linked Account" icon={FiLink2}>
+              <div className={styles.faqRow}>
+                <span>{data.account.name}</span>
+                <span className={styles.pageSubtitle}>
+                  {[data.account.domain, data.account.city, data.account.industry].filter(Boolean).join(' · ') || 'No further details'}
+                  {typeof data.account.revenue === 'number' ? ` · Revenue: ${data.account.revenue}` : ''}
+                </span>
+              </div>
+            </SectionCard>
           )}
 
-          <div className={styles.faqRow}>
-            <span className={styles.fieldLabel}>Quotes ({data.quotes.length})</span>
+          <SectionCard title={`Quotes (${data.quotes.length})`} icon={FiFileText}>
             {data.quotes.length === 0 ? (
               <span className={styles.pageSubtitle}>No quotes for this business.</span>
             ) : (
@@ -117,10 +134,9 @@ export function RelationshipDrillDown({
                 );
               })
             )}
-          </div>
+          </SectionCard>
 
-          <div className={styles.faqRow}>
-            <span className={styles.fieldLabel}>Deals ({data.deals.length})</span>
+          <SectionCard title={`Deals (${data.deals.length})`} icon={FiTrendingUp}>
             {data.deals.length === 0 ? (
               <span className={styles.pageSubtitle}>No deals for this business.</span>
             ) : (
@@ -135,63 +151,76 @@ export function RelationshipDrillDown({
                 </div>
               ))
             )}
+          </SectionCard>
+
+          <div className={styles.detailsToggleRow}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              rightIcon={showDetails ? <FiChevronUp /> : <FiChevronDown />}
+              onClick={() => setShowDetails((v) => !v)}
+            >
+              {showDetails ? 'Hide details' : 'Show more details'}
+            </Button>
           </div>
 
-          <div className={styles.faqRow}>
-            <span className={styles.fieldLabel}>Today's Correlated Emails ({data.correlatedEmails.length})</span>
-            {data.correlatedEmails.length === 0 ? (
-              <span className={styles.pageSubtitle}>No emails correlated to this business today.</span>
-            ) : (
-              data.correlatedEmails.map((e) => (
-                <div key={e.id} className={styles.faqRow}>
-                  <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                    <span>{e.subject}</span>
-                    <Badge variant={CONFIDENCE_VARIANT[e.matchConfidence]}>{e.matchConfidence}</Badge>
-                  </div>
-                  <span className={styles.pageSubtitle}>
-                    From {e.from} · {new Date(e.receivedAt).toLocaleString()}
-                  </span>
-                  <span className={styles.pageSubtitle}>{e.preview}</span>
-                </div>
-              ))
-            )}
-          </div>
+          {showDetails && (
+            <>
+              <SectionCard title={`Today's Correlated Emails (${data.correlatedEmails.length})`} icon={FiMail}>
+                {data.correlatedEmails.length === 0 ? (
+                  <span className={styles.pageSubtitle}>No emails correlated to this business today.</span>
+                ) : (
+                  data.correlatedEmails.map((e) => (
+                    <div key={e.id} className={styles.faqRow}>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                        <span>{e.subject}</span>
+                        <Badge variant={CONFIDENCE_VARIANT[e.matchConfidence]}>{e.matchConfidence}</Badge>
+                      </div>
+                      <span className={styles.pageSubtitle}>
+                        From {e.from} · {new Date(e.receivedAt).toLocaleString()}
+                      </span>
+                      <span className={styles.pageSubtitle}>{e.preview}</span>
+                    </div>
+                  ))
+                )}
+              </SectionCard>
 
-          <div className={styles.faqRow}>
-            <span className={styles.fieldLabel}>Email History ({data.emailHistory.length})</span>
-            {data.emailHistory.length === 0 ? (
-              <span className={styles.pageSubtitle}>No AI-analyzed emails on record for this business yet.</span>
-            ) : (
-              data.emailHistory.map((e) => (
-                <div key={e._id} className={styles.faqRow}>
-                  <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                    <span>{e.subject || '(no subject)'}</span>
-                    <Badge variant="accent">{e.intent.replace(/_/g, ' ')}</Badge>
-                    <Badge variant={SENTIMENT_VARIANT[e.sentiment] ?? 'neutral'}>{e.sentiment}</Badge>
-                  </div>
-                  <span className={styles.pageSubtitle}>
-                    From {e.fromAddress} · {new Date(e.receivedAt).toLocaleString()}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+              <SectionCard title={`Email History (${data.emailHistory.length})`} icon={FiMail}>
+                {data.emailHistory.length === 0 ? (
+                  <span className={styles.pageSubtitle}>No AI-analyzed emails on record for this business yet.</span>
+                ) : (
+                  data.emailHistory.map((e) => (
+                    <div key={e._id} className={styles.faqRow}>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+                        <span>{e.subject || '(no subject)'}</span>
+                        <Badge variant="accent">{e.intent.replace(/_/g, ' ')}</Badge>
+                        <Badge variant={SENTIMENT_VARIANT[e.sentiment] ?? 'neutral'}>{e.sentiment}</Badge>
+                      </div>
+                      <span className={styles.pageSubtitle}>
+                        From {e.fromAddress} · {new Date(e.receivedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </SectionCard>
 
-          <div className={styles.faqRow}>
-            <span className={styles.fieldLabel}>Timeline ({data.timeline.length})</span>
-            {data.timeline.length === 0 ? (
-              <span className={styles.pageSubtitle}>No history yet.</span>
-            ) : (
-              data.timeline.map((t, i) => (
-                <div key={i} className={styles.faqRow}>
-                  <span>{t.title}</span>
-                  <span className={styles.pageSubtitle}>
-                    {new Date(t.date).toLocaleString()} · {t.description}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+              <SectionCard title={`Timeline (${data.timeline.length})`} icon={FiClock}>
+                {data.timeline.length === 0 ? (
+                  <span className={styles.pageSubtitle}>No history yet.</span>
+                ) : (
+                  data.timeline.map((t, i) => (
+                    <div key={i} className={styles.faqRow}>
+                      <span>{t.title}</span>
+                      <span className={styles.pageSubtitle}>
+                        {new Date(t.date).toLocaleString()} · {t.description}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </SectionCard>
+            </>
+          )}
         </>
       )}
     </div>

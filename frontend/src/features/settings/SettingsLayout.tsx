@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { FiSettings, FiBell, FiShield, FiUsers, FiUserPlus, FiTarget, FiUserCheck, FiZap } from 'react-icons/fi';
+import { FiSettings, FiBell, FiShield, FiUsers, FiUserPlus, FiTarget, FiUserCheck, FiPercent, FiLink2 } from 'react-icons/fi';
 import { Tabs } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { useAuthStore } from '@/stores/authStore';
@@ -11,6 +11,11 @@ const TAB_ITEMS = [
   { id: 'notifications', label: 'Notifications', icon: <FiBell />, path: ROUTES.settingsNotifications },
   { id: 'security', label: 'Security', icon: <FiShield />, path: ROUTES.settingsSecurity },
   { id: 'agent-roles', label: 'AI Roles', icon: <FiUsers />, path: ROUTES.settingsAgentRoles },
+  // Moved out of the main sidebar nav (was its own top-level page) — same
+  // visibility as the tabs above (open to everyone except agent_user, via
+  // the shared BlockRole wrapping the whole /settings subtree in
+  // routes/index.tsx), no additional requireRoles needed.
+  { id: 'integrations', label: 'Integrations', icon: <FiLink2 />, path: ROUTES.settingsIntegrations },
   { id: 'users', label: 'Users', icon: <FiUserPlus />, path: ROUTES.settingsUsers, requireRoles: ['admin'] },
   {
     id: 'sales-targets',
@@ -27,11 +32,14 @@ const TAB_ITEMS = [
     requireRoles: ['admin'],
   },
   {
-    id: 'workflows',
-    label: 'Workflows',
-    icon: <FiZap />,
-    path: ROUTES.settingsWorkflows,
-    requireRoles: ['admin'],
+    id: 'royalty-rules',
+    label: 'Royalty Rules',
+    icon: <FiPercent />,
+    path: ROUTES.settingsRoyaltyRules,
+    // Widened to ['owner','admin'] — matches RoyaltyRulesController's actual
+    // backend gate, unlike every other tab above (['admin']-only), since
+    // this is sensitive org-wide financial configuration.
+    requireRoles: ['owner', 'admin'],
   },
 ];
 

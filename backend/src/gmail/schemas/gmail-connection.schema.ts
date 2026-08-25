@@ -32,6 +32,16 @@ export class GmailConnection {
   // is active at a time. See GmailService.setActive.
   @Prop({ default: false })
   isActive: boolean;
+
+  // Set to 'needs_reauth' by python-agent (see gmail_store.py's _refresh)
+  // the moment a refresh attempt comes back invalid_grant — the user
+  // revoked access or changed their Google password, and no amount of
+  // retrying fixes it without them reconnecting through the consent screen
+  // again. Absent/'connected' on every row written before this existed;
+  // isActive is untouched either way, so which mailbox is "the active one"
+  // keeps meaning what it always did.
+  @Prop({ default: 'connected' })
+  status?: 'connected' | 'needs_reauth';
 }
 
 export const GmailConnectionSchema = SchemaFactory.createForClass(GmailConnection);

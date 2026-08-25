@@ -11,12 +11,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SendMessageDto = void 0;
 const class_validator_1 = require("class-validator");
+const MAX_MESSAGE_LENGTH = 8000;
 class SendMessageDto {
 }
 exports.SendMessageDto = SendMessageDto;
 __decorate([
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.MaxLength)(MAX_MESSAGE_LENGTH),
     __metadata("design:type", String)
 ], SendMessageDto.prototype, "message", void 0);
 __decorate([

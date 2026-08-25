@@ -5,7 +5,7 @@
 }
 
 .nav {
-  width: 220px;
+  width: 248px;
   flex-shrink: 0;
   padding: var(--space-6) var(--space-3);
   border-right: 1px solid var(--color-border);
@@ -22,12 +22,38 @@
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-6);
+  padding: var(--space-8) var(--space-10);
 }
 
+/* Was capped at 640px — squeezed every settings tab into a narrow column
+   regardless of viewport width, most visibly on Integrations: that page
+   sizes itself to 960px on its own standalone /integrations route (see
+   IntegrationsPage.module.css) but was silently re-squeezed to 640px here.
+   960px matches that page's own real width, plus Billing's precedent
+   (BillingPage.module.css), instead of introducing a third arbitrary number. */
 .contentInner {
-  max-width: 640px;
+  max-width: 960px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
+}
+
+@media (max-width: 860px) {
+  .page {
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+  }
+
+  .nav {
+    width: 100%;
+    padding: var(--space-4) var(--space-4) 0;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    overflow-y: visible;
+  }
+
+  .content {
+    padding: var(--space-5) var(--space-4);
+  }
 }

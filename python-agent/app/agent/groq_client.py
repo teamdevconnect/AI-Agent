@@ -69,6 +69,7 @@ def call(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
 ) -> list[dict]:
     """Raises on any failure (missing key, API error) — app.agent.orchestrator
     treats that as a signal to fall back to the unchanged Anthropic path, so
@@ -86,6 +87,7 @@ def call(
         conversation_id=conversation_id,
         provider="groq",
         model=settings.groq_model,
+        request_id=request_id,
     ) as usage:
         accumulated: list[str] = []
         stream = _client(api_key).chat.completions.create(

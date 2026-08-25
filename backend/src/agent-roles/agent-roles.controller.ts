@@ -18,7 +18,10 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { UPLOAD_FILE_INTERCEPTOR_OPTIONS } from '../common/upload-limits';
 import { AgentRolesService } from './agent-roles.service';
+import { CreateAgentRoleDto } from './dto/create-agent-role.dto';
+import { GenerateFromDescriptionDto } from './dto/generate-from-description.dto';
 import { UpdateAgentRoleDto } from './dto/update-agent-role.dto';
 
 @UseGuards(JwtAuthGuard)
@@ -38,7 +41,7 @@ export class AgentRolesController {
   @Post('generate')
   @UseGuards(RolesGuard)
   @Roles('admin')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_FILE_INTERCEPTOR_OPTIONS))
   generate(
     @CurrentUser() user: JwtPayload,
     @Req() req: Request,
@@ -46,6 +49,25 @@ export class AgentRolesController {
   ) {
     const bearerToken = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
     return this.agentRolesService.generateDraft(user.sub, user.organizationId, bearerToken, file);
+  }
+
+  // Agent Builder Phase 1 — Describe method: same admin-only, draft-status
+  // outcome as generate() above, just no file/Qdrant document involved.
+  @Post('generate-from-description')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  generateFromDescription(@CurrentUser() user: JwtPayload, @Body() dto: GenerateFromDescriptionDto) {
+    return this.agentRolesService.generateFromDescription(user.sub, user.organizationId, dto.description);
+  }
+
+  // Agent Builder Phase 1 — Manual and Template methods (Template is purely
+  // a frontend concept, a preset payload posted here like any other manual
+  // create). No AI call, no file.
+  @Post()
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateAgentRoleDto) {
+    return this.agentRolesService.createManual(user.sub, user.organizationId, dto);
   }
 
   @Patch(':id')

@@ -1,106 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
-import { NavLink, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import {
-  FiPlus,
-  FiSearch,
-  FiChevronsLeft,
-  FiChevronsRight,
-  FiBookmark,
-  FiStar,
-  FiArchive,
-  FiMoreHorizontal,
-  FiEdit2,
-  FiTrash2,
-  FiLogOut,
-  FiUser,
-  FiSun,
-  FiMoon,
-} from 'react-icons/fi';
+import { FiChevronsLeft, FiChevronsRight, FiChevronRight, FiLogOut, FiUser, FiSettings, FiHelpCircle } from 'react-icons/fi';
 import { Logo } from '@/components/common/Logo';
-import { IconButton, Input, Avatar, Dropdown, Button } from '@/components/ui';
+import { IconButton, Avatar, Dropdown, Tooltip } from '@/components/ui';
 import { useUiStore } from '@/stores/uiStore';
-import { useChatStore, type ConversationFilter } from '@/stores/chatStore';
 import { useAuthStore } from '@/stores/authStore';
-import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from '@/constants/navigation';
 import { ROUTES } from '@/constants/routes';
-import { hasRole } from '@/utils/roles';
-import { getConversationGroup, CONVERSATION_GROUP_LABELS, type ConversationGroupKey } from '@/utils/date';
-import type { Conversation } from '@/types';
+import { SidebarNav } from './SidebarNav';
 import styles from './Sidebar.module.css';
 
-const GROUP_ORDER: ConversationGroupKey[] = ['today', 'yesterday', 'lastWeek', 'older'];
+export interface SidebarProps {
+  // Called after any in-sidebar navigation (a nav link or a conversation
+  // click) — only ever passed by AppLayout's mobile drawer, to close it on
+  // navigate. The desktop inline sidebar passes nothing, so it's a no-op there.
+  onNavigate?: () => void;
+}
 
-const FILTERS: { id: ConversationFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'pinned', label: 'Pinned' },
-  { id: 'favorites', label: 'Favorites' },
-  { id: 'archived', label: 'Archived' },
-];
-
-export function Sidebar() {
+export function Sidebar({ onNavigate }: SidebarProps) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
-  const theme = useUiStore((state) => state.theme);
-  const toggleTheme = useUiStore((state) => state.toggleTheme);
-
-  const conversations = useChatStore((state) => state.conversations);
-  const filter = useChatStore((state) => state.filter);
-  const setFilter = useChatStore((state) => state.setFilter);
-  const searchQuery = useChatStore((state) => state.searchQuery);
-  const setSearchQuery = useChatStore((state) => state.setSearchQuery);
-  const loadConversations = useChatStore((state) => state.loadConversations);
-  const toggleConversationFlag = useChatStore((state) => state.toggleConversationFlag);
-  const renameConversation = useChatStore((state) => state.renameConversation);
-  const deleteConversation = useChatStore((state) => state.deleteConversation);
-  const startNewConversation = useChatStore((state) => state.startNewConversation);
 
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-
   const navigate = useNavigate();
-  const params = useParams();
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-
-  useEffect(() => {
-    void loadConversations();
-  }, [loadConversations]);
-
-  const filtered = useMemo(() => {
-    return conversations.filter((c) => {
-      if (filter === 'pinned' && !c.pinned) return false;
-      if (filter === 'favorites' && !c.favorite) return false;
-      if (filter === 'archived') {
-        if (!c.archived) return false;
-      } else if (c.archived) {
-        return false;
-      }
-      if (searchQuery && !c.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-      return true;
-    });
-  }, [conversations, filter, searchQuery]);
-
-  const grouped = useMemo(() => {
-    const groups: Record<ConversationGroupKey, Conversation[]> = { today: [], yesterday: [], lastWeek: [], older: [] };
-    for (const conversation of filtered) {
-      groups[getConversationGroup(conversation.updatedAt)].push(conversation);
-    }
-    return groups;
-  }, [filtered]);
-
-  const visiblePrimaryNav = PRIMARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
-  const visibleSecondaryNav = SECONDARY_NAV_ITEMS.filter((item) => !item.hideForRoles?.some((r) => hasRole(user, r)));
-
-  const handleNewChat = () => {
-    startNewConversation();
-    navigate(ROUTES.chat);
-  };
-
-  const handleRenameSubmit = (id: string) => {
-    if (renameValue.trim()) void renameConversation(id, renameValue.trim());
-    setRenamingId(null);
-  };
 
   return (
     <aside className={clsx(styles.sidebar, collapsed && styles.collapsed)}>
@@ -113,178 +35,41 @@ export function Sidebar() {
         />
       </div>
 
-      <div className={styles.newChatRow}>
-        {collapsed ? (
-          <IconButton icon={<FiPlus />} label="New chat" onClick={handleNewChat} size="lg" />
-        ) : (
-          <Button variant="secondary" fullWidth leftIcon={<FiPlus />} onClick={handleNewChat}>
-            New Chat
-          </Button>
-        )}
-      </div>
-
-      {!collapsed && (
-        <div className={styles.searchRow}>
-          <Input
-            placeholder="Search chats..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            leftIcon={<FiSearch />}
-            aria-label="Search chats"
-          />
-        </div>
-      )}
-
-      <div className={styles.scrollArea}>
-        {!collapsed && (
-          <>
-            <div className={styles.filterRow}>
-              {FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  className={clsx(styles.filterChip, filter === f.id && styles.filterChipActive)}
-                  onClick={() => setFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {filtered.length === 0 && <p className={styles.emptyHint}>No conversations here yet.</p>}
-
-            {GROUP_ORDER.map((groupKey) => {
-              const items = grouped[groupKey];
-              if (items.length === 0) return null;
-              return (
-                <div key={groupKey}>
-                  <div className={styles.groupLabel}>{CONVERSATION_GROUP_LABELS[groupKey]}</div>
-                  {items.map((conversation) => (
-                    <div
-                      key={conversation.id}
-                      className={clsx(styles.conversationItem, params.conversationId === conversation.id && styles.conversationItemActive)}
-                    >
-                      {renamingId === conversation.id ? (
-                        <input
-                          autoFocus
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onBlur={() => handleRenameSubmit(conversation.id)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleRenameSubmit(conversation.id)}
-                          style={{ background: 'transparent', border: 'none', color: 'inherit', font: 'inherit', width: '100%', outline: 'none' }}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          className={styles.conversationTitle}
-                          style={{ all: 'unset', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
-                          onClick={() => navigate(ROUTES.chatConversation(conversation.id))}
-                        >
-                          {conversation.title}
-                        </button>
-                      )}
-                      <span className={styles.conversationMeta}>
-                        {conversation.pinned && <FiBookmark size={12} />}
-                        {conversation.favorite && <FiStar size={12} />}
-                      </span>
-                      <span className={styles.conversationActions}>
-                        <Dropdown
-                          align="right"
-                          trigger={<IconButton icon={<FiMoreHorizontal />} label="Conversation actions" size="sm" />}
-                          items={[
-                            {
-                              id: 'rename',
-                              label: 'Rename',
-                              icon: <FiEdit2 />,
-                              onSelect: () => {
-                                setRenamingId(conversation.id);
-                                setRenameValue(conversation.title);
-                              },
-                            },
-                            {
-                              id: 'pin',
-                              label: conversation.pinned ? 'Unpin' : 'Pin',
-                              icon: <FiBookmark />,
-                              onSelect: () => void toggleConversationFlag(conversation.id, 'pinned'),
-                            },
-                            {
-                              id: 'favorite',
-                              label: conversation.favorite ? 'Remove favorite' : 'Add to favorites',
-                              icon: <FiStar />,
-                              onSelect: () => void toggleConversationFlag(conversation.id, 'favorite'),
-                            },
-                            {
-                              id: 'archive',
-                              label: conversation.archived ? 'Unarchive' : 'Archive',
-                              icon: <FiArchive />,
-                              onSelect: () => void toggleConversationFlag(conversation.id, 'archived'),
-                            },
-                            {
-                              id: 'delete',
-                              label: 'Delete',
-                              icon: <FiTrash2 />,
-                              danger: true,
-                              separatorBefore: true,
-                              onSelect: () => void deleteConversation(conversation.id),
-                            },
-                          ]}
-                        />
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </>
-        )}
-      </div>
-
-      <nav className={styles.navSection}>
-        {visiblePrimaryNav.map((item) => (
-          <NavLink
-            key={item.id}
-            to={item.path}
-            className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
-          >
-            <item.icon className={styles.navIcon} />
-            {!collapsed && item.label}
-          </NavLink>
-        ))}
-        {visibleSecondaryNav.map((item) => (
-          <NavLink
-            key={item.id}
-            to={item.path}
-            className={({ isActive }) => clsx(styles.navItem, isActive && styles.navItemActive)}
-          >
-            <item.icon className={styles.navIcon} />
-            {!collapsed && item.label}
-          </NavLink>
-        ))}
-      </nav>
+      <SidebarNav onNavigate={onNavigate} />
 
       <div className={styles.footer}>
+        {/* No usePortal here — confirmed live (screenshot + DOM inspection)
+            that Dropdown's portal-position effect never actually opens the
+            menu for this trigger; the plain (non-portal) mode, which is what
+            this footer used before the redesign and still uses everywhere
+            else in this app, works correctly. .footer has no overflow:hidden
+            ancestor, so there was never a clipping reason to need portal
+            mode here in the first place. */}
         <Dropdown
           align="left"
           placement="top"
+          className={styles.userDropdownWrapper}
           trigger={
-            <button type="button" className={styles.userRow}>
-              <Avatar name={user ? `${user.firstName} ${user.lastName}` : 'User'} size="sm" />
-              {!collapsed && (
+            collapsed ? (
+              <Tooltip content={user ? `${user.firstName} ${user.lastName}` : 'Account'} placement="right">
+                <button type="button" className={styles.userRow} aria-label="Account menu">
+                  <Avatar name={user ? `${user.firstName} ${user.lastName}` : 'User'} size="sm" />
+                </button>
+              </Tooltip>
+            ) : (
+              <button type="button" className={styles.userRow} aria-label="Account menu">
+                <Avatar name={user ? `${user.firstName} ${user.lastName}` : 'User'} size="sm" />
                 <span className={styles.userText}>
                   <div className={styles.userName}>{user ? `${user.firstName} ${user.lastName}` : 'User'}</div>
                   <div className={styles.userEmail}>{user?.email}</div>
                 </span>
-              )}
-            </button>
+                <FiChevronRight className={styles.userChevron} />
+              </button>
+            )
           }
           items={[
             { id: 'profile', label: 'Profile', icon: <FiUser />, onSelect: () => navigate(ROUTES.profile) },
-            {
-              id: 'theme',
-              label: theme === 'dark' ? 'Light mode' : 'Dark mode',
-              icon: theme === 'dark' ? <FiSun /> : <FiMoon />,
-              onSelect: toggleTheme,
-            },
+            { id: 'settings', label: 'Settings', icon: <FiSettings />, onSelect: () => navigate(ROUTES.settings) },
             {
               id: 'logout',
               label: 'Logout',
@@ -298,6 +83,19 @@ export function Sidebar() {
             },
           ]}
         />
+
+        {collapsed ? (
+          <Tooltip content="Help & Support" placement="right">
+            <button type="button" className={styles.helpRow} onClick={() => navigate(ROUTES.help)} aria-label="Help & Support">
+              <FiHelpCircle className={styles.navIcon} />
+            </button>
+          </Tooltip>
+        ) : (
+          <button type="button" className={styles.helpRow} onClick={() => navigate(ROUTES.help)}>
+            <FiHelpCircle className={styles.navIcon} />
+            Help & Support
+          </button>
+        )}
       </div>
     </aside>
   );

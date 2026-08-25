@@ -9,3 +9,12 @@ export interface NavItem {
   // Only agent_user ever populates this — admin/legacy user roles always see everything.
   hideForRoles?: string[];
 }
+
+// One section of the sidebar's application nav — see constants/navigation.ts.
+// `label` is optional in the type (SidebarNav skips rendering a header when
+// it's absent), but every current group sets one for a consistent look.
+export interface NavGroup {
+  id: string;
+  label?: string;
+  items: NavItem[];
+}

@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import time
 from functools import lru_cache
 from typing import Callable
@@ -13,6 +14,8 @@ from app.tools.registry import TOOL_DEFINITIONS
 
 from app.agent.llm_client import SYSTEM_PROMPT
 from app.agent.specialists import SPECIALISTS
+
+logger = logging.getLogger(__name__)
 
 # Anthropic error shapes worth a short backoff-retry — all transient/load-related,
 # never a genuine request problem (bad schema, invalid content, auth) that a retry
@@ -116,6 +119,82 @@ def _to_anthropic_messages(input_items: list[dict]) -> list[dict]:
     return messages
 
 
+def _truncate_payload_for_prompt(payload: dict, max_chars: int = 40_000) -> dict:
+    """Schema-agnostic safe truncation for a JSON payload embedded in a
+    prompt (analyze_customer_activity/analyze_finance_activity/email+CRM
+    correlation below). Replaces the old `json.dumps(payload)[:N]` raw
+    string slice, which had two real problems: it cuts mid-object (the
+    model receives invalid, partially-garbled JSON past the cut point), and
+    it never discloses that anything was dropped, so the model can't caveat
+    an answer it doesn't know is based on incomplete data.
+
+    This instead shortens the largest list-valued fields first (the thing
+    that actually drives payload size for these callers — arrays of
+    emails/deals/documents, not scalar fields) and adds a
+    "_truncationNotice" key naming exactly what was cut, so the model's
+    own prompts (which already say "only what's present in the input") can
+    honestly hedge instead of reasoning over corrupted trailing JSON.
+    """
+    serialized = json.dumps(payload, default=str)
+    if len(serialized) <= max_chars:
+        return payload
+
+    truncated = dict(payload)
+    notices: list[str] = []
+    # The "_truncationNotice" string is added to `truncated` only after
+    # this loop, but its own bytes still count against max_chars — the
+    # shrink target below reserves headroom for it up front. Without this,
+    # a payload could converge to exactly max_chars *before* the notice is
+    # appended, then land a few hundred bytes over budget once it is,
+    # tripping the hard-cut fallback for no real reason.
+    notice_budget = 300
+    shrink_target = max_chars - notice_budget
+    list_fields = sorted(
+        ((k, v) for k, v in payload.items() if isinstance(v, list) and v),
+        key=lambda kv: len(json.dumps(kv[1], default=str)),
+        reverse=True,
+    )
+    for key, items in list_fields:
+        if len(json.dumps(truncated, default=str)) <= shrink_target:
+            break
+        kept = len(items) // 2
+        while kept > 0 and len(json.dumps({**truncated, key: items[:kept]}, default=str)) > shrink_target:
+            kept -= 1
+        if kept < len(items):
+            truncated[key] = items[:kept]
+            notices.append(f"{key}: showing {kept} of {len(items)} items")
+
+    if notices:
+        truncated["_truncationNotice"] = "Some data was too large to include in full and was shortened: " + "; ".join(
+            notices
+        )
+
+    serialized = json.dumps(truncated, default=str)
+    if len(serialized) > max_chars:
+        # No list fields to shrink (or still too big after shrinking them
+        # all to nothing) — a hard cut is the last resort, but at least the
+        # model is told, rather than silently fed a broken tail. Wrapping
+        # the sliced text back in a dict (JSON-escaping, the notice field,
+        # the braces) costs bytes of its own — measure that overhead first
+        # so the *final* wrapped result actually respects max_chars, not
+        # just the slice before wrapping.
+        logger.warning("Payload still exceeds %d chars after list truncation — falling back to a hard cut", max_chars)
+        notice_text = "Data was too large to include in full and was cut short."
+        # json.dumps escapes characters in `serialized` itself (every `"`
+        # becomes `\"`, etc.) when it's re-embedded as a string value below —
+        # a fixed-overhead estimate can't account for that (it's content-
+        # dependent), so this shrinks the slice length until the actual
+        # wrapped-and-escaped result verifiably fits, same defensive
+        # approach as the list-shrinking loop above.
+        partial_len = max_chars
+        wrapped = {"_truncationNotice": notice_text, "_partial": serialized[:partial_len]}
+        while partial_len > 0 and len(json.dumps(wrapped, default=str)) > max_chars:
+            partial_len -= max(1, partial_len // 10)
+            wrapped["_partial"] = serialized[:partial_len]
+        return wrapped
+    return truncated
+
+
 def _normalize_response(response: anthropic.types.Message) -> list[dict]:
     """Commentary text alongside tool_use in a round that still has pending
     tool calls is deliberately dropped, not just reordered after the
@@ -161,6 +240,46 @@ def _normalize_response(response: anthropic.types.Message) -> list[dict]:
     return items
 
 
+def _merge_continuation(first: list[dict], continuation: list[dict]) -> list[dict]:
+    """Concatenates a truncated text reply with its continuation into ONE
+    assistant message. Required, not cosmetic: final_text() (app.agent.graph)
+    only ever reads the LAST assistant message in a turn's item list — two
+    separate items would silently replace the first half of the answer with
+    just the continuation instead of extending it."""
+    first_text = first[-1]["content"][0]["text"] if first and first[-1].get("type") == "message" else ""
+    continuation_text = (
+        continuation[-1]["content"][0]["text"] if continuation and continuation[-1].get("type") == "message" else ""
+    )
+    # Verified live: Claude's continuation usually resumes at the next word
+    # with no leading space (asked to "continue exactly where it left off",
+    # it treats that literally), which glues the two chunks into one word
+    # ("greater" + "than" -> "greaterthan") when the cut fell between words.
+    # A missing space reads as an obvious defect; an extra one between two
+    # already-separate words is invisible. Mid-word cuts are the rarer case
+    # for a max_tokens stop, so this heuristic optimizes for the common one.
+    if (
+        first_text
+        and continuation_text
+        and not first_text[-1].isspace()
+        and not continuation_text[0].isspace()
+        and continuation_text[0] not in ".,!?;:)]}\"'"
+    ):
+        first_text += " "
+    return [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": first_text + continuation_text}],
+        }
+    ]
+
+
+_CONTINUE_PROMPT = (
+    "Continue your previous response exactly where it left off. Do not repeat any text "
+    "already given, and do not add any preamble (e.g. \"continuing...\") — resume the answer directly."
+)
+
+
 ROLE_EXTRACTION_TOOL = {
     "name": "extract_role_definition",
     "description": "Return a structured role definition extracted from the supplied business document.",
@@ -170,6 +289,11 @@ ROLE_EXTRACTION_TOOL = {
             "name": {"type": "string"},
             "department": {"type": "string"},
             "description": {"type": "string"},
+            "goals": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Outcome-shaped objectives (what success means), distinct from responsibilities/tasks below.",
+            },
             "responsibilities": {"type": "array", "items": {"type": "string"}},
             "dailyTasks": {"type": "array", "items": {"type": "string"}},
             "weeklyTasks": {"type": "array", "items": {"type": "string"}},
@@ -187,6 +311,7 @@ ROLE_EXTRACTION_TOOL = {
             "name",
             "department",
             "description",
+            "goals",
             "responsibilities",
             "dailyTasks",
             "weeklyTasks",
@@ -196,9 +321,15 @@ ROLE_EXTRACTION_TOOL = {
     },
 }
 
-ROLE_EXTRACTION_SYSTEM_PROMPT = """You are extracting a structured AI persona definition from a \
-business document (job description, SOP, or KPI sheet). Infer reasonable values for anything the \
-document doesn't state explicitly — never leave a field empty, never ask for clarification.
+# Shared by both extract_role (document) and extract_role_from_description
+# (short user prompt) below — same field set/house style either way, only
+# the source material differs.
+_ROLE_EXTRACTION_CORE_INSTRUCTIONS = """Infer reasonable values for anything not stated explicitly — never \
+leave a field empty, never ask for clarification.
+
+"goals" are outcome-shaped (what success looks like, e.g. "Increase sales conversion and reduce missed \
+follow-ups") — always genuinely distinct from "responsibilities"/"dailyTasks"/"weeklyTasks", which are \
+task-shaped (what the agent actually does day to day). Never just restate a responsibility as a goal.
 
 The "systemPrompt" field must match this house style exactly (it is appended to a shared base \
 prompt, same as two existing hand-written personas):
@@ -208,36 +339,49 @@ search_documents, etc.] to ... — [describe the framing/output style expected].
 Second person, present tense, names concrete tools, 3-5 sentences. Always call \
 extract_role_definition exactly once."""
 
+ROLE_EXTRACTION_SYSTEM_PROMPT = (
+    "You are extracting a structured AI persona definition from a business document "
+    "(job description, SOP, or KPI sheet).\n\n" + _ROLE_EXTRACTION_CORE_INSTRUCTIONS
+)
 
-def extract_role(document_text: str) -> dict:
-    """One-shot structured extraction (not the chat tool-loop). Forces the
-    single extraction tool via tool_choice so the reply is always a
-    schema-validated JSON object — no free-text JSON parsing needed for the
-    common case. Retries once on any failure (missing tool_use block,
-    transient API error) before surfacing a clear error to the caller.
-    """
-    api_key = _resolve_api_key()
-    if not api_key:
-        raise RuntimeError("No Anthropic API key configured")
+ROLE_EXTRACTION_FROM_DESCRIPTION_SYSTEM_PROMPT = (
+    "You are extracting a structured AI persona definition from a short natural-language description a "
+    'user typed (e.g. "Create an AI sales manager that monitors deals, analyzes customer emails, and '
+    'creates follow-up tasks"), not a full business document. It is fine — expected, even — for '
+    "responsibilities/dailyTasks/weeklyTasks/kpis to be shorter and more direct than a document-derived "
+    "role; don't pad the output with generic filler just because the input was brief.\n\n"
+    + _ROLE_EXTRACTION_CORE_INSTRUCTIONS
+)
 
-    last_error: Exception | None = None
-    for _ in range(2):
-        try:
-            response = _client(api_key).messages.create(
-                model=settings.anthropic_model,
-                max_tokens=4096,
-                system=ROLE_EXTRACTION_SYSTEM_PROMPT,
-                tools=[ROLE_EXTRACTION_TOOL],
-                tool_choice={"type": "tool", "name": "extract_role_definition"},
-                messages=[{"role": "user", "content": f"Document:\n\n{document_text[:60000]}"}],
-            )
-            block = next((b for b in response.content if b.type == "tool_use"), None)
-            if block is None:
-                raise ValueError("Model did not return a tool_use block")
-            return block.input
-        except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
-            last_error = exc
-    raise RuntimeError(f"Role extraction failed after retry: {last_error}")
+
+def extract_role(document_text: str, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """One-shot structured extraction (not the chat tool-loop) from an
+    uploaded document's text. Forces the single extraction tool via
+    tool_choice so the reply is always a schema-validated JSON object."""
+    return _run_forced_tool_extraction(
+        ROLE_EXTRACTION_SYSTEM_PROMPT,
+        ROLE_EXTRACTION_TOOL,
+        [{"type": "text", "text": f"Document:\n\n{document_text[:60000]}"}],
+        name="role_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+
+
+def extract_role_from_description(description: str, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """Agent Builder Phase 1's Describe method — same structured output as
+    extract_role, sourced from a short user-written prompt instead of a
+    document. Reuses the identical tool schema (including the same "goals"
+    field), so the frontend's review-before-save editor needs no branching
+    by creation method."""
+    return _run_forced_tool_extraction(
+        ROLE_EXTRACTION_FROM_DESCRIPTION_SYSTEM_PROMPT,
+        ROLE_EXTRACTION_TOOL,
+        [{"type": "text", "text": f"Description:\n\n{description[:4000]}"}],
+        name="role_extraction_from_description",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
 FINANCE_EXTRACTION_TOOL = {
@@ -309,13 +453,33 @@ expenseCategory using a short, human-readable label (e.g. "Software", "Travel", 
 force-fit into a closed list. Always call extract_finance_document exactly once."""
 
 
-def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: list[dict]) -> dict:
-    """Shared forced-tool-choice call — same retry-once-then-raise shape as
-    extract_role, but accepts content blocks (not just a string) since the
-    native vision/PDF path needs them. Generalized from the original
-    finance-only _run_finance_extraction once Business Knowledge document
-    extraction (Phase 14a) became a second real consumer of the identical
-    shape — pure DRY, zero behavior change for Finance's existing calls."""
+def _run_forced_tool_extraction(
+    system_prompt: str,
+    tool: dict,
+    user_content: list[dict],
+    *,
+    name: str,
+    organization_id: str | None = None,
+    user_id: str = "",
+) -> dict:
+    """Shared forced-tool-choice call — the original retry-once-then-raise
+    shape extract_role established, generalized to accept content blocks
+    (not just a string) since the native vision/PDF path needs them, once
+    Business Knowledge document extraction (Phase 14a) became a second real
+    consumer of the identical shape. extract_role/extract_role_from_description
+    (Agent Builder Phase 1) were later migrated onto this shared helper too,
+    rather than keeping their own hand-rolled retry loop — pure DRY, zero
+    behavior change for Finance's or Business Knowledge's existing calls.
+
+    Phase 21 follow-up: each attempt is now traced (see
+    app.observability.tracing.traced_llm_call) — previously this whole
+    helper (and every caller: Finance/Business Knowledge document
+    extraction, Email Intelligence analysis) was invisible to Command
+    Center and had no real token/cost history anywhere, which is what
+    forced Email Sync's preview to show operation counts only instead of a
+    real estimate. `name` identifies which caller this is for in telemetry
+    (e.g. "email_analyze") — required, not optional, since every caller of
+    this shared helper should identify itself now that it's traced."""
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("No Anthropic API key configured")
@@ -323,28 +487,46 @@ def _run_forced_tool_extraction(system_prompt: str, tool: dict, user_content: li
     last_error: Exception | None = None
     for _ in range(2):
         try:
-            response = _client(api_key).messages.create(
+            with traced_llm_call(
+                name,
+                organization_id=organization_id,
+                user_id=user_id,
+                provider="anthropic",
                 model=settings.anthropic_model,
-                max_tokens=8192,
-                system=system_prompt,
-                tools=[tool],
-                tool_choice={"type": "tool", "name": tool["name"]},
-                messages=[{"role": "user", "content": user_content}],
-            )
-            block = next((b for b in response.content if b.type == "tool_use"), None)
-            if block is None:
-                raise ValueError("Model did not return a tool_use block")
-            return block.input
+            ) as usage:
+                response = _client(api_key).messages.create(
+                    model=settings.anthropic_model,
+                    max_tokens=8192,
+                    system=system_prompt,
+                    tools=[tool],
+                    tool_choice={"type": "tool", "name": tool["name"]},
+                    messages=[{"role": "user", "content": user_content}],
+                )
+                usage["input_tokens"] = response.usage.input_tokens
+                usage["output_tokens"] = response.usage.output_tokens
+                block = next((b for b in response.content if b.type == "tool_use"), None)
+                if block is None:
+                    raise ValueError("Model did not return a tool_use block")
+                return block.input
         except Exception as exc:  # noqa: BLE001 - deliberately broad, retried once then surfaced
             last_error = exc
     raise RuntimeError(f"{tool['name']} extraction failed after retry: {last_error}")
 
 
-def _run_finance_extraction(user_content: list[dict]) -> dict:
-    return _run_forced_tool_extraction(FINANCE_EXTRACTION_SYSTEM_PROMPT, FINANCE_EXTRACTION_TOOL, user_content)
+def _run_finance_extraction(user_content: list[dict], *, organization_id: str | None = None, user_id: str = "") -> dict:
+    return _run_forced_tool_extraction(
+        FINANCE_EXTRACTION_SYSTEM_PROMPT,
+        FINANCE_EXTRACTION_TOOL,
+        user_content,
+        name="finance_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
-def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+def extract_finance_document(
+    file_bytes: bytes, mime_type: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """PDF/image-native path — sends the raw file as a document/image content
     block instead of pre-extracted text, so scanned/image documents work
     through the same code path as text-layer PDFs (no OCR library added)."""
@@ -356,15 +538,17 @@ def extract_finance_document(file_bytes: bytes, mime_type: str, filename: str) -
         },
         {"type": "text", "text": f"Extract every financial field you can find from '{filename}' using the extract_finance_document tool."},
     ]
-    return _run_finance_extraction(content)
+    return _run_finance_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
-def extract_finance_document_from_text(document_text: str, filename: str) -> dict:
+def extract_finance_document_from_text(
+    document_text: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """Text path for spreadsheet/already-text formats (xlsx/xls/csv/docx) —
     spreadsheets aren't a vision problem, and app.rag.loader.load_text
     already gives pandas-clean structured text for them at zero extra cost."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
-    return _run_finance_extraction(content)
+    return _run_finance_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
 BUSINESS_DOCUMENT_EXTRACTION_TOOL = {
@@ -420,11 +604,22 @@ and any internal contradiction (e.g. two different prices for the same item) in 
 inconsistencyNotes. Always call extract_business_document exactly once."""
 
 
-def _run_business_document_extraction(user_content: list[dict]) -> dict:
-    return _run_forced_tool_extraction(BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT, BUSINESS_DOCUMENT_EXTRACTION_TOOL, user_content)
+def _run_business_document_extraction(
+    user_content: list[dict], *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
+    return _run_forced_tool_extraction(
+        BUSINESS_DOCUMENT_EXTRACTION_SYSTEM_PROMPT,
+        BUSINESS_DOCUMENT_EXTRACTION_TOOL,
+        user_content,
+        name="business_document_extraction",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
 
 
-def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) -> dict:
+def extract_business_document(
+    file_bytes: bytes, mime_type: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """PDF/image-native path — identical construction to extract_finance_document,
     reusing the same base64 content-block approach for scanned/image documents."""
     block_type = "image" if mime_type.startswith("image/") else "document"
@@ -435,13 +630,15 @@ def extract_business_document(file_bytes: bytes, mime_type: str, filename: str) 
         },
         {"type": "text", "text": f"Summarize and classify '{filename}' using the extract_business_document tool."},
     ]
-    return _run_business_document_extraction(content)
+    return _run_business_document_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
-def extract_business_document_from_text(document_text: str, filename: str) -> dict:
+def extract_business_document_from_text(
+    document_text: str, filename: str, *, organization_id: str | None = None, user_id: str = ""
+) -> dict:
     """Text path for spreadsheet/already-text formats — mirrors extract_finance_document_from_text."""
     content = [{"type": "text", "text": f"Document '{filename}':\n\n{document_text[:60000]}"}]
-    return _run_business_document_extraction(content)
+    return _run_business_document_extraction(content, organization_id=organization_id, user_id=user_id)
 
 
 REPORT_EXTRACTION_TOOL = {
@@ -649,6 +846,7 @@ def classify_request(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
 ) -> dict:
     """One-shot forced-tool-choice routing pass, run by app.agent.orchestrator
     before every chat turn — same pattern as extract_role/extract_report_structure.
@@ -666,6 +864,7 @@ def classify_request(
         conversation_id=conversation_id,
         provider="anthropic",
         model=settings.anthropic_routing_model,
+        request_id=request_id,
     ) as usage:
         response = _client(api_key).messages.create(
             model=settings.anthropic_routing_model,
@@ -716,6 +915,7 @@ def critique_response(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
 ) -> dict:
     """One-shot forced-tool-choice reflection pass, run by app.agent.orchestrator
     after every reply. Same pattern as classify_request. Raises rather than
@@ -733,6 +933,7 @@ def critique_response(
         conversation_id=conversation_id,
         provider="anthropic",
         model=settings.anthropic_routing_model,
+        request_id=request_id,
     ) as usage:
         response = _client(api_key).messages.create(
             model=settings.anthropic_routing_model,
@@ -761,6 +962,8 @@ def call(
     organization_id: str | None = None,
     user_id: str = "",
     conversation_id: str = "",
+    request_id: str = "",
+    _continuation_depth: int = 0,
 ) -> list[dict]:
     """Runs one planner round. If on_event is given, streams two kinds of
     live events as they happen: {"type": "progress", "tool": name} the
@@ -781,6 +984,19 @@ def call(
     either duplicate it or need to guess how to resume, so the error is
     raised as-is instead (the caller/orchestrator already degrades this to a
     generic reply rather than crashing the request).
+
+    _continuation_depth is internal (not part of this function's public
+    contract — every external caller omits it): if Claude fills the entire
+    max_tokens budget on a text-only (no tool_use) reply, that's
+    stop_reason == "max_tokens", i.e. the answer was cut off mid-thought, not
+    finished. Up to settings.anthropic_max_continuations times, this issues
+    a follow-up call asking Claude to continue exactly where it left off and
+    merges the two into one seamless reply (see _merge_continuation) — the
+    user still sees one continuous stream of deltas, just spanning two API
+    calls instead of one. A tool_use-bearing reply is never continued this
+    way; a truncated tool call already surfaces naturally as a normal next
+    planner round (see app.agent.graph's tool-calling loop), which this
+    would only complicate.
     """
     api_key = _resolve_api_key()
     if not api_key:
@@ -796,13 +1012,14 @@ def call(
         conversation_id=conversation_id,
         provider="anthropic",
         model=resolved_model,
+        request_id=request_id,
     ) as usage:
         for attempt in range(_MAX_CALL_ATTEMPTS):
             emitted_any = False
             try:
                 with _client(api_key).messages.stream(
                     model=resolved_model,
-                    max_tokens=1024,
+                    max_tokens=settings.anthropic_max_output_tokens,
                     system=[
                         {
                             "type": "text",
@@ -849,6 +1066,47 @@ def call(
                     time.sleep(0.5 * (2**attempt))
                     continue
                 raise
+
+    normalized = _normalize_response(response)
+
+    is_truncated_text_reply = (
+        response.stop_reason == "max_tokens"
+        and len(normalized) == 1
+        and normalized[0].get("type") == "message"
+    )
+    if not is_truncated_text_reply or _continuation_depth >= settings.anthropic_max_continuations:
+        if is_truncated_text_reply:
+            logger.warning(
+                "Reply hit max_tokens (%d) and continuation budget is exhausted (depth=%d) — "
+                "returning truncated text for conversation_id=%s",
+                settings.anthropic_max_output_tokens,
+                _continuation_depth,
+                conversation_id,
+            )
+        return normalized
+
+    logger.info(
+        "Reply hit max_tokens (%d) — requesting continuation %d/%d for conversation_id=%s",
+        settings.anthropic_max_output_tokens,
+        _continuation_depth + 1,
+        settings.anthropic_max_continuations,
+        conversation_id,
+    )
+    continuation_input = input_items + normalized + [{"role": "user", "content": _CONTINUE_PROMPT}]
+    continuation = call(
+        continuation_input,
+        on_event=on_event,
+        system_prompt=system_prompt,
+        tools=tools,
+        cancel_event=cancel_event,
+        model=model,
+        organization_id=organization_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        request_id=request_id,
+        _continuation_depth=_continuation_depth + 1,
+    )
+    return _merge_continuation(normalized, continuation)
 
 
 CUSTOMER_ACTIVITY_TOOL = {
@@ -923,7 +1181,7 @@ def analyze_customer_activity(payload: dict) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Today's customer activity data:\n\n{json.dumps(payload, default=str)[:40000]}",
+                        "content": f"Today's customer activity data:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}",
                     }
                 ],
             )
@@ -1014,7 +1272,7 @@ def analyze_finance_activity(payload: dict) -> dict:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Today's vendor payment activity data:\n\n{json.dumps(payload, default=str)[:40000]}",
+                        "content": f"Today's vendor payment activity data:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}",
                     }
                 ],
             )
@@ -1029,9 +1287,18 @@ def analyze_finance_activity(payload: dict) -> dict:
     return _normalize_response(response)
 
 
+# strict: true (+ additionalProperties: false, every property in `required`)
+# constrains Claude's token sampling to guarantee schema-valid, fully-present
+# output — added after live verification showed the model was silently
+# OMITTING nullable "required" keys entirely (requestedItems,
+# draftWrittenFromOurPerspective) rather than emitting them as null, which
+# silently defeated Phase 17's Layer 2 validation (an absent key can't be
+# checked). Nullable fields use anyOf, not a `type` array — Anthropic's
+# strict-mode JSON Schema subset doesn't support `"type": ["string","null"]`.
 EMAIL_INTENT_TOOL = {
     "name": "analyze_email",
     "description": "Classify one inbound email and, when appropriate, draft a reply — using only the CRM/business context actually supplied.",
+    "strict": True,
     "input_schema": {
         "type": "object",
         "properties": {
@@ -1054,13 +1321,38 @@ EMAIL_INTENT_TOOL = {
                     "price_negotiation, complaint, technical_support, meeting_request. Always false otherwise."
                 ),
             },
-            "draftReply": {"type": ["string", "null"]},
+            "draftReply": {"anyOf": [{"type": "string"}, {"type": "null"}]},
             "draftReasoning": {
-                "type": ["string", "null"],
+                "anyOf": [{"type": "string"}, {"type": "null"}],
                 "description": "Required (non-null) whenever shouldDraft is true; null otherwise.",
             },
+            "requestedItems": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "description": (
+                    "Only for quotation_request or price_negotiation: a short, literal description of what "
+                    "the customer asked for (e.g. '500 branded T-shirts'), taken only from what the email "
+                    "actually states — never inferred or expanded. Null for every other intent, and null if "
+                    "the email doesn't clearly state what's being requested."
+                ),
+            },
+            "draftWrittenFromOurPerspective": {
+                "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                "description": (
+                    "Required (non-null) whenever shouldDraft is true; null otherwise. A deliberate, explicit "
+                    "self-check performed AFTER writing draftReply: re-read it and confirm it is written as "
+                    "OUR company (ourEmail) speaking TO the external sender — never in the sender's own voice, "
+                    "never as if you were the customer/vendor replying to us, and never with the sender/"
+                    "recipient roles reversed. Set this to false (not true) if you have any doubt, rather than "
+                    "guessing — a false value causes the draft to be discarded and reviewed by a human instead "
+                    "of shown as ready."
+                ),
+            },
         },
-        "required": ["intent", "priority", "urgency", "sentiment", "recommendedAction", "shouldDraft", "draftReply", "draftReasoning"],
+        "required": [
+            "intent", "priority", "urgency", "sentiment", "recommendedAction", "shouldDraft",
+            "draftReply", "draftReasoning", "requestedItems", "draftWrittenFromOurPerspective",
+        ],
+        "additionalProperties": False,
     },
 }
 
@@ -1068,43 +1360,259 @@ EMAIL_INTENT_TOOL = {
 # cost/margin data configured anywhere yet (Phase 14b explicitly defers
 # quotation pricing intelligence) — any specific price/discount/margin this
 # model produced would be fabricated, not derived from real data.
-EMAIL_INTENT_SYSTEM_PROMPT = """You are triaging one inbound email for a salesperson, using only the \
-CRM/business context that has already been deterministically gathered and supplied — never invent a \
-customer fact, quote amount, deal detail, or company name not present in the input. The input's \
-correlation.matchConfidence field ('exact', 'domain', 'fuzzy', or 'none') tells you how sure the system \
-is that this sender belongs to a known business: treat 'exact' as fact, hedge 'fuzzy' explicitly \
-(e.g. "this may be related to...") in recommendedAction/draftReply, and treat the sender as unknown \
-whenever matchConfidence is 'none' or businessContext is null.
+#
+# The identity/perspective paragraphs below exist because of a real, reported
+# bug (Phase 17): with no explicit "who is us" signal, drafts sometimes came
+# back written in the customer's/vendor's own voice, or with sender/recipient
+# roles reversed. ourEmail (now always present in the input payload) and the
+# draftWrittenFromOurPerspective self-check are the fix — never remove either
+# without a new correctness pass to replace them.
+EMAIL_INTENT_SYSTEM_PROMPT = """You are an employee of the company that owns ourEmail (given in the \
+input payload), triaging one inbound email using only the CRM/business context that has already been \
+deterministically gathered and supplied — never invent a customer fact, quote amount, deal detail, or \
+company name not present in the input.
+
+Identity and perspective — read this before drafting anything: ourEmail is OUR organization's own \
+mailbox address. email.from is the party who sent the message you are triaging; unless email.from equals \
+ourEmail (which the caller already filters out before this call is ever made), treat email.from as the \
+external party — a customer, vendor, or other outside contact, never us. email.to may list ourEmail \
+alongside other recipients; that does not change who "we" are. Any draftReply you write must be composed \
+as OUR company writing back TO that external party: our own voice, our own tone, addressing them in \
+second person ("you"/"your company"), never impersonating them, never written as if the customer or \
+vendor were the one speaking, and never with the sender/recipient roles swapped. If anything about the \
+thread makes the direction unclear or contradictory, set shouldDraft to false rather than guessing at a \
+draft that might be in the wrong voice.
+
+The input's correlation.matchConfidence field ('exact', 'domain', 'fuzzy', or 'none') tells you how sure \
+the system is that this sender belongs to a known business: treat 'exact' as fact, hedge 'fuzzy' \
+explicitly (e.g. "this may be related to...") in recommendedAction/draftReply, and treat the sender as \
+unknown whenever matchConfidence is 'none' or businessContext is null.
 
 Classify intent using: new_enquiry, existing_customer, quotation_request, price_negotiation, complaint, \
 technical_support, payment, purchase_order, vendor, refund, meeting_request, escalation, internal, spam, \
 other. Set shouldDraft true ONLY for new_enquiry, existing_customer, quotation_request, \
-price_negotiation, complaint, technical_support, meeting_request. Always set shouldDraft false for \
-payment, purchase_order, vendor, refund, internal, spam, other, and escalation (escalations need a human \
-decision first, not an AI-authored reply).
+price_negotiation, complaint, technical_support, meeting_request — and only when the external party is \
+genuinely awaiting a substantive reply from us. Always set shouldDraft false for payment, purchase_order, \
+vendor, refund, internal, spam, other, and escalation (escalations need a human decision first, not an \
+AI-authored reply), and also false for automated/system-generated notices (delivery/read receipts, \
+out-of-office auto-replies, mail-relay/bounce notifications) or genuine FYI-only messages that don't \
+actually need a reply, even if their intent classification looks otherwise draftable.
 
 Critical pricing constraint: for quotation_request or price_negotiation, you may cite the customer's \
 real previous quotes if supplied (amount, quote number, status) as factual context, but you must NEVER \
 propose, imply, or draft a specific new price, discount percentage, or margin — this organization has no \
 cost/margin data configured yet, so any such number would be fabricated. recommendedAction and any draft \
 must instead direct the salesperson to follow up personally on pricing, while still being helpful about \
-scope/timeline/acknowledging the request.
+scope/timeline/acknowledging the request. For these two intents only, also set requestedItems to a short, \
+literal restatement of what the customer asked for, taken only from the email itself (e.g. "500 branded \
+T-shirts") — never invented or expanded beyond what's actually written. Leave requestedItems null for \
+every other intent, and null if the email doesn't clearly state what's being requested.
 
 businessKnowledgeContext, when non-empty, is real company knowledge (policies, FAQs, product info) — use \
 it to make a draft more accurate, but its absence is not a reason to leave a draft generic if the email \
 itself gives you enough to work with. draftReply, when present, should be ready to send with only light \
-editing, matching the email's own tone, never inventing commitments (dates, prices, guarantees) beyond \
-what's supplied. Always call analyze_email exactly once."""
+editing, never inventing commitments (dates, prices, guarantees) beyond what's supplied.
+
+Write draftReply the way a real person would actually type a reply, not a formal AI-assistant response: \
+plain prose in short paragraphs, no markdown at all (no **bold**, no bullet/dash lists, no headers) — if \
+you need to ask about a few things, weave them into a sentence or two rather than a checklist. Keep it \
+brief — ask about the 2-3 things that actually matter most, not every conceivable detail. Match the \
+warmth and formality of the incoming message rather than defaulting to stiff corporate phrasing (\"Dear \
+Sir/Madam\", \"We would like to inform you that...\", etc.). Sign off with the mailbox owner's real first \
+name from ourName when it's supplied (e.g. \"Thanks,\\nSanjay\") — never a generic \"AI Assistant\" or \
+\"Support Team\" signature; if ourName is null, sign with the company name only. recommendedAction and \
+draftReasoning should likewise read like a quick, natural note to a colleague — plain and direct (\"call \
+Priya to confirm quantities and branding before quoting\" rather than \"This represents an unmatched \
+customer enquiry requiring qualification of requirements\") — still exactly one or two sentences, still \
+exactly actionable, just not written like a formal report.
+
+Whenever shouldDraft is true, after writing draftReply you must explicitly re-read it and set \
+draftWrittenFromOurPerspective: true only if you are genuinely confident it is written as our company \
+speaking to the external party, with correct sender/recipient direction and no impersonation of the \
+other side — set it false if you have any real doubt, rather than guessing true. Leave it null whenever \
+shouldDraft is false. Always call analyze_email exactly once."""
 
 
-def analyze_email(payload: dict) -> dict:
+def analyze_email(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
     """One-shot forced-tool-choice classification+draft pass for Phase 14b —
     reuses _run_forced_tool_extraction (already generalized in Phase 14a for
     exactly this system_prompt/tool/user_content shape), operating on one
     email plus its deterministically-gathered CRM correlation context (see
-    backend/src/email-intelligence/email-intelligence.service.ts)."""
+    backend/src/email-intelligence/email-intelligence.service.ts).
+
+    Phase 21 follow-up: now traced as "email_analyze" — real token/cost
+    history here is what lets Email Sync's preview show a genuine estimate
+    instead of just an operation count."""
     return _run_forced_tool_extraction(
         EMAIL_INTENT_SYSTEM_PROMPT,
         EMAIL_INTENT_TOOL,
-        [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(payload, default=str)[:40000]}"}],
+        [{"type": "text", "text": f"Email + CRM context:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
+        name="email_analyze",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+
+
+# ---- Business Intelligence (Phase 7) — both use the traced
+# _run_forced_tool_extraction pattern (same as analyze_email/extract_role),
+# deliberately NOT the older untraced analyze_customer_activity/
+# analyze_finance_activity shape above, which predates the Phase 21 tracing
+# fix and was never migrated onto it. ----
+
+FOLLOWUP_PRIORITIES_TOOL = {
+    "name": "analyze_followup_priorities",
+    "description": "Analyze one day's real follow-up/quote/deal/customer-risk data and produce prioritized, actionable guidance.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "todaysPriorities": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "rationale": {"type": "string"},
+                        "relatedId": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        "relatedType": {"type": "string", "enum": ["follow_up", "quote", "deal", "customer"]},
+                    },
+                    "required": ["title", "rationale", "relatedId", "relatedType"],
+                    "additionalProperties": False,
+                },
+            },
+            "overdueFollowUps": {
+                "type": "array",
+                "description": "Only follow-ups whose id appears verbatim in the input's followUpReminders — never invented.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "followUpId": {"type": "string"},
+                        "note": {"type": "string"},
+                    },
+                    "required": ["followUpId", "note"],
+                    "additionalProperties": False,
+                },
+            },
+            "highPriorityCustomers": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "businessName": {"type": "string"},
+                        "businessKey": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["businessName", "businessKey", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+            "recommendedActions": {"type": "array", "items": {"type": "string"}},
+            "aiSummary": {"type": "string"},
+        },
+        "required": ["todaysPriorities", "overdueFollowUps", "highPriorityCustomers", "recommendedActions", "aiSummary"],
+        "additionalProperties": False,
+    },
+}
+
+FOLLOWUP_PRIORITIES_SYSTEM_PROMPT = """You are analyzing a business's real, deterministically-gathered \
+follow-up/quote/deal/customer-risk data for one day, to help the team decide what needs attention first. \
+Use ONLY the records actually present in the input — never invent a follow-up, quote, deal, or customer \
+that isn't there, and never invent a dollar amount or date not present in the input.
+
+The input contains: followUpReminders (real EmailFollowUpReminder records, each with a real id — \
+overdueFollowUps must cite only ids that appear here, verbatim, never a fabricated id), overdueQuotes, \
+overdueDeals, and highRiskCustomers (already deterministically scored — reference and explain them, never \
+invent a new risk score).
+
+todaysPriorities should be the 3-8 most urgent/important items across all of these, each citing a real \
+relatedId when one genuinely exists (null only when not tied to one specific record). overdueFollowUps \
+must be a subset of the input's followUpReminders — one entry per genuinely overdue reminder, with a \
+short, specific note, never generic filler. highPriorityCustomers should draw from highRiskCustomers, \
+briefly explaining why each one matters right now. recommendedActions should be concrete next steps a \
+manager could hand to their team as-is. aiSummary is a 2-4 sentence executive narrative tying the day's \
+picture together. Always call analyze_followup_priorities exactly once."""
+
+
+def analyze_followup_priorities(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """Business Intelligence's AI Follow-Up Summary (section 6) — cached
+    per {organizationId, date} on the NestJS side, same shape as
+    FinanceSummaryService's own generate/regenerate cycle, but the LLM call
+    itself uses the traced forced-tool-choice pattern (see this module's
+    own header note), not FinanceSummaryService's older analyze_finance_activity."""
+    return _run_forced_tool_extraction(
+        FOLLOWUP_PRIORITIES_SYSTEM_PROMPT,
+        FOLLOWUP_PRIORITIES_TOOL,
+        [{"type": "text", "text": f"Follow-up/deal/quote/customer-risk data:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
+        name="followup_priorities_analyze",
+        organization_id=organization_id,
+        user_id=user_id,
+    )
+
+
+VENDOR_CUSTOMER_COMPARE_TOOL = {
+    "name": "compare_vendor_customer_pricing",
+    "description": "Compare vendor cost vs customer revenue across the supplied transaction rows and produce commentary — using only the real numbers supplied.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "transactionNotes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dealId": {"type": "string"},
+                        "commentary": {"type": "string"},
+                    },
+                    "required": ["dealId", "commentary"],
+                    "additionalProperties": False,
+                },
+            },
+            "aggregateNarrative": {"type": "string"},
+            "flaggedTransactions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "dealId": {"type": "string"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["dealId", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["transactionNotes", "aggregateNarrative", "flaggedTransactions"],
+        "additionalProperties": False,
+    },
+}
+
+VENDOR_CUSTOMER_COMPARE_SYSTEM_PROMPT = """You are analyzing a set of real, already-computed vendor-cost \
+vs customer-revenue transaction rows for one business (each row: dealId, vendorCost, customerRevenue, \
+grossProfit, grossMarginPct — all real numbers already computed deterministically; never recompute or \
+contradict them). Use ONLY the dealIds and numbers actually present in the input — never invent a \
+transaction, dealId, or figure not present.
+
+transactionNotes should give one short, specific commentary per row that has something genuinely notable \
+to say (a very thin margin, a very strong margin, a cost that looks out of line with similar rows) — skip \
+rows with nothing notable rather than padding every row with generic text. aggregateNarrative is a 2-4 \
+sentence executive summary of the overall pricing/margin picture across every row. flaggedTransactions \
+should list only rows genuinely worth a human review (e.g. margin under 10%, or a cost that looks like a \
+data-entry error relative to similar transactions) with a specific, real reason — never flag a row just \
+to have something in the list. Always call compare_vendor_customer_pricing exactly once."""
+
+
+def compare_vendor_customer_pricing(payload: dict, *, organization_id: str | None = None, user_id: str = "") -> dict:
+    """Vendor Profitability's on-demand, stateless AI-compare (section 5's
+    AI layer) — traced, forced-tool-choice, scoped to whatever filtered
+    transaction set the caller is currently viewing. No cache (unlike the
+    daily-snapshot Follow-Up Summary above) — arbitrary filter combinations,
+    not a fixed daily snapshot, so caching by date would be meaningless here."""
+    return _run_forced_tool_extraction(
+        VENDOR_CUSTOMER_COMPARE_SYSTEM_PROMPT,
+        VENDOR_CUSTOMER_COMPARE_TOOL,
+        [{"type": "text", "text": f"Vendor/customer transaction rows:\n\n{json.dumps(_truncate_payload_for_prompt(payload), default=str)}"}],
+        name="vendor_customer_pricing_compare",
+        organization_id=organization_id,
+        user_id=user_id,
     )

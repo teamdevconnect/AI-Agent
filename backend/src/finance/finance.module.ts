@@ -6,7 +6,7 @@ import { GridFsService } from '../common/gridfs/gridfs.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TimelineModule } from '../timeline/timeline.module';
 import { UsersModule } from '../users/users.module';
-import { WorkflowsModule } from '../workflows/workflows.module';
+import { VendorsModule } from '../vendors/vendors.module';
 import { FinanceDocument, FinanceDocumentSchema } from './schemas/finance-document.schema';
 import { FinancePreset, FinancePresetSchema } from './schemas/finance-preset.schema';
 import { FinanceSummary, FinanceSummarySchema } from './schemas/finance-summary.schema';
@@ -30,7 +30,11 @@ import { FinanceSummaryService } from './finance-summary.service';
     AuthModule,
     UsersModule,
     NotificationsModule,
-    WorkflowsModule,
+    // Business Intelligence's Vendor Profitability links FinanceDocument
+    // rows to real Vendor master records (see FinanceDocument.vendorRef) —
+    // no live consumer of VendorsService here yet, wired ahead for the
+    // future "Link to Vendor" control on the document review modal.
+    VendorsModule,
     // Phase 12's on-demand Finance AI summary writes a Timeline event on
     // every LLM-generated summary — same one-directional import as
     // crm.module.ts's identical addition, safe from circularity.

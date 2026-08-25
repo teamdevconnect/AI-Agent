@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { RedisCacheService } from '../common/redis/redis-cache.service';
 import { AuthModule } from '../auth/auth.module';
+import { UsersModule } from '../users/users.module';
 import { AgentRole, AgentRoleSchema } from '../agent-roles/schemas/agent-role.schema';
 import { Conversation, ConversationSchema } from './schemas/conversation.schema';
 import { ChatController } from './chat.controller';
@@ -21,8 +22,18 @@ import { ChatService } from './chat.service';
     ]),
     // Agentic tool-calling turns (CRM/Outlook lookups across several rounds)
     // can legitimately take well over 30s — see chat.service.ts's callAgent.
-    HttpModule.register({ timeout: 120_000 }),
+    // A real investigative question (e.g. "why was this deal lost?") can
+    // trigger several planner rounds each with multiple real external CRM
+    // API calls (up to MAX_TOOL_ROUNDS=5 rounds in app/agent/graph.py) —
+    // confirmed live to sometimes exceed 120s and hit this timeout even
+    // after python-agent successfully completes the request. 300s gives
+    // genuine headroom without being unbounded.
+    HttpModule.register({ timeout: 300_000 }),
     AuthModule,
+    // Needed for ChatGateway's own session-revocation check on socket
+    // connect (mirrors JwtStrategy's HTTP-side check) — no cycle: UsersModule
+    // imports nothing from this module or AuthModule.
+    UsersModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway, RedisCacheService],

@@ -6,6 +6,7 @@ import FormData from 'form-data';
 import { Model } from 'mongoose';
 import { catchError, firstValueFrom, of } from 'rxjs';
 import { CHAT_AGENTS } from '../chat/agents';
+import { CreateAgentRoleDto } from './dto/create-agent-role.dto';
 import { UpdateAgentRoleDto } from './dto/update-agent-role.dto';
 import { AgentRole, AgentRoleDocument } from './schemas/agent-role.schema';
 
@@ -16,6 +17,22 @@ interface RoleGenerateResult {
   name: string;
   department: string;
   description: string;
+  goals: string[];
+  responsibilities: string[];
+  dailyTasks: string[];
+  weeklyTasks: string[];
+  kpis: { name: string; description: string }[];
+  systemPrompt: string;
+}
+
+// Agent Builder Phase 1's Describe method — same structured fields as
+// RoleGenerateResult minus the document-specific ones (documentId/chunks/
+// sourceDocumentName), since there's no uploaded file to embed.
+interface RoleGenerateFromDescriptionResult {
+  name: string;
+  department: string;
+  description: string;
+  goals: string[];
   responsibilities: string[];
   dailyTasks: string[];
   weeklyTasks: string[];
@@ -72,8 +89,7 @@ export class AgentRolesService {
       }),
     );
 
-    const slug = await this.uniqueSlug(data.name, organizationId);
-    const avatarColor = AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
+    const { slug, avatarColor } = await this.newRoleDefaults(data.name, organizationId);
 
     const created = await this.roleModel.create({
       organizationId,
@@ -81,6 +97,7 @@ export class AgentRolesService {
       name: data.name,
       department: data.department,
       description: data.description,
+      goals: data.goals,
       responsibilities: data.responsibilities,
       dailyTasks: data.dailyTasks,
       weeklyTasks: data.weeklyTasks,
@@ -88,6 +105,67 @@ export class AgentRolesService {
       systemPrompt: data.systemPrompt,
       sourceDocumentName: data.sourceDocumentName,
       sourceDocumentId: data.documentId,
+      status: 'draft',
+      avatarColor,
+      createdBy: userId,
+    });
+    return { ...created.toObject(), builtin: false };
+  }
+
+  // Agent Builder Phase 1's Describe method — same structured-output shape
+  // as generateDraft, just no file/Qdrant document involved (no
+  // sourceDocumentName/sourceDocumentId on the created role).
+  async generateFromDescription(userId: string, organizationId: string, description: string) {
+    const { data } = await firstValueFrom(
+      this.http.post<RoleGenerateFromDescriptionResult>(`${this.agentUrl}/roles/generate-from-description`, {
+        description,
+        user_id: userId,
+      }),
+    );
+
+    const { slug, avatarColor } = await this.newRoleDefaults(data.name, organizationId);
+
+    const created = await this.roleModel.create({
+      organizationId,
+      slug,
+      name: data.name,
+      department: data.department,
+      description: data.description,
+      goals: data.goals,
+      responsibilities: data.responsibilities,
+      dailyTasks: data.dailyTasks,
+      weeklyTasks: data.weeklyTasks,
+      kpis: data.kpis,
+      systemPrompt: data.systemPrompt,
+      status: 'draft',
+      avatarColor,
+      createdBy: userId,
+    });
+    return { ...created.toObject(), builtin: false };
+  }
+
+  // Agent Builder Phase 1's Manual and Template methods — no AI call, no
+  // file. Template is purely a frontend concept (a constant pre-filling
+  // this same payload shape); the backend has no notion of "template".
+  async createManual(userId: string, organizationId: string, dto: CreateAgentRoleDto) {
+    const { slug, avatarColor } = await this.newRoleDefaults(dto.name, organizationId);
+
+    const created = await this.roleModel.create({
+      organizationId,
+      slug,
+      name: dto.name,
+      department: dto.department ?? '',
+      description: dto.description ?? '',
+      goals: dto.goals ?? [],
+      responsibilities: dto.responsibilities ?? [],
+      dailyTasks: dto.dailyTasks ?? [],
+      weeklyTasks: dto.weeklyTasks ?? [],
+      kpis: dto.kpis ?? [],
+      systemPrompt: dto.systemPrompt,
+      assignedDepartments: dto.assignedDepartments ?? [],
+      assignedUserIds: dto.assignedUserIds ?? [],
+      allowedTools: dto.allowedTools ?? [],
+      modelTier: dto.modelTier ?? undefined,
       status: 'draft',
       avatarColor,
       createdBy: userId,
@@ -109,7 +187,9 @@ export class AgentRolesService {
     }
     await existing.save();
 
-    if (activating) {
+    // Manual/Template/Describe-created roles have no source document (no
+    // Qdrant point to publish) — nothing to do for those on activation.
+    if (activating && existing.sourceDocumentId) {
       await firstValueFrom(
         this.http
           .post(
@@ -132,23 +212,33 @@ export class AgentRolesService {
     const existing = await this.roleModel.findOne({ _id: id, organizationId }).exec();
     if (!existing) throw new NotFoundException('Role not found');
 
-    // Best-effort — don't block deleting the role's metadata on Qdrant cleanup.
-    await firstValueFrom(
-      this.http
-        .post(
-          `${this.agentUrl}/roles/discard-source`,
-          { documentId: existing.sourceDocumentId },
-          { headers: { Authorization: `Bearer ${userJwt}` } },
-        )
-        .pipe(
-          catchError((err: Error) => {
-            this.logger.error(`Failed to discard source document for role ${id}: ${err.message}`);
-            return of(null);
-          }),
-        ),
-    );
+    // Best-effort — don't block deleting the role's metadata on Qdrant
+    // cleanup. Skipped entirely for a Manual/Template/Describe-created role,
+    // which has no source document to discard.
+    if (existing.sourceDocumentId) {
+      await firstValueFrom(
+        this.http
+          .post(
+            `${this.agentUrl}/roles/discard-source`,
+            { documentId: existing.sourceDocumentId },
+            { headers: { Authorization: `Bearer ${userJwt}` } },
+          )
+          .pipe(
+            catchError((err: Error) => {
+              this.logger.error(`Failed to discard source document for role ${id}: ${err.message}`);
+              return of(null);
+            }),
+          ),
+      );
+    }
     await existing.deleteOne();
     return { deleted: true };
+  }
+
+  private async newRoleDefaults(name: string, organizationId: string): Promise<{ slug: string; avatarColor: string }> {
+    const slug = await this.uniqueSlug(name, organizationId);
+    const avatarColor = AVATAR_PALETTE[Math.floor(Math.random() * AVATAR_PALETTE.length)];
+    return { slug, avatarColor };
   }
 
   private async uniqueSlug(name: string, organizationId: string): Promise<string> {

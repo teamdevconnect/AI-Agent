@@ -8,7 +8,6 @@ import FormData from 'form-data';
 import { firstValueFrom } from 'rxjs';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
-import { WorkflowQueueService } from '../workflows/workflow-queue.service';
 import { FinanceDocument, FinanceDocumentDocument } from './schemas/finance-document.schema';
 import { FinanceGridFsService } from './finance-gridfs.service';
 import { FinanceFilterQueryDto } from './dto/finance-filter-query.dto';
@@ -52,7 +51,6 @@ export class FinanceDocumentsService {
     private config: ConfigService,
     private usersService: UsersService,
     private notificationsService: NotificationsService,
-    private workflowQueue: WorkflowQueueService,
   ) {
     this.pythonAgentUrl = this.config.get<string>('pythonAgentUrl') ?? 'http://localhost:8000';
   }
@@ -99,8 +97,8 @@ export class FinanceDocumentsService {
       const updated = await this.documentModel
         .findByIdAndUpdate(doc._id, { $set: { ...extracted, extractionStatus: 'completed' }, $unset: { extractionError: '' } }, { new: true })
         .exec();
-      this.notifyAndEnqueue(organizationId, updated!).catch((err: Error) =>
-        this.logger.error(`Failed to notify/enqueue after finance upload: ${err.message}`),
+      this.notifyOwners(organizationId, updated!).catch((err: Error) =>
+        this.logger.error(`Failed to notify owners after finance upload: ${err.message}`),
       );
       return updated!;
     } catch (err) {
@@ -127,10 +125,9 @@ export class FinanceDocumentsService {
     return data as Record<string, unknown>;
   }
 
-  // Fire-and-forget, same shape as TimelineService.record()'s
-  // workflowQueue.enqueueForEvent(...).catch(...) — a missed notification
-  // must never fail the upload response.
-  private async notifyAndEnqueue(organizationId: string, doc: FinanceDocumentDocument) {
+  // Fire-and-forget — a missed notification must never fail the upload
+  // response.
+  private async notifyOwners(organizationId: string, doc: FinanceDocumentDocument) {
     const users = await this.usersService.findAll(organizationId);
     const targets = users.filter((u) => u.roles.includes('owner') || u.roles.includes('admin'));
     await Promise.allSettled(
@@ -142,12 +139,13 @@ export class FinanceDocumentsService {
             title: 'New finance document processed',
             description: `${doc.vendorName ?? 'Unknown vendor'} — ${doc.paymentAmount} ${doc.currency} (${doc.originalFilename})`,
             source: 'finance-document-processed',
+            entityType: 'financeDocument',
+            entityId: doc._id.toString(),
           },
           organizationId,
         ),
       ),
     );
-    await this.workflowQueue.enqueueForEvent(organizationId, 'finance_document.uploaded').catch(() => undefined);
   }
 
   async listFiltered(organizationId: string, query: FinanceListQueryDto) {

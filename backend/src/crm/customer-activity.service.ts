@@ -6,6 +6,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { periodToDateRange } from '../common/period.util';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { UsersService } from '../users/users.service';
 import { TimelineService } from '../timeline/timeline.service';
@@ -547,6 +548,167 @@ export class CustomerActivityService {
       domainToGroupKey,
       groups,
     };
+  }
+
+  // Phase 14e — stamps lastActivityAt on every Deal in this business group,
+  // so a business replied-to via Email Intelligence correctly shows up in
+  // "actioned today" everywhere that already reads
+  // lastActivityAt ?? updatedAt ?? createdAt (Phase 11's convention) — for
+  // free, no other code needs to change. Also returns one deal id from the
+  // group (if any) so callers needing to link a new record to "the" deal for
+  // this business (e.g. a draft Quote) don't need a second correlation-
+  // context gather. Best-effort — callers decide whether a failure here
+  // should block anything (it never should).
+  async touchBusinessActivity(organizationId: string, groupKey: string): Promise<{ touchedCount: number; dealId?: string }> {
+    const context = await this.gatherCorrelationContext(organizationId);
+    const group = context.groups.get(groupKey);
+    if (!group || group.deals.length === 0) return { touchedCount: 0 };
+
+    const dealIds = group.deals.map((d) => d._id);
+    const result = await this.dealModel
+      .updateMany({ _id: { $in: dealIds } }, { $set: { lastActivityAt: new Date() } })
+      .exec();
+    return { touchedCount: result.modifiedCount, dealId: group.deals[0]._id.toString() };
+  }
+
+  // Phase 19 — Unified Analytics Dashboard's "customer new/existing/lost"
+  // widget. A month-scoped generalization of gatherActivity's own New/
+  // Existing counting (same earliest-created-in-period rule), plus a new
+  // "Lost" bucket with no prior precedent anywhere in this codebase: a
+  // business counts as Lost in month M when it's not New, has no currently-
+  // open deal, and its single most-recent touch across the whole group
+  // (lastActivityAt ?? updatedAt ?? createdAt, the same fallback chain
+  // gatherActivity already uses) is a Deal with dealStatus 'lost' landing in
+  // month M — i.e. the last thing that happened to this relationship was a
+  // loss, and it happened this month, with nothing having reopened since.
+  // Reuses buildBusinessGroups/groupKeyFor/quoteGroupKey completely
+  // unmodified — that grouping logic has no day/month dependency baked in,
+  // only gatherActivity's own "today" boundary does. Groups with zero
+  // activity in the month appear in none of the three buckets, same
+  // "only actioned items count" framing gatherActivity already uses for
+  // "today" — totalConsidered makes this explicit rather than implying "all
+  // customers, all time."
+  // Generalized (Phase 19 follow-up) from a locked calendar-month period to
+  // an arbitrary [start, end) Date range — the Customers & Email tab gained
+  // a shared day-based filter so "New Customers" and "Emails Sent/Missed"
+  // always describe the exact same window instead of one being month-
+  // scoped and the other day-scoped, which read as inconsistent/"wrong"
+  // even though each number was independently correct for its own filter.
+  async getCustomerBreakdownForRange(
+    organizationId: string,
+    start: Date,
+    end: Date,
+    storeConstraint?: string,
+    personalConstraint?: string,
+  ): Promise<{
+    newCount: number;
+    existingCount: number;
+    lostCount: number;
+    totalConsidered: number;
+    // Additive — backs the dashboard's Customer Mix drill-down popup (click
+    // a segment to see which businesses landed in it). Same {key, businessName}
+    // shape as BusinessTableRow so the frontend can reuse it for the
+    // relationship-view lookup (GET /crm/customer-activity/relationships/:businessKey).
+    newItems: { key: string; businessName: string }[];
+    existingItems: { key: string; businessName: string }[];
+    lostItems: { key: string; businessName: string }[];
+  }> {
+    const dealMatch: Record<string, unknown> = {
+      organizationId,
+      ...(personalConstraint ? { ownerId: personalConstraint } : storeConstraint ? { storeId: storeConstraint } : {}),
+    };
+    const deals = await this.dealModel.find(dealMatch).exec();
+    const dealIds = new Set(deals.map((d) => d._id.toString()));
+
+    const quotes = await this.quoteModel.find({ organizationId }).exec();
+    const scopedQuotes = personalConstraint
+      ? quotes.filter((q) => q.dealId && dealIds.has(q.dealId))
+      : storeConstraint
+        ? quotes.filter((q) => !q.dealId || dealIds.has(q.dealId))
+        : quotes;
+
+    const accountIds = [...new Set(deals.map((d) => d.accountId).filter((id): id is string => !!id))];
+    const accounts = accountIds.length ? await this.accountModel.find({ organizationId, _id: { $in: accountIds } }).exec() : [];
+    const accountNameById = new Map(accounts.map((a): [string, string] => [a._id.toString(), a.name]));
+    const accountDomainById = new Map(
+      accounts.filter((a) => a.domain).map((a): [string, string] => [a._id.toString(), a.domain!]),
+    );
+
+    const groups = buildBusinessGroups(deals, scopedQuotes, accountNameById, accountDomainById);
+
+    const activityDate = (d: { lastActivityAt?: Date; updatedAt?: Date; createdAt?: Date }) =>
+      d.lastActivityAt ?? d.updatedAt ?? d.createdAt;
+    const inMonth = (d?: Date) => !!d && d >= start && d < end;
+
+    let newCount = 0;
+    let existingCount = 0;
+    let lostCount = 0;
+    const newItems: { key: string; businessName: string }[] = [];
+    const existingItems: { key: string; businessName: string }[] = [];
+    const lostItems: { key: string; businessName: string }[] = [];
+
+    for (const group of groups.values()) {
+      const allCreated = [
+        ...group.deals.map((d) => new Date(d.createdAt ?? d.updatedAt ?? 0).getTime()),
+        ...group.quotes.map((q) => new Date(q.createdAt ?? q.updatedAt ?? 0).getTime()),
+      ].filter((t) => Number.isFinite(t) && t > 0);
+      if (allCreated.length === 0) continue;
+      const earliestCreated = Math.min(...allCreated);
+
+      if (earliestCreated >= start.getTime() && earliestCreated < end.getTime()) {
+        newCount++;
+        newItems.push({ key: group.key, businessName: group.businessName });
+        continue;
+      }
+
+      const hadActivityInMonth =
+        group.deals.some((d) => inMonth(activityDate(d))) || group.quotes.some((q) => inMonth(activityDate(q)));
+      if (!hadActivityInMonth) continue;
+
+      const hasOpenDeal = group.deals.some((d) => d.dealStatus === 'open');
+      if (hasOpenDeal) {
+        existingCount++;
+        existingItems.push({ key: group.key, businessName: group.businessName });
+        continue;
+      }
+
+      const touches = [
+        ...group.deals.map((d) => ({
+          date: new Date(activityDate(d) ?? d.createdAt ?? 0).getTime(),
+          isLostDeal: d.dealStatus === 'lost',
+        })),
+        ...group.quotes.map((q) => ({ date: new Date(activityDate(q) ?? q.createdAt ?? 0).getTime(), isLostDeal: false })),
+      ]
+        .filter((t) => Number.isFinite(t.date) && t.date > 0)
+        .sort((a, b) => b.date - a.date);
+      const mostRecent = touches[0];
+
+      if (mostRecent?.isLostDeal && mostRecent.date >= start.getTime() && mostRecent.date < end.getTime()) {
+        lostCount++;
+        lostItems.push({ key: group.key, businessName: group.businessName });
+      } else {
+        existingCount++;
+        existingItems.push({ key: group.key, businessName: group.businessName });
+      }
+    }
+
+    return {
+      newCount,
+      existingCount,
+      lostCount,
+      totalConsidered: newCount + existingCount + lostCount,
+      newItems,
+      existingItems,
+      lostItems,
+    };
+  }
+
+  // Back-compat convenience for callers that still think in calendar months
+  // (AnalyticsDashboardService's composite overview) — converts to a range
+  // and delegates, so the two never compute this differently.
+  async getMonthlyCustomerBreakdown(organizationId: string, period: string, storeConstraint?: string, personalConstraint?: string) {
+    const { start, end } = periodToDateRange(period);
+    return this.getCustomerBreakdownForRange(organizationId, start, end, storeConstraint, personalConstraint);
   }
 
   private async resolveTimezone(organizationId: string, storeConstraint?: string): Promise<string> {

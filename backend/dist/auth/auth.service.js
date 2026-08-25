@@ -43,19 +43,28 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
+const crypto_1 = require("crypto");
 const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = __importStar(require("bcrypt"));
+const audit_service_1 = require("../audit/audit.service");
+const mail_service_1 = require("../mail/mail.service");
 const organizations_service_1 = require("../organizations/organizations.service");
 const users_service_1 = require("../users/users.service");
+const session_meta_util_1 = require("./session-meta.util");
 const SALT_ROUNDS = 12;
+const VERIFY_OTP_TTL_MS = 10 * 60 * 1000;
+const RESET_OTP_TTL_MS = 15 * 60 * 1000;
+const GENERIC_OTP_ERROR = 'Invalid or expired code';
 let AuthService = class AuthService {
-    constructor(usersService, organizationsService, jwtService) {
+    constructor(usersService, organizationsService, jwtService, mailService, auditService) {
         this.usersService = usersService;
         this.organizationsService = organizationsService;
         this.jwtService = jwtService;
+        this.mailService = mailService;
+        this.auditService = auditService;
     }
-    async register(email, password, name, organizationName) {
+    async register(email, password, name, organizationName, meta = {}) {
         const existing = await this.usersService.findByEmail(email);
         if (existing) {
             throw new common_1.ConflictException('An account with this email already exists');
@@ -70,19 +79,131 @@ let AuthService = class AuthService {
             storeId: store._id.toString(),
             roles: ['owner', 'admin'],
         });
-        return this.issueToken(user);
+        void this.sendVerificationOtp(user);
+        void this.mailService.sendWelcomeEmail(user.email, user.name);
+        return this.issueSessionToken(user, meta);
     }
-    async login(email, password) {
+    async sendVerificationOtp(user) {
+        const otp = generateOtp();
+        const otpHash = await bcrypt.hash(otp, SALT_ROUNDS);
+        await this.usersService.setVerifyOtp(user._id.toString(), otpHash, new Date(Date.now() + VERIFY_OTP_TTL_MS));
+        await this.mailService.sendVerificationOtp(user.email, otp);
+    }
+    async resendVerificationOtp(email) {
         const user = await this.usersService.findByEmail(email);
-        if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+        if (!user || user.emailVerified)
+            return;
+        await this.sendVerificationOtp(user);
+    }
+    async verifyEmail(email, otp) {
+        const user = await this.usersService.findByEmail(email);
+        if (!user || !user.verifyOtpHash || !user.verifyOtpExpiresAt || user.verifyOtpExpiresAt < new Date()) {
+            throw new common_1.UnauthorizedException(GENERIC_OTP_ERROR);
+        }
+        if (!(await bcrypt.compare(otp, user.verifyOtpHash))) {
+            throw new common_1.UnauthorizedException(GENERIC_OTP_ERROR);
+        }
+        await this.usersService.markEmailVerified(user._id.toString());
+    }
+    async forgotPassword(email) {
+        const user = await this.usersService.findByEmail(email);
+        if (user) {
+            const otp = generateOtp();
+            const otpHash = await bcrypt.hash(otp, SALT_ROUNDS);
+            await this.usersService.setResetOtp(user._id.toString(), otpHash, new Date(Date.now() + RESET_OTP_TTL_MS));
+            void this.mailService.sendPasswordResetOtp(user.email, otp);
+        }
+        return { maskedEmail: maskEmail(email) };
+    }
+    async resetPassword(email, otp, newPassword) {
+        const user = await this.usersService.findByEmail(email);
+        if (!user || !user.resetOtpHash || !user.resetOtpExpiresAt || user.resetOtpExpiresAt < new Date()) {
+            throw new common_1.UnauthorizedException(GENERIC_OTP_ERROR);
+        }
+        if (!(await bcrypt.compare(otp, user.resetOtpHash))) {
+            throw new common_1.UnauthorizedException(GENERIC_OTP_ERROR);
+        }
+        const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        await this.usersService.resetPassword(user._id.toString(), passwordHash);
+    }
+    async changePassword(userId, currentPassword, newPassword, currentJti, ip) {
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+            throw new common_1.UnauthorizedException('Invalid session');
+        }
+        if (!user.passwordHash) {
+            throw new common_1.BadRequestException('This account signs in via Google/Microsoft/GitHub and has no password to change — use "Forgot password" on the login page to set one.');
+        }
+        if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+            throw new common_1.BadRequestException('Current password is incorrect');
+        }
+        const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        await this.usersService.resetPassword(userId, passwordHash);
+        await this.usersService.revokeAllOtherSessions(userId, currentJti);
+        void this.auditService.log({
+            userId,
+            organizationId: user.organizationId,
+            method: 'POST',
+            route: '/auth/change-password',
+            statusCode: 200,
+            durationMs: 0,
+            ip,
+            action: 'password.change',
+        });
+    }
+    async login(email, password, meta = {}) {
+        const user = await this.usersService.findByEmail(email);
+        if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
         if (user.active === false) {
             throw new common_1.UnauthorizedException('Account disabled');
         }
-        return this.issueToken(user);
+        return this.issueTokenOrChallenge(user, meta);
     }
-    issueToken(user) {
+    async loginWithOAuth(provider, profile, meta = {}) {
+        let user = await this.usersService.findByOAuthId(provider, profile.providerId);
+        if (!user) {
+            const existing = await this.usersService.findByEmail(profile.email);
+            if (existing) {
+                await this.usersService.linkOAuthProvider(existing._id.toString(), provider, profile.providerId);
+                user = existing;
+            }
+            else {
+                user = await this.registerOAuthUser(provider, profile);
+            }
+        }
+        if (user.active === false) {
+            throw new common_1.UnauthorizedException('Account disabled');
+        }
+        return this.issueTokenOrChallenge(user, meta);
+    }
+    async registerOAuthUser(provider, profile) {
+        const { organization, store } = await this.organizationsService.createOrganizationWithOwner(`${profile.name}'s Workspace`);
+        const user = await this.usersService.create({
+            email: profile.email,
+            name: profile.name,
+            organizationId: organization._id.toString(),
+            storeId: store._id.toString(),
+            roles: ['owner', 'admin'],
+        });
+        await this.usersService.linkOAuthProvider(user._id.toString(), provider, profile.providerId);
+        await this.usersService.markEmailVerified(user._id.toString());
+        void this.mailService.sendWelcomeEmail(user.email, user.name);
+        return user;
+    }
+    async issueSessionToken(user, meta) {
+        const jti = (0, crypto_1.randomUUID)();
+        const now = new Date();
+        await this.usersService.addSession(user._id.toString(), {
+            jti,
+            device: (0, session_meta_util_1.parseDeviceLabel)(meta.userAgent),
+            userAgent: meta.userAgent,
+            ip: meta.ip,
+            location: (0, session_meta_util_1.lookupLocation)(meta.ip),
+            createdAt: now,
+            lastSeenAt: now,
+        });
         const payload = {
             sub: user._id.toString(),
             email: user.email,
@@ -91,8 +212,22 @@ let AuthService = class AuthService {
             storeId: user.storeId,
             assignedAgentId: user.assignedAgentId,
             department: user.department,
+            jti,
         };
         return { accessToken: this.jwtService.sign(payload) };
+    }
+    buildChallengeToken(user) {
+        return this.jwtService.sign({ sub: user._id.toString(), purpose: 'login-2fa-challenge' }, { expiresIn: '5m' });
+    }
+    async issueTokenOrChallenge(user, meta = {}) {
+        if (user.twoFactorEnabled) {
+            return { status: '2fa_required', challengeToken: this.buildChallengeToken(user) };
+        }
+        const { accessToken } = await this.issueSessionToken(user, meta);
+        return { status: 'ok', accessToken };
+    }
+    logout(userId, jti) {
+        return this.usersService.revokeSession(userId, jti);
     }
 };
 exports.AuthService = AuthService;
@@ -100,6 +235,16 @@ exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [users_service_1.UsersService,
         organizations_service_1.OrganizationsService,
-        jwt_1.JwtService])
+        jwt_1.JwtService,
+        mail_service_1.MailService,
+        audit_service_1.AuditService])
 ], AuthService);
+function generateOtp() {
+    return String((0, crypto_1.randomInt)(100_000, 1_000_000));
+}
+function maskEmail(email) {
+    const [name, domain] = email.split('@');
+    const masked = name && name.length > 2 ? `${name.slice(0, 2)}${'*'.repeat(name.length - 2)}` : `${name?.[0] ?? ''}*`;
+    return `${masked}@${domain ?? 'example.com'}`;
+}
 //# sourceMappingURL=auth.service.js.map

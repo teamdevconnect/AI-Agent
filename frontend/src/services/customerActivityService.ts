@@ -140,6 +140,29 @@ export const customerActivityService = {
     return data;
   },
 
+  // Phase 19 — Unified Analytics Dashboard's Customers & Email tab. Takes a
+  // raw day range so "New Customers" always shares the exact same window
+  // as the Email Activity widget's own filter. One endpoint for every role
+  // (including consultant) — the backend resolves org/store/personal scope
+  // from the caller's own JWT.
+  async getBreakdownStats(
+    from: string,
+    to: string,
+  ): Promise<{
+    newCount: number;
+    existingCount: number;
+    lostCount: number;
+    totalConsidered: number;
+    // Backs the Customer Mix drill-down popup — which businesses landed in
+    // each bucket, keyed the same way relationship-view lookups expect.
+    newItems: { key: string; businessName: string }[];
+    existingItems: { key: string; businessName: string }[];
+    lostItems: { key: string; businessName: string }[];
+  }> {
+    const { data } = await axiosClient.get('/crm/customer-activity/breakdown-stats', { params: { from, to } });
+    return data;
+  },
+
   async generateSummary(regenerate = false): Promise<CustomerActivityOverview> {
     const { data } = await axiosClient.post<CustomerActivityOverview>('/crm/customer-activity/generate-summary', { regenerate });
     return data;

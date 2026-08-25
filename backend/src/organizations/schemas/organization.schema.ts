@@ -17,6 +17,15 @@ export class Organization {
 
   @Prop({ enum: ['active', 'suspended'], default: 'active' })
   status: 'active' | 'suspended';
+
+  // Tenant-level ceiling on notification delivery, not a default — the
+  // effective send decision is this AND the target user's own
+  // notificationPreferences (see user.schema.ts). An owner/admin can hard-
+  // disable a channel org-wide (no SMTP configured, compliance, etc.)
+  // regardless of individual users' own toggles; neither side alone turns
+  // a channel on.
+  @Prop({ type: Object, default: { emailEnabled: true, pushEnabled: true } })
+  notificationPolicy: { emailEnabled: boolean; pushEnabled: boolean };
 }
 
 export const OrganizationSchema = SchemaFactory.createForClass(Organization);

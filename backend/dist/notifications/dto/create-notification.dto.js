@@ -34,4 +34,14 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateNotificationDto.prototype, "source", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(notification_schema_1.NOTIFICATION_ENTITY_TYPES),
+    __metadata("design:type", String)
+], CreateNotificationDto.prototype, "entityType", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateNotificationDto.prototype, "entityId", void 0);
 //# sourceMappingURL=create-notification.dto.js.map

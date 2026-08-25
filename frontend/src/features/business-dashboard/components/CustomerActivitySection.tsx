@@ -1,6 +1,5 @@
 import { FiUsers } from 'react-icons/fi';
-import { Button, SectionCard } from '@/components/ui';
-import { StatTile } from '@/features/dashboard/components/StatTile';
+import { Button, SectionCard, StatTile } from '@/components/ui';
 import type { CustomerActivityOverview } from '@/services/customerActivityService';
 import styles from '../business-dashboard.module.css';
 
@@ -21,16 +20,22 @@ export function CustomerActivitySection({
   topItems,
   viewFullLabel,
   onViewFull,
+  extraStats = [],
 }: {
   data: CustomerActivityOverview;
   topItemsTitle: string;
   topItems: TopItem[];
   viewFullLabel: string;
   onViewFull: () => void;
+  // Phase 16 — additive, backward-compatible: lets each Home Dashboard view
+  // surface a role-appropriate extra number (e.g. "Deals at Risk") alongside
+  // this section's existing actioned-today stats, without this component
+  // needing to know where that number comes from.
+  extraStats?: { value: string | number; label: string }[];
 }) {
   return (
     <SectionCard
-      title="Customer Activity Today"
+      title="Customer Insights"
       icon={FiUsers}
       action={
         <Button type="button" variant="ghost" size="sm" onClick={onViewFull}>
@@ -43,6 +48,9 @@ export function CustomerActivitySection({
         <StatTile value={data.actionedTodayCounts.existing} label="Existing" />
         <StatTile value={data.actionedTodayCounts.new} label="New" />
         <StatTile value={data.actionedTodayCounts.followUp} label="Follow-ups" />
+        {extraStats.map((s) => (
+          <StatTile key={s.label} value={s.value} label={s.label} />
+        ))}
       </div>
 
       {topItems.length > 0 && (

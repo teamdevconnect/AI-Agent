@@ -45,6 +45,11 @@
   gap: var(--space-6);
 }
 
+/* Phase 15 — holds RelationshipDrillDown's "Show more details" toggle. */
+.detailsToggleRow {
+  display: flex;
+}
+
 .fetching {
   opacity: 0.6;
   transition: opacity 0.15s ease;

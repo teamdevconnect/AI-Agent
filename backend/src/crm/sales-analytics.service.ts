@@ -84,7 +84,7 @@ export class SalesAnalyticsService {
     if (scope === 'store') dealFilter.storeId = scopeId;
     if (scope === 'user') dealFilter.ownerId = scopeId;
 
-    const [{ achieved = 0 } = {}, target] = await Promise.all([
+    const [{ achieved = 0 } = {}, { targetAmount, currency }] = await Promise.all([
       this.dealModel
         .aggregate<{ achieved: number }>([
           { $match: dealFilter },
@@ -92,18 +92,9 @@ export class SalesAnalyticsService {
         ])
         .exec()
         .then((rows) => rows[0]),
-      this.targetModel
-        .findOne({
-          organizationId,
-          scope,
-          storeId: scope === 'store' ? scopeId : undefined,
-          userId: scope === 'user' ? scopeId : undefined,
-          period,
-        })
-        .exec(),
+      this.resolveTarget(organizationId, scope, scopeId, period),
     ]);
 
-    const targetAmount = target?.targetAmount ?? null;
     const totalDays = daysInMonth(period);
     const elapsed = daysElapsed(period);
     const remainingDays = Math.max(totalDays - elapsed, 0);
@@ -112,7 +103,7 @@ export class SalesAnalyticsService {
     return {
       period,
       targetAmount,
-      currency: target?.currency ?? 'INR',
+      currency,
       achieved,
       achievementPct: targetAmount ? Math.round((achieved / targetAmount) * 1000) / 10 : null,
       remaining,
@@ -120,5 +111,39 @@ export class SalesAnalyticsService {
       predictedMonthEnd: elapsed > 0 ? Math.round((achieved / elapsed) * totalDays * 100) / 100 : achieved,
       forecastConfidence: Math.round((elapsed / totalDays) * 100) / 100,
     };
+  }
+
+  // There is no standalone org-level target to set (Settings → Sales
+  // Targets only ever offers Store and Employee targets — see
+  // SalesTargetsSettings.tsx) — an org's target is the sum of every store's
+  // target for the period instead. Store/user scope still read their own
+  // single target document exactly as before. Currency is taken from
+  // whichever store target happens to be first; every target in this app
+  // is created with a fixed 'INR' default (UpsertSalesTargetDto), so this
+  // never actually varies in practice.
+  private async resolveTarget(
+    organizationId: string,
+    scope: 'org' | 'store' | 'user',
+    scopeId: string | undefined,
+    period: string,
+  ): Promise<{ targetAmount: number | null; currency: string }> {
+    if (scope === 'org') {
+      const storeTargets = await this.targetModel.find({ organizationId, scope: 'store', period }).exec();
+      if (storeTargets.length === 0) return { targetAmount: null, currency: 'INR' };
+      return {
+        targetAmount: storeTargets.reduce((sum, t) => sum + t.targetAmount, 0),
+        currency: storeTargets[0].currency ?? 'INR',
+      };
+    }
+    const target = await this.targetModel
+      .findOne({
+        organizationId,
+        scope,
+        storeId: scope === 'store' ? scopeId : undefined,
+        userId: scope === 'user' ? scopeId : undefined,
+        period,
+      })
+      .exec();
+    return { targetAmount: target?.targetAmount ?? null, currency: target?.currency ?? 'INR' };
   }
 }

@@ -7,13 +7,27 @@ import { FiMail, FiLock, FiEye, FiEyeOff, FiGithub } from 'react-icons/fi';
 import { FaGoogle, FaMicrosoft } from 'react-icons/fa';
 import { Input, Button } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
+import { authService } from '@/services/authService';
+import { extractErrorMessage } from '@/utils/errors';
 import { ROUTES } from '@/constants/routes';
+import type { OAuthProvider } from '@/types';
+import { TwoFactorChallengeForm } from './components/TwoFactorChallengeForm';
 import { loginSchema, type LoginFormValues } from './schemas';
 import styles from './AuthForm.module.css';
 
+type Step = 'credentials' | 'twoFactor';
+
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  const [step, setStep] = useState<Step>('credentials');
+  // Never written to authStore/localStorage — held here only, for exactly
+  // as long as the 2FA step is on screen. This is what guarantees it can
+  // never be attached as a Bearer header by axiosClient's interceptor
+  // (which only ever reads accessToken from the store) or trip the
+  // 401-forced-logout path.
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const login = useAuthStore((state) => state.login);
+  const verifyTwoFactor = useAuthStore((state) => state.verifyTwoFactor);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -26,14 +40,59 @@ export function LoginPage() {
     defaultValues: { email: '', password: '', rememberMe: true },
   });
 
+  const goToChat = () => {
+    const from = (location.state as { from?: Location })?.from?.pathname ?? ROUTES.chat;
+    navigate(from, { replace: true });
+    toast.success('Welcome back!');
+  };
+
   const onSubmit = async (values: LoginFormValues) => {
     try {
-      await login(values);
-      const from = (location.state as { from?: Location })?.from?.pathname ?? ROUTES.chat;
-      navigate(from, { replace: true });
-      toast.success('Welcome back!');
+      const result = await login(values);
+      if (result.requiresTwoFactor) {
+        setChallengeToken(result.challengeToken ?? null);
+        setStep('twoFactor');
+        return;
+      }
+      goToChat();
     } catch (error) {
       toast.error((error as Error).message);
+    }
+  };
+
+  const onVerifyTwoFactor = async (code: string) => {
+    if (!challengeToken) return;
+    try {
+      await verifyTwoFactor(challengeToken, code);
+      goToChat();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+      throw error;
+    }
+  };
+
+  if (step === 'twoFactor') {
+    return (
+      <TwoFactorChallengeForm
+        onSubmit={onVerifyTwoFactor}
+        onBack={() => {
+          setStep('credentials');
+          setChallengeToken(null);
+        }}
+      />
+    );
+  }
+
+  // Full-page redirect into the provider's consent screen — same shape as
+  // the Gmail/Outlook "Connect" buttons in IntegrationsPage, just for login
+  // instead of mailbox delegation. The backend's callback redirects back to
+  // /oauth/callback with a session token once it completes.
+  const handleOAuth = async (provider: OAuthProvider) => {
+    try {
+      const url = await authService.getOAuthUrl(provider);
+      window.location.href = url;
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
     }
   };
 
@@ -87,18 +146,18 @@ export function LoginPage() {
 
       <div className={styles.divider}>or continue with</div>
       <div className={styles.socialRow}>
-        <button type="button" className={styles.socialButton} onClick={() => toast('Google SSO — Phase 2')} aria-label="Continue with Google">
+        <button type="button" className={styles.socialButton} onClick={() => handleOAuth('google')} aria-label="Continue with Google">
           <FaGoogle />
         </button>
         <button
           type="button"
           className={styles.socialButton}
-          onClick={() => toast('Microsoft SSO — Phase 2')}
+          onClick={() => handleOAuth('microsoft')}
           aria-label="Continue with Microsoft"
         >
           <FaMicrosoft />
         </button>
-        <button type="button" className={styles.socialButton} onClick={() => toast('GitHub SSO — Phase 2')} aria-label="Continue with GitHub">
+        <button type="button" className={styles.socialButton} onClick={() => handleOAuth('github')} aria-label="Continue with GitHub">
           <FiGithub />
         </button>
       </div>

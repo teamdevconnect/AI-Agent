@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -7,6 +8,12 @@ import { JwtPayload } from '../auth/jwt-payload.interface';
 import { FinanceOverviewQueryDto } from './dto/finance-overview-query.dto';
 import { FinanceDashboardService } from './finance-dashboard.service';
 import { FinanceSummaryService } from './finance-summary.service';
+
+// `regenerate: true` deliberately bypasses generateSummary's own daily
+// cache to force a fresh, billed LLM call — tighter than the app-wide
+// default (app.module.ts) so that bypass isn't only bounded by the generic
+// per-IP ceiling.
+const GENERATE_SUMMARY_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('owner', 'admin')
@@ -30,6 +37,7 @@ export class FinanceDashboardController {
   }
 
   @Post('generate-summary')
+  @Throttle(GENERATE_SUMMARY_THROTTLE)
   generateSummary(@CurrentUser() user: JwtPayload, @Body() body: { regenerate?: boolean }) {
     return this.financeSummaryService.generateSummary(user, body?.regenerate ?? false);
   }

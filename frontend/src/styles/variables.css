@@ -1,7 +1,7 @@
 /* ==========================================================================
-   Design tokens. Dark is the default theme; :root[data-theme="light"]
-   overrides. Component CSS Modules should only ever reference these
-   custom properties, never raw hex values, so theme switching stays free.
+   Design tokens. Single fixed light theme (white app background).
+   Component CSS Modules should only ever reference these custom
+   properties, never raw hex values.
    ========================================================================== */
 
 :root {
@@ -12,40 +12,39 @@
   --brand-accent-secondary: #a85a1e;
   --brand-surface-light: #e1ded4;
 
-  /* ---- Dark theme (default) ---- */
-  --color-bg-app: var(--brand-bg-primary);
-  --color-bg-sidebar: #0a0a0a;
-  --color-bg-surface: var(--brand-bg-secondary);
-  --color-bg-surface-elevated: #292929;
-  --color-bg-hover: rgba(237, 126, 44, 0.1);
-  --color-bg-active: rgba(237, 126, 44, 0.18);
-  --color-bg-input: #111111;
+  --color-bg-app: #ffffff;
+  --color-bg-sidebar: #ffffff;
+  --color-bg-surface: #ffffff;
+  --color-bg-surface-elevated: #ffffff;
+  --color-bg-hover: rgba(237, 126, 44, 0.08);
+  --color-bg-active: rgba(237, 126, 44, 0.14);
+  --color-bg-input: #ffffff;
 
-  --color-border: rgba(225, 222, 212, 0.08);
-  --color-border-strong: rgba(225, 222, 212, 0.16);
+  --color-border: rgba(7, 7, 7, 0.1);
+  --color-border-strong: rgba(7, 7, 7, 0.18);
 
-  --color-text-primary: var(--brand-surface-light);
-  --color-text-secondary: #cfcecc;
-  --color-text-muted: rgba(207, 206, 204, 0.55);
-  --color-text-inverse: #070707;
+  --color-text-primary: #070707;
+  --color-text-secondary: #4d4a44;
+  --color-text-muted: #8a8579;
+  --color-text-inverse: #ffffff;
 
-  --color-accent: var(--brand-accent-primary);
-  --color-accent-hover: #f4934f;
-  --color-accent-muted: var(--brand-accent-secondary);
-  --color-accent-contrast: #070707;
+  --color-accent: #d96f1f;
+  --color-accent-hover: #c25f16;
+  --color-accent-muted: #f3d9c2;
+  --color-accent-contrast: #ffffff;
 
   --color-success: #4ade80;
   --color-warning: #fbbf24;
   --color-danger: #f87171;
   --color-info: #60a5fa;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
-  --shadow-glow: 0 0 0 1px rgba(237, 126, 44, 0.35), 0 8px 24px rgba(237, 126, 44, 0.18);
+  --shadow-sm: 0 1px 2px rgba(7, 7, 7, 0.06);
+  --shadow-md: 0 4px 16px rgba(7, 7, 7, 0.08);
+  --shadow-lg: 0 12px 32px rgba(7, 7, 7, 0.12);
+  --shadow-glow: 0 0 0 1px rgba(217, 111, 31, 0.25), 0 8px 24px rgba(217, 111, 31, 0.15);
 
   --gradient-accent: linear-gradient(135deg, var(--brand-accent-primary) 0%, var(--brand-accent-secondary) 100%);
-  --gradient-surface: linear-gradient(180deg, rgba(237, 126, 44, 0.08) 0%, rgba(237, 126, 44, 0) 60%);
+  --gradient-surface: linear-gradient(180deg, rgba(237, 126, 44, 0.06) 0%, rgba(237, 126, 44, 0) 60%);
 
   /* Radii */
   --radius-sm: 6px;
@@ -93,58 +92,19 @@
   --z-dropdown: 40;
   --z-modal: 60;
   --z-toast: 80;
-}
 
-/* ---- Light theme ---- */
-:root[data-theme='light'] {
-  --color-bg-app: var(--brand-surface-light);
-  --color-bg-sidebar: #ffffff;
-  --color-bg-surface: #ffffff;
-  --color-bg-surface-elevated: #ffffff;
-  --color-bg-hover: rgba(237, 126, 44, 0.08);
-  --color-bg-active: rgba(237, 126, 44, 0.14);
-  --color-bg-input: #ffffff;
-
-  --color-border: rgba(7, 7, 7, 0.1);
-  --color-border-strong: rgba(7, 7, 7, 0.18);
-
-  --color-text-primary: #070707;
-  --color-text-secondary: #4d4a44;
-  --color-text-muted: #8a8579;
-  --color-text-inverse: #ffffff;
-
-  --color-accent: #d96f1f;
-  --color-accent-hover: #c25f16;
-  --color-accent-muted: #f3d9c2;
-  --color-accent-contrast: #ffffff;
-
-  --shadow-sm: 0 1px 2px rgba(7, 7, 7, 0.06);
-  --shadow-md: 0 4px 16px rgba(7, 7, 7, 0.08);
-  --shadow-lg: 0 12px 32px rgba(7, 7, 7, 0.12);
-  --shadow-glow: 0 0 0 1px rgba(217, 111, 31, 0.25), 0 8px 24px rgba(217, 111, 31, 0.15);
-
-  --gradient-surface: linear-gradient(180deg, rgba(237, 126, 44, 0.06) 0%, rgba(237, 126, 44, 0) 60%);
-}
-
-/* Respect OS preference only when the user hasn't explicitly chosen a theme */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) {
-    --color-bg-app: var(--brand-surface-light);
-    --color-bg-sidebar: #ffffff;
-    --color-bg-surface: #ffffff;
-    --color-bg-surface-elevated: #ffffff;
-    --color-bg-hover: rgba(237, 126, 44, 0.08);
-    --color-bg-active: rgba(237, 126, 44, 0.14);
-    --color-bg-input: #ffffff;
-    --color-border: rgba(7, 7, 7, 0.1);
-    --color-border-strong: rgba(7, 7, 7, 0.18);
-    --color-text-primary: #070707;
-    --color-text-secondary: #4d4a44;
-    --color-text-muted: #8a8579;
-    --color-text-inverse: #ffffff;
-    --color-accent: #d96f1f;
-    --color-accent-hover: #c25f16;
-    --color-accent-muted: #f3d9c2;
-    --color-accent-contrast: #ffffff;
-  }
+  /* ---- Left nav sidebar: always dark, independent of the app's light
+     theme (a deliberate two-tone layout — only Sidebar.module.css reads
+     these; the chat RightPanel and everything else stay on the tokens
+     above). ---- */
+  --sidebar-bg: #0a0a0a;
+  --sidebar-surface-elevated: #202020;
+  --sidebar-text: var(--brand-surface-light);
+  --sidebar-text-secondary: #cfcecc;
+  --sidebar-text-muted: rgba(207, 206, 204, 0.55);
+  --sidebar-border: rgba(225, 222, 212, 0.08);
+  --sidebar-border-strong: rgba(225, 222, 212, 0.16);
+  --sidebar-hover-bg: rgba(237, 126, 44, 0.1);
+  --sidebar-active-bg: rgba(237, 126, 44, 0.18);
+  --sidebar-active-text: var(--brand-accent-primary);
 }

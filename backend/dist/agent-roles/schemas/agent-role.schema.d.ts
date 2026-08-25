@@ -10,13 +10,14 @@ export declare class AgentRole {
     name: string;
     department: string;
     description: string;
+    goals: string[];
     responsibilities: string[];
     dailyTasks: string[];
     weeklyTasks: string[];
     kpis: AgentRoleKpi[];
     systemPrompt: string;
-    sourceDocumentName: string;
-    sourceDocumentId: string;
+    sourceDocumentName?: string;
+    sourceDocumentId?: string;
     status: 'draft' | 'active';
     assignedDepartments: string[];
     assignedUserIds: string[];

@@ -10,9 +10,24 @@ export interface Store {
   timezone: string;
 }
 
+export interface NotificationPolicy {
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+}
+
 export const organizationsService = {
   async listStores(): Promise<Store[]> {
     const { data } = await axiosClient.get<Store[]>('/organizations/stores');
+    return data;
+  },
+
+  async getNotificationPolicy(): Promise<NotificationPolicy> {
+    const { data } = await axiosClient.get<NotificationPolicy>('/organizations/notification-policy');
+    return data;
+  },
+
+  async updateNotificationPolicy(patch: Partial<NotificationPolicy>): Promise<NotificationPolicy> {
+    const { data } = await axiosClient.put<NotificationPolicy>('/organizations/notification-policy', patch);
     return data;
   },
 };

@@ -1,10 +1,37 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { FiZap } from 'react-icons/fi';
+import { FiShield, FiZap } from 'react-icons/fi';
 import { Badge, Button, Input, Modal } from '@/components/ui';
+import type { BadgeVariant } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { emailIntelligenceService, type EmailIntelligenceItem } from '@/services/emailIntelligenceService';
 import styles from '../email-intelligence.module.css';
+
+// Phase 17 — labels/variants for the new "AI Decision" card, matching
+// EmailIntelligenceList.tsx's aiStatus badge exactly.
+const FROM_ROLE_LABEL: Record<string, string> = {
+  internal: 'Internal User',
+  customer: 'Customer',
+  vendor: 'Vendor',
+  external_other: 'External Contact',
+};
+const NEXT_ACTION_LABEL: Record<string, string> = {
+  company_reply: 'Company Reply',
+  awaiting_customer: 'Waiting for Customer',
+  no_action_required: 'No Action Required',
+};
+const AI_STATUS_LABEL: Record<string, string> = {
+  draft_ready: 'Draft Ready',
+  no_reply_needed: 'No Reply Needed',
+  awaiting_customer_response: 'Awaiting Customer Response',
+  validation_failed: 'Needs Review — Validation Failed',
+};
+const AI_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  draft_ready: 'success',
+  no_reply_needed: 'neutral',
+  awaiting_customer_response: 'info',
+  validation_failed: 'danger',
+};
 
 export function EmailIntelligenceDetailModal({
   open,
@@ -138,6 +165,27 @@ export function EmailIntelligenceDetailModal({
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {item.aiStatus && (
+          <div className={styles.card}>
+            <div className={styles.fieldLabel}>
+              <FiShield style={{ verticalAlign: 'middle', marginRight: 4 }} />
+              AI Decision
+            </div>
+            <div className={styles.formGrid}>
+              <span>
+                From: <strong>{item.fromRole ? FROM_ROLE_LABEL[item.fromRole] : '—'}</strong>
+              </span>
+              <span>
+                Expected Next Action: <strong>{item.expectedNextAction ? NEXT_ACTION_LABEL[item.expectedNextAction] : '—'}</strong>
+              </span>
+              <span>
+                AI Status: <Badge variant={AI_STATUS_VARIANT[item.aiStatus]}>{AI_STATUS_LABEL[item.aiStatus]}</Badge>
+              </span>
+              {item.reason && <span className={styles.listItemMeta}>Reason: {item.reason}</span>}
+            </div>
           </div>
         )}
 

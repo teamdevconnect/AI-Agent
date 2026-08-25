@@ -3,13 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { FiAlertTriangle, FiBarChart2, FiClipboard, FiClock, FiFileText, FiTrendingUp, FiUsers } from 'react-icons/fi';
-import { Avatar, Badge, Card, SectionCard, Skeleton, Tabs } from '@/components/ui';
+import { Avatar, Badge, Card, SectionCard, Skeleton, StatTile, Tabs } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { dashboardService } from '@/services/dashboardService';
 import { PRIORITY_VARIANT } from './priorityVariant';
 import { AgentComparisonChart } from './components/AgentComparisonChart';
 import { AgentFocusedView } from './components/AgentFocusedView';
-import { StatTile } from './components/StatTile';
 import styles from './DashboardPage.module.css';
 
 // Grouped into tabs so the 5 stat tiles + chart + agent grid + 2 unbounded

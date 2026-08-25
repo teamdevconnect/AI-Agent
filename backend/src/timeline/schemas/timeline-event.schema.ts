@@ -3,10 +3,10 @@ import { Document, Types } from 'mongoose';
 
 export type TimelineEventDocument = TimelineEvent & Document<Types.ObjectId>;
 
-// Deliberately a plain string, not a Mongo enum — Phase 7's workflow-engine
-// events (and whatever else shows up later) can be added without a schema
-// migration. The known values today: 'daily_report_generated',
-// 'daily_report_missed', 'task_completed', 'achievement_unlocked'.
+// Deliberately a plain string, not a Mongo enum — new event types can be
+// added without a schema migration. The known values today:
+// 'daily_report_generated', 'daily_report_missed', 'task_completed',
+// 'achievement_unlocked'.
 export type TimelineEventType = string;
 
 // The business's "memory" — significant events worth remembering, distinct

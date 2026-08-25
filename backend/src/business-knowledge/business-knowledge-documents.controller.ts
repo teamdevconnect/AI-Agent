@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { UPLOAD_FILE_INTERCEPTOR_OPTIONS } from '../common/upload-limits';
 import { BusinessKnowledgeDocumentListQueryDto } from './dto/business-knowledge-document-list-query.dto';
 import { UpdateBusinessKnowledgeDocumentDto } from './dto/update-business-knowledge-document.dto';
 import { BusinessKnowledgeDocumentsService } from './business-knowledge-documents.service';
@@ -23,7 +24,7 @@ export class BusinessKnowledgeDocumentsController {
 
   @Post()
   @Roles('owner', 'admin')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_FILE_INTERCEPTOR_OPTIONS))
   upload(@CurrentUser() user: JwtPayload, @UploadedFile() file: Express.Multer.File) {
     return this.documentsService.upload(user.organizationId, user.sub, file);
   }

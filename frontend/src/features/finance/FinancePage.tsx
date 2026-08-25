@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -16,14 +17,13 @@ import {
   FiUsers,
   FiZap,
 } from 'react-icons/fi';
-import { Button, Dropdown, MultiSelectDropdown, SectionCard, Skeleton, Tabs } from '@/components/ui';
+import { Button, Dropdown, MultiSelectDropdown, SectionCard, Skeleton, StatTile, Tabs } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
 import { getSocket } from '@/api/socketClient';
 import { extractErrorMessage } from '@/utils/errors';
 import { formatINR as money } from '@/utils/currency';
 import { financeDocumentsService, type FinanceDocument, type FinanceFilters } from '@/services/financeDocumentsService';
 import { financeDashboardService, type FinancePreset } from '@/services/financeDashboardService';
-import { StatTile } from '@/features/dashboard/components/StatTile';
 import { FinanceFilterBar } from './components/FinanceFilterBar';
 import { FinanceSavedViewsBar } from './components/FinanceSavedViewsBar';
 import { FinanceSummaryPanel } from './components/FinanceSummaryPanel';
@@ -67,11 +67,30 @@ interface DrillDown {
 // pipeline data (see Phase 10a plan notes).
 export function FinancePage() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState<FinanceFilters>({});
   const [hiddenWidgets, setHiddenWidgets] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [drillDown, setDrillDown] = useState<DrillDown | null>(null);
   const [reviewDoc, setReviewDoc] = useState<FinanceDocument | null>(null);
+
+  // Arrived here from a notification click (see
+  // frontend/src/utils/notificationTarget.ts) — fetched directly by id
+  // rather than relying on it being present in whatever page/filter of
+  // `data` below happens to be loaded.
+  useEffect(() => {
+    const openDocumentId = searchParams.get('openDocumentId');
+    if (!openDocumentId) return;
+    financeDocumentsService
+      .getOne(openDocumentId)
+      .then(setReviewDoc)
+      .catch((error) => toast.error(extractErrorMessage(error)));
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('openDocumentId');
+      return next;
+    }, { replace: true });
+  }, [searchParams]);
 
   // Real-time nudge: the upload pipeline notifies owners/admins via the
   // existing notification socket channel once extraction completes: a
@@ -337,7 +356,19 @@ export function FinancePage() {
                   <div className={styles.emptyState}>No documents uploaded yet.</div>
                 ) : (
                   data.recentDocuments.map((d) => (
-                    <div key={d._id} className={styles.listItem} onClick={() => setReviewDoc(d)} style={{ cursor: 'pointer' }}>
+                    <div
+                      key={d._id}
+                      className={styles.listItem}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setReviewDoc(d)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' && e.key !== ' ') return;
+                        e.preventDefault();
+                        setReviewDoc(d);
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <div className={styles.listItemMain}>
                         <span className={styles.listItemTitle}>{d.vendorName ?? d.originalFilename}</span>
                         <span className={styles.listItemMeta}>{d.invoiceDate ?? 'No invoice date'}</span>

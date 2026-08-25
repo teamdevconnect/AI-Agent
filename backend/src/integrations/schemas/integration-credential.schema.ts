@@ -11,11 +11,37 @@ export class IntegrationCredential {
   @Prop({ required: true })
   provider: string;
 
-  @Prop({ required: true })
-  apiKey: string;
+  // Required historically (the only auth style that existed: apiKey +
+  // optional baseUrl, used by the 'anthropic'/'crm' providers). Relaxed to
+  // optional so newer auth types (bearer/basic/customHeaders — see
+  // ../auth-methods.ts) that have no meaningful "apiKey" value can omit it;
+  // every existing row already has one populated, so this is additive, not
+  // a migration.
+  @Prop()
+  apiKey?: string;
 
   @Prop()
   baseUrl?: string;
+
+  // Which shape `credentialsEncrypted` below is decrypted into — undefined
+  // on every row written before this existed, which callers should treat as
+  // the original apiKey(+baseUrl) style (see IntegrationsService.status).
+  @Prop()
+  authType?: 'apiKey' | 'apiKeyBaseUrl' | 'bearer' | 'basic' | 'customHeaders';
+
+  // Encrypted (see common/encryption/encryption.service.ts) JSON blob of
+  // AuthCredentials (../auth-methods.ts) — bearerToken/username+password/
+  // custom headers, whichever authType above needs. The legacy `apiKey`
+  // field above is plaintext and untouched for backward compatibility;
+  // encryption only applies to auth data going through this newer path.
+  @Prop()
+  credentialsEncrypted?: string;
+
+  // Optional path (e.g. "/health", "/ping") appended to baseUrl for the
+  // Test Connection button — POST /integrations/:provider/test. Empty means
+  // "just hit baseUrl itself".
+  @Prop()
+  healthCheckPath?: string;
 }
 
 export const IntegrationCredentialSchema = SchemaFactory.createForClass(IntegrationCredential);

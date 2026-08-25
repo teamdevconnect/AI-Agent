@@ -2,11 +2,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { FiActivity, FiArrowLeft, FiBarChart2, FiFileText, FiTrendingUp } from 'react-icons/fi';
-import { Avatar, Badge, Button, SectionCard, Skeleton, Tabs } from '@/components/ui';
+import { Avatar, Badge, Button, SectionCard, Skeleton, StatTile, Tabs } from '@/components/ui';
 import { ROUTES } from '@/constants/routes';
 import { dashboardService } from '@/services/dashboardService';
 import { PRIORITY_VARIANT } from '../priorityVariant';
-import { StatTile } from './StatTile';
 import { TaskTrendChart } from './TaskTrendChart';
 import styles from './AgentFocusedView.module.css';
 

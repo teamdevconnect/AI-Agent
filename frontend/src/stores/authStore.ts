@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authService } from '@/services/authService';
+import { twoFactorService } from '@/services/twoFactorService';
 import { extractErrorMessage } from '@/utils/errors';
 import type { AuthSession, LoginPayload, RegisterPayload, User } from '@/types';
+
+export interface LoginOutcome {
+  requiresTwoFactor: boolean;
+  challengeToken?: string;
+}
 
 interface AuthState {
   user: User | null;
@@ -10,8 +16,18 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  login: (payload: LoginPayload) => Promise<void>;
+  // Returns rather than always applying a session — a 2FA-enabled account's
+  // credentials being valid doesn't mean the sign-in is complete yet (see
+  // verifyTwoFactor below, which is what actually applies the session in
+  // that case). The non-2FA case behaves exactly as before.
+  login: (payload: LoginPayload) => Promise<LoginOutcome>;
   register: (payload: RegisterPayload) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
+  // Completes a login that returned requiresTwoFactor:true. challengeToken
+  // is passed explicitly (never stored in this — persisted — store; see
+  // LoginPage's own local state) so it can never be attached as a Bearer
+  // header by axiosClient's interceptor or treated as a real session.
+  verifyTwoFactor: (challengeToken: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 }
@@ -32,8 +48,17 @@ export const useAuthStore = create<AuthState>()(
       async login(payload) {
         set({ isLoading: true, error: null });
         try {
-          const session = await authService.login(payload);
-          set({ ...applySession(session), isLoading: false });
+          const result = await authService.login(payload);
+          if (result.status === '2fa_required') {
+            // Deliberately does NOT touch user/accessToken/isAuthenticated —
+            // credentials being valid isn't the same as sign-in being
+            // complete. isLoading still clears so the form re-enables for
+            // the 2FA-code step.
+            set({ isLoading: false, error: null });
+            return { requiresTwoFactor: true, challengeToken: result.challengeToken };
+          }
+          set({ ...applySession(result.session), isLoading: false });
+          return { requiresTwoFactor: false };
         } catch (error) {
           set({ isLoading: false, error: extractErrorMessage(error) });
           throw error;
@@ -51,7 +76,36 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      // Completes the OAuth redirect flow (see OAuthCallbackPage): the
+      // backend already exchanged the provider code and issued a JWT the
+      // same shape as login/register issue, this just fetches the profile
+      // and applies the session exactly like those do.
+      async loginWithToken(token) {
+        set({ isLoading: true, error: null });
+        try {
+          const user = await authService.fetchCurrentUser(token);
+          set({ user, accessToken: token, isAuthenticated: true, isLoading: false, error: null });
+        } catch (error) {
+          set({ isLoading: false, error: extractErrorMessage(error) });
+          throw error;
+        }
+      },
+
+      async verifyTwoFactor(challengeToken, code) {
+        set({ isLoading: true, error: null });
+        try {
+          const { accessToken } = await twoFactorService.verifyLoginChallenge(challengeToken, code);
+          const user = await authService.fetchCurrentUser(accessToken);
+          set({ user, accessToken, isAuthenticated: true, isLoading: false, error: null });
+        } catch (error) {
+          set({ isLoading: false, error: extractErrorMessage(error) });
+          throw error;
+        }
+      },
+
       async logout() {
+        // Best-effort server-side revoke (see authService.logout's own
+        // comment) — local state is always cleared regardless of outcome.
         await authService.logout();
         set({ user: null, accessToken: null, isAuthenticated: false });
       },

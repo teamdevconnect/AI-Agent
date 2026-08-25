@@ -1,20 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { FiBarChart2, FiCalendar, FiCheckSquare, FiClock, FiTarget, FiZap } from 'react-icons/fi';
-import { SectionCard, Skeleton } from '@/components/ui';
+import { FiBarChart2, FiClock, FiTarget } from 'react-icons/fi';
+import { SectionCard, Skeleton, StatTile } from '@/components/ui';
 import { businessDashboardService } from '@/services/businessDashboardService';
 import { customerActivityService } from '@/services/customerActivityService';
-import { StatTile } from '@/features/dashboard/components/StatTile';
+import { homeDashboardService } from '@/services/homeDashboardService';
 import { ROUTES } from '@/constants/routes';
 import { formatINR as money } from '@/utils/currency';
 import { formatStageLabel } from '@/utils/stageLabel';
-import { dayjs } from '@/utils/date';
 import { CustomerActivitySection } from './components/CustomerActivitySection';
+import { AiRecommendationsSection } from './components/AiRecommendationsSection';
+import { CriticalAlertsSection } from './components/CriticalAlertsSection';
+import { TodaysTasksSection } from './components/TodaysTasksSection';
+import { EmailSummarySection } from './components/EmailSummarySection';
+import { TimelineSection } from './components/TimelineSection';
+import { HistoricalActivityFooter } from './components/HistoricalActivityFooter';
 import styles from './business-dashboard.module.css';
-
-function eventTime(start: string): string {
-  return start ? dayjs(start).format('h:mm A') : '';
-}
 
 export function ConsultantDashboardView() {
   const navigate = useNavigate();
@@ -26,6 +27,11 @@ export function ConsultantDashboardView() {
   const { data: activity } = useQuery({
     queryKey: ['customer-activity-personal-overview'],
     queryFn: () => customerActivityService.getPersonalOverview(),
+    refetchInterval: 60_000,
+  });
+  const { data: home } = useQuery({
+    queryKey: ['home-dashboard-consultant'],
+    queryFn: () => homeDashboardService.getConsultantHome(),
     refetchInterval: 60_000,
   });
 
@@ -45,22 +51,19 @@ export function ConsultantDashboardView() {
         <div className={styles.pageSubtitle}>{data.period}</div>
       </div>
 
-      <SectionCard title="This Period" icon={FiBarChart2}>
-        <div className={styles.statsGrid}>
-          <StatTile value={money(data.personalTarget)} label="Personal Target" />
-          <StatTile value={money(data.currentSales)} label="Current Sales" />
-          <StatTile value={data.achievementPct === null ? '—' : `${data.achievementPct}%`} label="Achievement" />
-          <StatTile value={money(data.remainingTarget)} label="Remaining Target" />
-        </div>
-      </SectionCard>
+      {/* Tier 1 */}
+      {home ? <AiRecommendationsSection items={home.aiRecommendations} /> : <Skeleton height={100} />}
 
-      <div className={styles.insightCard}>
-        <span className={styles.insightLabel}>
-          <FiZap size={14} /> AI Coaching
-        </span>
-        <span className={styles.insightText}>{data.aiCoaching}</span>
-      </div>
+      {/* Tier 2 */}
+      {home && <CriticalAlertsSection groups={home.criticalAlerts} />}
 
+      {/* Tier 3 */}
+      <TodaysTasksSection
+        calendarEvents={data.todaysMeetings.available ? data.todaysMeetings.events : undefined}
+        calendarMessage={data.todaysMeetings.available ? undefined : data.todaysMeetings.message}
+      />
+
+      {/* Tier 4 */}
       {activity && (
         <CustomerActivitySection
           data={activity}
@@ -75,8 +78,22 @@ export function ConsultantDashboardView() {
             }))}
           viewFullLabel="View full Customer Activity →"
           onViewFull={() => navigate(ROUTES.myCustomerActivity)}
+          extraStats={[{ value: data.dealsAtRisk.length, label: 'Deals at Risk' }]}
         />
       )}
+
+      {/* Tier 5 */}
+      {home && <EmailSummarySection summary={home.emailSummary} />}
+
+      {/* Tier 6 — Sales Performance (existing, repositioned) */}
+      <SectionCard title="This Period" icon={FiBarChart2}>
+        <div className={styles.statsGrid}>
+          <StatTile value={money(data.personalTarget)} label="Personal Target" />
+          <StatTile value={money(data.currentSales)} label="Current Sales" />
+          <StatTile value={data.achievementPct === null ? '—' : `${data.achievementPct}%`} label="Achievement" />
+          <StatTile value={money(data.remainingTarget)} label="Remaining Target" />
+        </div>
+      </SectionCard>
 
       <SectionCard title="Follow-ups — Next 7 Days" icon={FiClock}>
         {data.followUps.length === 0 ? (
@@ -109,27 +126,11 @@ export function ConsultantDashboardView() {
         )}
       </SectionCard>
 
-      <div className={styles.twoColumn}>
-        <SectionCard title="Today's Meetings" icon={FiCalendar}>
-          {!data.todaysMeetings.available ? (
-            <div className={styles.emptyState}>{data.todaysMeetings.message}</div>
-          ) : data.todaysMeetings.events.length === 0 ? (
-            <div className={styles.emptyState}>No meetings today.</div>
-          ) : (
-            data.todaysMeetings.events.map((e) => (
-              <div key={e.id} className={styles.listItem}>
-                <div className={styles.listItemMain}>
-                  <span className={styles.listItemTitle}>{e.title || 'Untitled event'}</span>
-                  <span className={styles.listItemMeta}>{eventTime(e.start)}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </SectionCard>
-        <SectionCard title="Today's Tasks" icon={FiCheckSquare}>
-          <div className={styles.emptyState}>{data.todaysTasks.message}</div>
-        </SectionCard>
-      </div>
+      {/* Tier 7 */}
+      {home && <TimelineSection events={home.timeline} />}
+
+      {/* Tier 8 */}
+      <HistoricalActivityFooter />
     </div>
   );
 }

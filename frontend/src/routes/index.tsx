@@ -13,6 +13,9 @@ const RegisterPage = lazy(() => import('@/features/auth/RegisterPage').then((m) 
 const ForgotPasswordPage = lazy(() =>
   import('@/features/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
 );
+const OAuthCallbackPage = lazy(() =>
+  import('@/features/auth/OAuthCallbackPage').then((m) => ({ default: m.OAuthCallbackPage })),
+);
 
 const DashboardRouterPage = lazy(() =>
   import('@/features/business-dashboard/DashboardRouterPage').then((m) => ({ default: m.DashboardRouterPage })),
@@ -24,9 +27,6 @@ const TimelinePage = lazy(() => import('@/features/timeline/TimelinePage').then(
 const CommandCenterPage = lazy(() =>
   import('@/features/command-center/CommandCenterPage').then((m) => ({ default: m.CommandCenterPage })),
 );
-const DealPerformancePage = lazy(() =>
-  import('@/features/deal-performance/DealPerformancePage').then((m) => ({ default: m.DealPerformancePage })),
-);
 const MyCustomerActivityPage = lazy(() =>
   import('@/features/deal-performance/MyCustomerActivityPage').then((m) => ({ default: m.MyCustomerActivityPage })),
 );
@@ -37,8 +37,10 @@ const EmailIntelligencePage = lazy(() =>
   import('@/features/email-intelligence/EmailIntelligencePage').then((m) => ({ default: m.EmailIntelligencePage })),
 );
 const FinancePage = lazy(() => import('@/features/finance/FinancePage').then((m) => ({ default: m.FinancePage })));
+const ReportingPage = lazy(() => import('@/features/reporting/ReportingPage').then((m) => ({ default: m.ReportingPage })));
 const TodoEodPage = lazy(() => import('@/features/todo-eod/TodoEodPage').then((m) => ({ default: m.TodoEodPage })));
 const ChatPage = lazy(() => import('@/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
+const ChatHistoryPage = lazy(() => import('@/features/chat/ChatHistoryPage').then((m) => ({ default: m.ChatHistoryPage })));
 const IntegrationsPage = lazy(() =>
   import('@/features/integrations/IntegrationsPage').then((m) => ({ default: m.IntegrationsPage })),
 );
@@ -46,6 +48,10 @@ const NotificationsPage = lazy(() =>
   import('@/features/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),
 );
 const ProfilePage = lazy(() => import('@/features/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })));
+const BillingPage = lazy(() => import('@/features/billing/BillingPage').then((m) => ({ default: m.BillingPage })));
+const PlatformAdminBillingPage = lazy(() =>
+  import('@/features/platform-admin/PlatformAdminBillingPage').then((m) => ({ default: m.PlatformAdminBillingPage })),
+);
 
 const SettingsLayout = lazy(() => import('@/features/settings/SettingsLayout').then((m) => ({ default: m.SettingsLayout })));
 const GeneralSettings = lazy(() =>
@@ -69,9 +75,11 @@ const SalesTargetsSettings = lazy(() =>
 const DealAssignmentSettings = lazy(() =>
   import('@/features/settings/tabs/DealAssignmentSettings').then((m) => ({ default: m.DealAssignmentSettings })),
 );
-const WorkflowsSettings = lazy(() =>
-  import('@/features/settings/tabs/WorkflowsSettings').then((m) => ({ default: m.WorkflowsSettings })),
+const RoyaltyRulesSettings = lazy(() =>
+  import('@/features/settings/tabs/RoyaltyRulesSettings').then((m) => ({ default: m.RoyaltyRulesSettings })),
 );
+
+const HelpSupportPage = lazy(() => import('@/features/help/HelpSupportPage').then((m) => ({ default: m.HelpSupportPage })));
 
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 
@@ -123,9 +131,6 @@ export function AppRoutes() {
             <Route element={<RequireRole role="admin" />}>
               <Route path={ROUTES.commandCenter} element={<CommandCenterPage />} />
             </Route>
-            <Route element={<RequireRole role={['owner', 'admin', 'manager']} />}>
-              <Route path={ROUTES.dealPerformance} element={<DealPerformancePage />} />
-            </Route>
             <Route element={<RequireRole role="consultant" />}>
               <Route path={ROUTES.myCustomerActivity} element={<MyCustomerActivityPage />} />
             </Route>
@@ -135,31 +140,54 @@ export function AppRoutes() {
             <Route element={<RequireRole role={['owner', 'admin']} />}>
               <Route path={ROUTES.finance} element={<FinancePage />} />
             </Route>
+            <Route element={<RequireRole role={['owner', 'admin', 'manager']} />}>
+              <Route path={ROUTES.reporting} element={<ReportingPage />} />
+            </Route>
             <Route path={ROUTES.todoEod} element={<TodoEodPage />} />
             <Route path={ROUTES.chat} element={<ChatPage />} />
             <Route path={`${ROUTES.chat}/:conversationId`} element={<ChatPage />} />
+            <Route path={ROUTES.chatHistory} element={<ChatHistoryPage />} />
             <Route path={ROUTES.notifications} element={<NotificationsPage />} />
             <Route path={ROUTES.profile} element={<ProfilePage />} />
+            <Route path={ROUTES.help} element={<HelpSupportPage />} />
+
+            <Route element={<RequireRole role="platform_admin" />}>
+              <Route path={ROUTES.platformAdminBilling} element={<PlatformAdminBillingPage />} />
+            </Route>
 
             <Route element={<BlockRole role="agent_user" />}>
               <Route path={ROUTES.emailIntelligence} element={<EmailIntelligencePage />} />
+              {/* Legacy/OAuth-callback path — backend/src/outlook/outlook.controller.ts
+                  redirects here directly after the Microsoft OAuth round trip
+                  (`/integrations?outlook=<status>`), and IntegrationsPage's own
+                  useEffect reads that query param. Kept rendering the same page
+                  so that flow keeps working; Settings → Integrations below is
+                  the discoverable entry point now. */}
               <Route path={ROUTES.integrations} element={<IntegrationsPage />} />
+              <Route path={ROUTES.billing} element={<BillingPage />} />
               <Route path={ROUTES.settings} element={<SettingsLayout />}>
                 <Route index element={<Navigate to={ROUTES.settingsGeneral} replace />} />
                 <Route path="general" element={<GeneralSettings />} />
                 <Route path="notifications" element={<NotificationSettings />} />
                 <Route path="security" element={<SecuritySettings />} />
                 <Route path="agent-roles" element={<AgentRolesSettings />} />
+                <Route path="integrations" element={<IntegrationsPage />} />
                 <Route element={<RequireRole role="admin" />}>
                   <Route path="users" element={<UsersSettings />} />
                   <Route path="sales-targets" element={<SalesTargetsSettings />} />
                   <Route path="deal-assignment" element={<DealAssignmentSettings />} />
-                  <Route path="workflows" element={<WorkflowsSettings />} />
+                </Route>
+                <Route element={<RequireRole role={['owner', 'admin']} />}>
+                  <Route path="royalty-rules" element={<RoyaltyRulesSettings />} />
                 </Route>
               </Route>
             </Route>
           </Route>
         </Route>
+
+        {/* Unguarded: reached mid-flow with no session yet — the page
+            itself establishes one from the token in the URL. */}
+        <Route path={ROUTES.oauthCallback} element={<OAuthCallbackPage />} />
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

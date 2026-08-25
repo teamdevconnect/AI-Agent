@@ -22,7 +22,7 @@ because of this layer.
 
 from concurrent.futures import ThreadPoolExecutor
 
-from app.agent import anthropic_client, cancellation, groq_client
+from app.agent import anthropic_client, cancellation, groq_client, trivial_router
 from app.agent.graph import final_text, get_graph
 from app.agent.llm_client import SYSTEM_PROMPT
 from app.agent.specialists import SPECIALISTS
@@ -66,6 +66,7 @@ def _reflect(state_input: dict, output_items: list[dict], tools_used: list[str])
             organization_id=state_input.get("organization_id"),
             user_id=state_input.get("user_id", ""),
             conversation_id=state_input.get("conversation_id", ""),
+            request_id=state_input.get("request_id", ""),
         )
     except Exception:
         return {"messages": output_items, "tools_used": tools_used}
@@ -126,6 +127,7 @@ def _run_specialist(
     organization_id: str | None,
     conversation_id: str,
     cancel_event,
+    request_id: str = "",
 ) -> dict:
     spec = SPECIALISTS[agent_key]
     result = get_graph().invoke(
@@ -142,6 +144,7 @@ def _run_specialist(
             "system_prompt": spec["system_prompt"],
             "allowed_tools": spec["tools"],
             "cancel_event": cancel_event,
+            "request_id": request_id,
         }
     )
     return {"agent": agent_key, "task": task, "output": final_text(result), "tools_used": result.get("tools_used", [])}
@@ -158,15 +161,22 @@ def run(state_input: dict) -> dict:
     state_input = {**state_input, "cancel_event": cancel_event}
 
     try:
-        try:
-            plan = anthropic_client.classify_request(
-                state_input["messages"],
-                organization_id=state_input.get("organization_id"),
-                user_id=state_input.get("user_id", ""),
-                conversation_id=state_input.get("conversation_id", ""),
-            )
-        except Exception:
-            plan = {"mode": "simple", "assignments": [], "reasoning": ""}
+        # Deterministic, zero-cost pre-filter tried first — see
+        # app.agent.trivial_router's own docstring for why its allow-list is
+        # deliberately narrow. Falls through to the real classify_request
+        # call (unchanged below) whenever it isn't confident.
+        plan = trivial_router.trivial_plan(state_input["messages"])
+        if plan is None:
+            try:
+                plan = anthropic_client.classify_request(
+                    state_input["messages"],
+                    organization_id=state_input.get("organization_id"),
+                    user_id=state_input.get("user_id", ""),
+                    conversation_id=state_input.get("conversation_id", ""),
+                    request_id=state_input.get("request_id", ""),
+                )
+            except Exception:
+                plan = {"mode": "simple", "assignments": [], "reasoning": ""}
 
         if on_event and plan.get("reasoning"):
             on_event({"type": "reasoning", "text": plan["reasoning"]})
@@ -189,6 +199,7 @@ def run(state_input: dict) -> dict:
                     organization_id=state_input.get("organization_id"),
                     user_id=state_input.get("user_id", ""),
                     conversation_id=state_input.get("conversation_id", ""),
+                    request_id=state_input.get("request_id", ""),
                 )
                 return {"messages": output_items, "tools_used": []}
             except Exception:
@@ -213,6 +224,7 @@ def run(state_input: dict) -> dict:
                     state_input.get("organization_id"),
                     state_input["conversation_id"],
                     cancel_event,
+                    state_input.get("request_id", ""),
                 )
                 for a in assignments
             ]
@@ -239,6 +251,7 @@ def run(state_input: dict) -> dict:
             organization_id=state_input.get("organization_id"),
             user_id=state_input.get("user_id", ""),
             conversation_id=state_input.get("conversation_id", ""),
+            request_id=state_input.get("request_id", ""),
         )
         tools_used = [tool for f in findings for tool in f["tools_used"]]
 

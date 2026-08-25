@@ -2,15 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import { FiPaperclip, FiImage, FiMic, FiSend, FiSquare, FiX, FiFile } from 'react-icons/fi';
+import { FiPaperclip, FiImage, FiMic, FiSend, FiSquare } from 'react-icons/fi';
 import { IconButton, Tooltip } from '@/components/ui';
 import { useAutosizeTextarea } from '@/hooks/useAutosizeTextarea';
 import { useChatStore } from '@/stores/chatStore';
 import { chatService } from '@/services/chatService';
 import { mockSlashCommands } from '@/services/mock/fixtures/chat';
-import { formatBytes } from '@/utils/format';
-import { generateId } from '@/utils/id';
-import type { ChatAgent, MessageAttachment } from '@/types';
+import type { ChatAgent } from '@/types';
 import styles from './ChatInput.module.css';
 
 type Popup = { type: 'slash'; query: string } | { type: 'mention'; query: string } | null;
@@ -22,7 +20,6 @@ export interface ChatInputProps {
 
 export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
   const [text, setText] = useState('');
-  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [focused, setFocused] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [popup, setPopup] = useState<Popup>(null);
@@ -118,10 +115,9 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
   const handleSubmit = () => {
     if (isStreamingCurrent) return;
     const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0) return;
-    void sendMessage(trimmed || 'Please review the attached file(s).', selectedAgentId ?? undefined);
+    if (!trimmed) return;
+    void sendMessage(trimmed, selectedAgentId ?? undefined);
     setText('');
-    setAttachments([]);
     setPopup(null);
   };
 
@@ -156,24 +152,15 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
     }
   };
 
+  // handleSubmit only ever sends `text` — there is no attachments field
+  // anywhere on SendMessageDto/the chat send path, so a file picked here
+  // used to render a normal-looking "attached" chip and then silently never
+  // reach the backend at all, with nothing telling the user their file
+  // wasn't actually sent. Until real upload support exists, surface that
+  // plainly instead of pretending it worked.
   const addFiles = (files: FileList | File[]) => {
-    const next: MessageAttachment[] = Array.from(files).map((file) => ({
-      id: generateId('att'),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      kind: file.type.startsWith('image/') ? 'image' : 'document',
-      url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
-    }));
-    setAttachments((prev) => [...prev, ...next]);
-  };
-
-  const removeAttachment = (id: string) => {
-    setAttachments((prev) => {
-      const target = prev.find((a) => a.id === id);
-      if (target?.url) URL.revokeObjectURL(target.url);
-      return prev.filter((a) => a.id !== id);
-    });
+    if (files.length === 0) return;
+    toast.error("File attachments aren't supported yet — only your typed message will be sent.");
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -230,21 +217,6 @@ export function ChatInput({ prefillText, onPrefillConsumed }: ChatInputProps) {
                 </span>
               </button>
             ))}
-        </div>
-      )}
-
-      {attachments.length > 0 && (
-        <div className={styles.attachmentsRow}>
-          {attachments.map((attachment) => (
-            <span key={attachment.id} className={styles.attachmentChip}>
-              {attachment.kind === 'image' ? <FiImage /> : <FiFile />}
-              <span className={styles.attachmentName}>{attachment.name}</span>
-              <span>({formatBytes(attachment.size)})</span>
-              <button type="button" className={styles.attachmentRemove} onClick={() => removeAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`}>
-                <FiX size={14} />
-              </button>
-            </span>
-          ))}
         </div>
       )}
 

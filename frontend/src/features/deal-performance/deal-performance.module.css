@@ -89,6 +89,12 @@
   gap: var(--space-4);
 }
 
+/* Phase 15 — holds the "Show more details" collapse toggle for Customer
+   Activity views (DealPerformancePage, MyCustomerActivityPage). */
+.detailsToggleRow {
+  display: flex;
+}
+
 .threeColumn {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

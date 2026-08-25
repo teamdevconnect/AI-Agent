@@ -11,9 +11,12 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const auth_module_1 = require("../auth/auth.module");
 const chat_module_1 = require("../chat/chat.module");
+const organizations_module_1 = require("../organizations/organizations.module");
+const users_module_1 = require("../users/users.module");
 const notifications_controller_1 = require("./notifications.controller");
 const notifications_service_1 = require("./notifications.service");
 const notification_schema_1 = require("./schemas/notification.schema");
+const web_push_service_1 = require("./web-push.service");
 let NotificationsModule = class NotificationsModule {
 };
 exports.NotificationsModule = NotificationsModule;
@@ -23,9 +26,11 @@ exports.NotificationsModule = NotificationsModule = __decorate([
             mongoose_1.MongooseModule.forFeature([{ name: notification_schema_1.Notification.name, schema: notification_schema_1.NotificationSchema }]),
             auth_module_1.AuthModule,
             chat_module_1.ChatModule,
+            users_module_1.UsersModule,
+            organizations_module_1.OrganizationsModule,
         ],
         controllers: [notifications_controller_1.NotificationsController],
-        providers: [notifications_service_1.NotificationsService],
+        providers: [notifications_service_1.NotificationsService, web_push_service_1.WebPushService],
         exports: [notifications_service_1.NotificationsService],
     })
 ], NotificationsModule);

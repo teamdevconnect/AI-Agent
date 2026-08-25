@@ -8,6 +8,9 @@ export interface BackendNotification {
   description: string;
   read: boolean;
   createdAt: string;
+  source?: string;
+  entityType?: AppNotification['entityType'];
+  entityId?: string;
 }
 
 export function toNotification(n: BackendNotification): AppNotification {
@@ -18,7 +21,17 @@ export function toNotification(n: BackendNotification): AppNotification {
     description: n.description,
     timestamp: n.createdAt,
     read: n.read,
+    source: n.source,
+    entityType: n.entityType,
+    entityId: n.entityId,
   };
+}
+
+export interface NotificationPreferences {
+  desktopPush: boolean;
+  mobilePush: boolean;
+  email: boolean;
+  orgPolicy: { emailEnabled: boolean; pushEnabled: boolean };
 }
 
 export const notificationsService = {
@@ -33,5 +46,15 @@ export const notificationsService = {
 
   async markAllRead(): Promise<void> {
     await axiosClient.post('/notifications/read-all');
+  },
+
+  async getPreferences(): Promise<NotificationPreferences> {
+    const { data } = await axiosClient.get<NotificationPreferences>('/notifications/preferences');
+    return data;
+  },
+
+  async updatePreferences(patch: Partial<Pick<NotificationPreferences, 'desktopPush' | 'mobilePush' | 'email'>>): Promise<NotificationPreferences> {
+    const { data } = await axiosClient.put<NotificationPreferences>('/notifications/preferences', patch);
+    return data;
   },
 };

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -21,6 +21,33 @@ export class CustomerActivityController {
     const canOverride = user.roles.includes('admin') || user.roles.includes('owner');
     const storeConstraint = canOverride ? storeIdOverride : user.storeId;
     return this.customerActivityService.getOverview(user, storeConstraint);
+  }
+
+  // Phase 19 — Unified Analytics Dashboard's Customers & Email tab. One
+  // endpoint, internal role branching (including consultant, unlike
+  // `overview` above which predates the dashboard needing a consultant-
+  // reachable path) — takes a raw from/to day range so this always shares
+  // the exact same window as the Email Activity widget's own filter,
+  // instead of one being month-scoped and the other day-scoped.
+  @Get('breakdown-stats')
+  @UseGuards(RolesGuard)
+  @Roles('owner', 'admin', 'manager', 'consultant')
+  breakdownStats(@CurrentUser() user: JwtPayload, @Query('from') from: string, @Query('to') to: string) {
+    if (!from || !to) throw new BadRequestException('from and to are required');
+    const start = new Date(from);
+    // Explicit 'Z' (UTC) end-of-day — `.setHours()` mutates in the server
+    // process's local timezone, which drifts hours off this boundary on any
+    // server not running in UTC.
+    const end = new Date(`${to}T23:59:59.999Z`);
+    const canOverride = user.roles.includes('admin') || user.roles.includes('owner');
+    if (canOverride) {
+      return this.customerActivityService.getCustomerBreakdownForRange(user.organizationId, start, end);
+    }
+    if (user.roles.includes('manager')) {
+      if (!user.storeId) throw new BadRequestException('No store assigned to this account');
+      return this.customerActivityService.getCustomerBreakdownForRange(user.organizationId, start, end, user.storeId);
+    }
+    return this.customerActivityService.getCustomerBreakdownForRange(user.organizationId, start, end, undefined, user.sub);
   }
 
   @Post('generate-summary')

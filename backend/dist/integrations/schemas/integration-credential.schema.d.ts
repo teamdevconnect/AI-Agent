@@ -3,8 +3,11 @@ export type IntegrationCredentialDocument = IntegrationCredential & Document<Typ
 export declare class IntegrationCredential {
     organizationId: string;
     provider: string;
-    apiKey: string;
+    apiKey?: string;
     baseUrl?: string;
+    authType?: 'apiKey' | 'apiKeyBaseUrl' | 'bearer' | 'basic' | 'customHeaders';
+    credentialsEncrypted?: string;
+    healthCheckPath?: string;
 }
 export declare const IntegrationCredentialSchema: import("mongoose").Schema<IntegrationCredential, import("mongoose").Model<IntegrationCredential, any, any, any, Document<unknown, any, IntegrationCredential, any, {}> & IntegrationCredential & {
     _id: Types.ObjectId;

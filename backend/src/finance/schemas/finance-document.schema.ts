@@ -162,6 +162,32 @@ export class FinanceDocument {
 
   @Prop({ default: 0 })
   vectorChunkCount: number;
+
+  // ---- Business Intelligence: Vendor Profitability linkage ----
+  // The real Vendor._id, once this document has been linked to a master
+  // vendor record — distinct from vendorName/vendorId above, which stay
+  // untouched as raw AI-extraction output (free text, never validated
+  // against anything). vendorRef is the reliable join Vendor Profitability
+  // reporting actually uses.
+  @Prop({ index: true })
+  vendorRef?: string;
+
+  // Which customer transaction this vendor cost was incurred for — unset on
+  // every existing document (no backfill path exists; there's no reliable
+  // historical vendor<->deal correlation). Vendor Profitability reporting
+  // must show real coverage stats, never treat an unlinked document as
+  // zero-cost.
+  @Prop({ index: true })
+  dealId?: string;
+
+  @Prop({ index: true })
+  quoteId?: string;
+
+  // Optional — a payment can exist with no prior VendorQuote (a direct/
+  // no-quote purchase); when set, links this payment back to what the
+  // vendor originally quoted for the same cost.
+  @Prop()
+  vendorQuoteId?: string;
 }
 
 export const FinanceDocumentSchema = SchemaFactory.createForClass(FinanceDocument);
@@ -169,3 +195,6 @@ FinanceDocumentSchema.index({ organizationId: 1, createdAt: -1 });
 FinanceDocumentSchema.index({ organizationId: 1, paymentStatus: 1 });
 FinanceDocumentSchema.index({ organizationId: 1, vendorName: 1 });
 FinanceDocumentSchema.index({ organizationId: 1, expenseCategory: 1 });
+FinanceDocumentSchema.index({ organizationId: 1, dealId: 1 });
+FinanceDocumentSchema.index({ organizationId: 1, quoteId: 1 });
+FinanceDocumentSchema.index({ organizationId: 1, vendorRef: 1 });

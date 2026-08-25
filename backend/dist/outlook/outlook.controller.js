@@ -37,25 +37,49 @@ let OutlookController = OutlookController_1 = class OutlookController {
         return this.outlookService.getContacts();
     }
     getConnectUrl(user) {
-        const state = this.jwtService.sign({ sub: user.sub }, { expiresIn: '10m' });
+        const state = this.jwtService.sign({ sub: user.sub, organizationId: user.organizationId }, { expiresIn: '10m' });
         return { url: this.outlookService.buildAuthorizeUrl(state) };
     }
-    async callback(code, state, error) {
+    async callback(code, state, error, errorDescription) {
         const frontendUrl = this.config.get('corsOrigin');
         if (error || !code || !state) {
-            this.logger.warn(`Outlook callback missing params (error=${error})`);
-            return { url: `${frontendUrl}/chat?outlook=error`, statusCode: 302 };
+            this.logger.warn(`Outlook callback missing params (error=${error}, description=${errorDescription})`);
+            const reason = (0, outlook_service_1.isAdminConsentRequiredError)(errorDescription) ? 'admin_consent_required' : 'error';
+            return { url: `${frontendUrl}/integrations?outlook=${reason}`, statusCode: 302 };
         }
         try {
             const payload = this.jwtService.verify(state);
-            await this.outlookService.handleCallback(code, payload.sub);
-            return { url: `${frontendUrl}/chat?outlook=connected`, statusCode: 302 };
+            await this.outlookService.handleCallback(code, payload.sub, payload.organizationId);
+            return { url: `${frontendUrl}/integrations?outlook=connected`, statusCode: 302 };
         }
         catch (err) {
             const detail = err.response?.data ?? err.message;
             this.logger.error(`Outlook callback failed: ${JSON.stringify(detail)}`);
-            return { url: `${frontendUrl}/chat?outlook=error`, statusCode: 302 };
+            return { url: `${frontendUrl}/integrations?outlook=error`, statusCode: 302 };
         }
+    }
+    getAdminConsentUrl(user) {
+        const state = this.jwtService.sign({ sub: user.sub, organizationId: user.organizationId, email: user.email }, { expiresIn: '10m' });
+        return { url: this.outlookService.buildAdminConsentUrl(state) };
+    }
+    async adminConsentCallback(tenant, adminConsent, state, error, errorDescription) {
+        const frontendUrl = this.config.get('corsOrigin');
+        if (error || adminConsent !== 'True' || !tenant || !state) {
+            this.logger.warn(`Admin consent declined or failed (error=${error}, description=${errorDescription})`);
+            return { url: `${frontendUrl}/integrations?outlook=admin_consent_declined`, statusCode: 302 };
+        }
+        try {
+            const payload = this.jwtService.verify(state);
+            await this.outlookService.recordTenantAuthorization(tenant, payload.organizationId, payload.sub, payload.email);
+            return { url: `${frontendUrl}/integrations?outlook=admin_consent_granted`, statusCode: 302 };
+        }
+        catch (err) {
+            this.logger.error(`Admin consent callback failed: ${err.message}`);
+            return { url: `${frontendUrl}/integrations?outlook=error`, statusCode: 302 };
+        }
+    }
+    getTenantAuthorizationStatus(user) {
+        return this.outlookService.getTenantAuthorizationStatus(user.organizationId);
     }
     getStatus(user) {
         return this.outlookService.getStatus(user.sub);
@@ -68,6 +92,9 @@ let OutlookController = OutlookController_1 = class OutlookController {
     }
     disconnectAccount(user, email) {
         return this.outlookService.disconnect(user.sub, decodeURIComponent(email));
+    }
+    listOrgAccounts(user) {
+        return this.outlookService.listOrgAccounts(user.organizationId);
     }
 };
 exports.OutlookController = OutlookController;
@@ -106,10 +133,39 @@ __decorate([
     __param(0, (0, common_1.Query)('code')),
     __param(1, (0, common_1.Query)('state')),
     __param(2, (0, common_1.Query)('error')),
+    __param(3, (0, common_1.Query)('error_description')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], OutlookController.prototype, "callback", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Get)('admin-consent-url'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], OutlookController.prototype, "getAdminConsentUrl", null);
+__decorate([
+    (0, common_1.Get)('admin-consent-callback'),
+    (0, common_1.Redirect)(),
+    __param(0, (0, common_1.Query)('tenant')),
+    __param(1, (0, common_1.Query)('admin_consent')),
+    __param(2, (0, common_1.Query)('state')),
+    __param(3, (0, common_1.Query)('error')),
+    __param(4, (0, common_1.Query)('error_description')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], OutlookController.prototype, "adminConsentCallback", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Get)('tenant-authorization-status'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], OutlookController.prototype, "getTenantAuthorizationStatus", null);
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Get)('status'),
@@ -144,6 +200,14 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", void 0)
 ], OutlookController.prototype, "disconnectAccount", null);
+__decorate([
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, common_1.Get)('org-accounts'),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], OutlookController.prototype, "listOrgAccounts", null);
 exports.OutlookController = OutlookController = OutlookController_1 = __decorate([
     (0, common_1.Controller)('outlook'),
     __metadata("design:paramtypes", [outlook_service_1.OutlookService,

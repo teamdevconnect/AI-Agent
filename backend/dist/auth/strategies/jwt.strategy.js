@@ -14,8 +14,9 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const passport_1 = require("@nestjs/passport");
 const passport_jwt_1 = require("passport-jwt");
+const users_service_1 = require("../../users/users.service");
 let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(passport_jwt_1.Strategy) {
-    constructor(config) {
+    constructor(config, usersService) {
         const secret = config.get('jwt.secret');
         if (!secret) {
             throw new Error('JWT_SECRET is not set');
@@ -25,17 +26,40 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
             ignoreExpiration: false,
             secretOrKey: secret,
         });
+        this.usersService = usersService;
     }
-    validate(payload) {
+    async validate(payload) {
         if (!payload?.sub) {
             throw new common_1.UnauthorizedException();
         }
-        return payload;
+        if (payload.purpose) {
+            throw new common_1.UnauthorizedException();
+        }
+        const user = await this.usersService.findById(payload.sub);
+        if (!user || user.active === false) {
+            throw new common_1.UnauthorizedException();
+        }
+        if (!payload.jti || !user.sessions.some((s) => s.jti === payload.jti)) {
+            throw new common_1.UnauthorizedException();
+        }
+        void this.usersService.touchSessionIfStale(user._id.toString(), payload.jti);
+        return {
+            sub: user._id.toString(),
+            email: user.email,
+            roles: user.roles,
+            organizationId: user.organizationId,
+            storeId: user.storeId,
+            assignedAgentId: user.assignedAgentId,
+            department: user.department,
+            jti: payload.jti,
+            authMethod: 'session',
+        };
     }
 };
 exports.JwtStrategy = JwtStrategy;
 exports.JwtStrategy = JwtStrategy = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [config_1.ConfigService])
+    __metadata("design:paramtypes", [config_1.ConfigService,
+        users_service_1.UsersService])
 ], JwtStrategy);
 //# sourceMappingURL=jwt.strategy.js.map

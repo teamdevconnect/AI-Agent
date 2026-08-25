@@ -2,8 +2,13 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.agent.anthropic_client import extract_role
-from app.models.schemas import RoleGenerateResponse, SourceRef
+from app.agent.anthropic_client import extract_role, extract_role_from_description
+from app.models.schemas import (
+    RoleGenerateFromDescriptionRequest,
+    RoleGenerateFromDescriptionResponse,
+    RoleGenerateResponse,
+    SourceRef,
+)
 from app.rag.embeddings import embed
 from app.rag.loader import load_text
 from app.rag.splitter import split_text
@@ -24,7 +29,7 @@ async def generate_role(
     if not text.strip():
         raise HTTPException(422, "Could not extract any text from the uploaded document")
 
-    extracted = extract_role(text)
+    extracted = extract_role(text, organization_id=user.get("organizationId"), user_id=user_id)
 
     chunks = split_text(text)
     document_id = str(uuid.uuid4())
@@ -40,6 +45,20 @@ async def generate_role(
         sourceDocumentName=file.filename,
         **extracted,
     )
+
+
+# Agent Builder Phase 1 — Describe method. No file, no Qdrant document; the
+# generated persona still gets reviewed/edited in the same frontend form as
+# the document path before Nest ever persists it.
+@router.post("/roles/generate-from-description", response_model=RoleGenerateFromDescriptionResponse)
+def generate_role_from_description(
+    payload: RoleGenerateFromDescriptionRequest,
+    user: dict = Depends(get_current_user),
+):
+    extracted = extract_role_from_description(
+        payload.description, organization_id=user.get("organizationId"), user_id=payload.user_id
+    )
+    return RoleGenerateFromDescriptionResponse(**extracted)
 
 
 @router.post("/roles/publish-source")
