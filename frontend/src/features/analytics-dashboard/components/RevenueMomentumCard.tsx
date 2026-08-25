@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import clsx from 'clsx';
@@ -7,6 +7,7 @@ import { FiArrowUpRight, FiArrowDownRight } from 'react-icons/fi';
 import { Card, InfoPopover } from '@/components/ui';
 import { formatINR as money } from '@/utils/currency';
 import { dealsService } from '@/services/dealsService';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import styles from './RevenueMomentumCard.module.css';
 
 export interface RevenueMomentumCardProps {
@@ -23,6 +24,7 @@ export interface RevenueMomentumCardProps {
 // no won deals genuinely show zero rather than being skipped, so the chart
 // doesn't imply activity that didn't happen.
 export function RevenueMomentumCard({ dateFrom, dateTo, storeId }: RevenueMomentumCardProps) {
+  const [showDeals, setShowDeals] = useState(false);
   const { data: wonDeals, isLoading } = useQuery({
     queryKey: ['analytics-revenue-momentum', dateFrom, dateTo, storeId],
     queryFn: () =>
@@ -59,8 +61,15 @@ export function RevenueMomentumCard({ dateFrom, dateTo, storeId }: RevenueMoment
     return { series: points, total: totalValue, momentumPct: pct };
   }, [wonDeals, dateFrom, dateTo]);
 
+  const dealRows: DrillDownRow[] = (wonDeals?.items ?? []).map((d) => ({
+    id: d._id,
+    title: d.name,
+    subtitle: d.expectedClosingDate,
+    value: d.monetaryValue,
+  }));
+
   return (
-    <Card className={styles.card}>
+    <Card className={styles.card} interactive={series.length > 1} onClick={series.length > 1 ? () => setShowDeals(true) : undefined}>
       <div className={styles.label}>Performance Signal</div>
       <div className={styles.title}>
         Revenue momentum
@@ -123,6 +132,14 @@ export function RevenueMomentumCard({ dateFrom, dateTo, storeId }: RevenueMoment
           </ResponsiveContainer>
         </div>
       )}
+
+      <DrillDownModal
+        open={showDeals}
+        onClose={() => setShowDeals(false)}
+        title="Won Deals in This Period"
+        isLoading={isLoading}
+        rows={dealRows}
+      />
     </Card>
   );
 }

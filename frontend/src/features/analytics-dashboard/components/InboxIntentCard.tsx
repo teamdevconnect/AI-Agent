@@ -3,9 +3,10 @@ import styles from './InboxIntentCard.module.css';
 
 export interface InboxIntentCardProps {
   byIntent: { intent: string; label: string; receivedCount: number }[];
+  onIntentClick?: (intent: string, label: string) => void;
 }
 
-export function InboxIntentCard({ byIntent }: InboxIntentCardProps) {
+export function InboxIntentCard({ byIntent, onIntentClick }: InboxIntentCardProps) {
   const max = Math.max(1, ...byIntent.map((i) => i.receivedCount));
 
   return (
@@ -24,7 +25,13 @@ export function InboxIntentCard({ byIntent }: InboxIntentCardProps) {
       ) : (
         <div className={styles.list}>
           {byIntent.map((row) => (
-            <div key={row.intent} className={styles.row}>
+            <div
+              key={row.intent}
+              className={styles.row}
+              role={onIntentClick ? 'button' : undefined}
+              tabIndex={onIntentClick ? 0 : undefined}
+              onClick={onIntentClick ? () => onIntentClick(row.intent, row.label) : undefined}
+            >
               <div className={styles.rowHeader}>
                 <span className={styles.rowLabel}>{row.label}</span>
                 <span className={styles.rowValue}>{row.receivedCount}</span>

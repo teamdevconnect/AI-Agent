@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import clsx from 'clsx';
 import {
   FiCheckCircle,
+  FiGrid,
   FiKey,
   FiLink,
+  FiLink2,
   FiPlus,
   FiSettings,
   FiShield,
   FiSliders,
   FiTrash2,
   FiUploadCloud,
+  FiZap,
 } from 'react-icons/fi';
-import { Card, Badge, Button, Input, Modal } from '@/components/ui';
+import { Avatar, Card, Badge, Button, Input, Modal } from '@/components/ui';
 import {
   integrationsService,
   resolveManifestAuthType,
@@ -64,6 +68,20 @@ const AUTH_TYPE_LABELS: Record<AuthType, string> = {
 
 const AUTH_TYPES: AuthType[] = ['apiKeyBaseUrl', 'apiKey', 'bearer', 'basic', 'customHeaders'];
 
+// Gorilla Dash — a first-class card/modal over the same generic Custom
+// Integration flow every other CRM/SaaS uses (customHeaders auth type,
+// api.gorilladash.com's own two-header scheme), not a bespoke backend
+// integration. See ResourceEndpointBuilder for configuring its People/
+// Enquiries/Tribes/Forms/Send-Email endpoints once connected — the Dynamic
+// Executor (dynamic-executor.service.ts) runs those, and the AI agent's
+// integration_capabilities/integration_execute tools already expose
+// whatever gets configured there, for any provider, with no provider-
+// specific code on either side.
+const GORILLA_DASH_PROVIDER = 'gorilla_dash';
+const GORILLA_DASH_BASE_URL = 'https://api.gorilladash.com';
+const GORILLA_DASH_API_KEY_HEADER = 'GorillaDash-Api-Key';
+const GORILLA_DASH_API_SECRET_HEADER = 'GorillaDash-Api-Secret';
+
 export function IntegrationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [anthropic, setAnthropic] = useState<CardState>({ status: 'loading' });
@@ -101,6 +119,16 @@ export function IntegrationsPage() {
   // API Integration Engine — which custom integration's resource/endpoint
   // builder modal is open (see ResourceEndpointBuilder.tsx), null when closed.
   const [builderProvider, setBuilderProvider] = useState<string | null>(null);
+
+  // Gorilla Dash — its own dedicated card/modal (2 named fields, not a raw
+  // "Header: value" textarea), but wired to the exact same connect/test
+  // endpoints as the generic Custom Integrations flow below.
+  const [gorillaDashModalOpen, setGorillaDashModalOpen] = useState(false);
+  const [gorillaDashApiKey, setGorillaDashApiKey] = useState('');
+  const [gorillaDashApiSecret, setGorillaDashApiSecret] = useState('');
+  const [testingGorillaDash, setTestingGorillaDash] = useState(false);
+  const [gorillaDashTestResult, setGorillaDashTestResult] = useState<TestConnectionResult | null>(null);
+  const [savingGorillaDash, setSavingGorillaDash] = useState(false);
 
   // Bulk connector import — pastes a whole manifest JSON (base URL + an auth
   // template + modules[].actions[]) and creates the credential plus every
@@ -355,6 +383,65 @@ export function IntegrationsPage() {
     }
   };
 
+  const openGorillaDashModal = () => {
+    setGorillaDashApiKey('');
+    setGorillaDashApiSecret('');
+    setGorillaDashTestResult(null);
+    setGorillaDashModalOpen(true);
+  };
+
+  const buildGorillaDashPayload = () => ({
+    authType: 'customHeaders' as const,
+    baseUrl: GORILLA_DASH_BASE_URL,
+    credentials: {
+      headers: {
+        [GORILLA_DASH_API_KEY_HEADER]: gorillaDashApiKey.trim(),
+        [GORILLA_DASH_API_SECRET_HEADER]: gorillaDashApiSecret.trim(),
+      },
+    },
+  });
+
+  const handleTestGorillaDash = async () => {
+    setTestingGorillaDash(true);
+    setGorillaDashTestResult(null);
+    try {
+      const result = await integrationsService.testCustomIntegrationConnection(GORILLA_DASH_PROVIDER, buildGorillaDashPayload());
+      setGorillaDashTestResult(result);
+    } catch (error) {
+      setGorillaDashTestResult({ ok: false, message: extractErrorMessage(error) });
+    } finally {
+      setTestingGorillaDash(false);
+    }
+  };
+
+  const handleSaveGorillaDash = async () => {
+    if (!gorillaDashApiKey.trim() || !gorillaDashApiSecret.trim()) {
+      toast.error('Both API Key and API Secret are required.');
+      return;
+    }
+    setSavingGorillaDash(true);
+    try {
+      await integrationsService.connectCustomIntegration(GORILLA_DASH_PROVIDER, buildGorillaDashPayload());
+      toast.success('Gorilla Dash connected');
+      setGorillaDashModalOpen(false);
+      loadCustomIntegrations();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    } finally {
+      setSavingGorillaDash(false);
+    }
+  };
+
+  const handleDisconnectGorillaDash = async () => {
+    try {
+      await integrationsService.disconnectCredential(GORILLA_DASH_PROVIDER);
+      toast.success('Gorilla Dash disconnected');
+      loadCustomIntegrations();
+    } catch (error) {
+      toast.error(extractErrorMessage(error));
+    }
+  };
+
   const openImportModal = () => {
     setImportManifestText('');
     setImportManifest(null);
@@ -508,97 +595,163 @@ export function IntegrationsPage() {
     return <Badge variant="neutral" dot>Not connected</Badge>;
   };
 
+  // Gorilla Dash lives in the same customIntegrations list every generic
+  // Custom Integration does (see loadCustomIntegrations) — no separate
+  // status fetch needed. Excluded from the generic list below since it now
+  // has its own dedicated card instead.
+  const gorillaDashIntegration = customIntegrations.find((i) => i.provider === GORILLA_DASH_PROVIDER);
+  const otherCustomIntegrations = customIntegrations.filter((i) => i.provider !== GORILLA_DASH_PROVIDER);
+
   return (
     <div className={styles.page}>
-      <div className={styles.grid}>
-        {/* Anthropic — real API key, stored server-side, used for chat + Outlook mail analysis */}
-        <Card className={styles.card}>
-          <div className={styles.cardHeader}>
-            <span className={styles.iconTile}>A</span>
-            <div className={styles.cardTitleRow}>
-              <div className={styles.cardName}>Anthropic</div>
-              <div className={styles.cardCategory}>AI Model</div>
-            </div>
-            {badgeFor(anthropic)}
-          </div>
-          <p className={styles.cardDescription}>Claude models for chat, reasoning, and Outlook mail analysis.</p>
-          {(anthropic.status === 'connected' || anthropic.status === 'error') && anthropic.detail && (
-            <div className={styles.keyPreview}>{anthropic.detail}</div>
-          )}
-          <div className={styles.cardFooter}>
-            {anthropic.status === 'connected' ? (
-              <Button size="sm" variant="secondary" onClick={handleDisconnectAnthropic}>
-                Disconnect
-              </Button>
-            ) : (
-              <Button size="sm" leftIcon={<FiKey />} onClick={openAnthropicModal}>
-                Connect
-              </Button>
-            )}
-          </div>
-        </Card>
+      <div className={styles.header}>
+        <div>
+          <span className={styles.headerBadge}>
+            <FiZap size={12} />
+            Connected Services
+          </span>
+          <h1 className={styles.pageTitle}>Integrations</h1>
+          <p className={styles.pageSubtitle}>
+            Connect the AI model, mailboxes, and business systems HaiVE uses to do real work across your
+            organization — chat and analysis, email, and any CRM or SaaS tool with an API.
+          </p>
+        </div>
+      </div>
 
-        {/* Gmail — real Google OAuth delegated flow, mirrors Outlook below */}
-        <Card className={styles.card}>
-          <div className={styles.cardHeader}>
-            <span className={styles.iconTile}>G</span>
-            <div className={styles.cardTitleRow}>
-              <div className={styles.cardName}>Gmail</div>
-              <div className={styles.cardCategory}>Communication</div>
+      <div>
+        <div className={styles.sectionEyebrow}>Core Connections</div>
+        <div className={styles.grid}>
+          {/* Anthropic — real API key, stored server-side, used for chat + Outlook mail analysis */}
+          <Card className={styles.card}>
+            <div className={styles.cardHeader}>
+              <span className={styles.iconTile}>A</span>
+              <div className={styles.cardTitleRow}>
+                <div className={styles.cardName}>Anthropic</div>
+                <div className={styles.cardCategory}>AI Model</div>
+              </div>
+              {badgeFor(anthropic)}
             </div>
-            {badgeFor({ status: gmailStatus, detail: gmailError })}
-          </div>
-          <p className={styles.cardDescription}>Email via the Gmail API — analyzed using Claude.</p>
-          {gmailStatus === 'connected' && (
-            <div className={styles.keyPreview}>
-              {gmailAccounts.find((a) => a.isActive)?.email ?? gmailAccounts[0].email}
-              {gmailAccounts.length > 1 && ` (+${gmailAccounts.length - 1} more)`}
-            </div>
-          )}
-          {gmailStatus === 'error' && gmailError && <div className={styles.keyPreview}>{gmailError}</div>}
-          <div className={styles.cardFooter}>
-            {gmailStatus === 'connected' ? (
-              <Button size="sm" variant="secondary" leftIcon={<FiSettings />} onClick={() => setGmailModalOpen(true)}>
-                Manage Accounts
-              </Button>
-            ) : (
-              <Button size="sm" leftIcon={<FiCheckCircle />} onClick={handleConnectGmail}>
-                Connect
-              </Button>
+            <p className={styles.cardDescription}>Claude models for chat, reasoning, and Outlook mail analysis.</p>
+            {(anthropic.status === 'connected' || anthropic.status === 'error') && anthropic.detail && (
+              <div className={styles.keyPreview}>{anthropic.detail}</div>
             )}
-          </div>
-        </Card>
+            <div className={styles.cardFooter}>
+              {anthropic.status === 'connected' ? (
+                <Button size="sm" variant="secondary" onClick={handleDisconnectAnthropic}>
+                  Disconnect
+                </Button>
+              ) : (
+                <Button size="sm" leftIcon={<FiKey />} onClick={openAnthropicModal}>
+                  Connect
+                </Button>
+              )}
+            </div>
+          </Card>
 
-        {/* Outlook — real Microsoft Graph delegated OAuth flow, supports multiple connected accounts */}
-        <Card className={styles.card}>
-          <div className={styles.cardHeader}>
-            <span className={styles.iconTile}>O</span>
-            <div className={styles.cardTitleRow}>
-              <div className={styles.cardName}>Microsoft Outlook</div>
-              <div className={styles.cardCategory}>Communication</div>
+          {/* Gmail — real Google OAuth delegated flow, mirrors Outlook below */}
+          <Card className={styles.card}>
+            <div className={styles.cardHeader}>
+              <span className={clsx(styles.iconTile, styles.iconTileGmail)}>G</span>
+              <div className={styles.cardTitleRow}>
+                <div className={styles.cardName}>Gmail</div>
+                <div className={styles.cardCategory}>Communication</div>
+              </div>
+              {badgeFor({ status: gmailStatus, detail: gmailError })}
             </div>
-            {badgeFor({ status: outlookStatus, detail: outlookError })}
-          </div>
-          <p className={styles.cardDescription}>Email and calendar via Microsoft Graph — analyzed using Claude.</p>
-          {outlookStatus === 'connected' && (
-            <div className={styles.keyPreview}>
-              {outlookAccounts.find((a) => a.isActive)?.email ?? outlookAccounts[0].email}
-              {outlookAccounts.length > 1 && ` (+${outlookAccounts.length - 1} more)`}
-            </div>
-          )}
-          {outlookStatus === 'error' && outlookError && <div className={styles.keyPreview}>{outlookError}</div>}
-          <div className={styles.cardFooter}>
-            {outlookStatus === 'connected' ? (
-              <Button size="sm" variant="secondary" leftIcon={<FiSettings />} onClick={() => setOutlookModalOpen(true)}>
-                Manage Accounts
-              </Button>
-            ) : (
-              <Button size="sm" leftIcon={<FiCheckCircle />} onClick={handleConnectOutlook}>
-                Connect
-              </Button>
+            <p className={styles.cardDescription}>Email via the Gmail API — analyzed using Claude.</p>
+            {gmailStatus === 'connected' && (
+              <div className={styles.keyPreview}>
+                {gmailAccounts.find((a) => a.isActive)?.email ?? gmailAccounts[0].email}
+                {gmailAccounts.length > 1 && ` (+${gmailAccounts.length - 1} more)`}
+              </div>
             )}
-          </div>
-        </Card>
+            {gmailStatus === 'error' && gmailError && <div className={styles.keyPreview}>{gmailError}</div>}
+            <div className={styles.cardFooter}>
+              {gmailStatus === 'connected' ? (
+                <Button size="sm" variant="secondary" leftIcon={<FiSettings />} onClick={() => setGmailModalOpen(true)}>
+                  Manage Accounts
+                </Button>
+              ) : (
+                <Button size="sm" leftIcon={<FiCheckCircle />} onClick={handleConnectGmail}>
+                  Connect
+                </Button>
+              )}
+            </div>
+          </Card>
+
+          {/* Outlook — real Microsoft Graph delegated OAuth flow, supports multiple connected accounts */}
+          <Card className={styles.card}>
+            <div className={styles.cardHeader}>
+              <span className={clsx(styles.iconTile, styles.iconTileOutlook)}>O</span>
+              <div className={styles.cardTitleRow}>
+                <div className={styles.cardName}>Microsoft Outlook</div>
+                <div className={styles.cardCategory}>Communication</div>
+              </div>
+              {badgeFor({ status: outlookStatus, detail: outlookError })}
+            </div>
+            <p className={styles.cardDescription}>Email and calendar via Microsoft Graph — analyzed using Claude.</p>
+            {outlookStatus === 'connected' && (
+              <div className={styles.keyPreview}>
+                {outlookAccounts.find((a) => a.isActive)?.email ?? outlookAccounts[0].email}
+                {outlookAccounts.length > 1 && ` (+${outlookAccounts.length - 1} more)`}
+              </div>
+            )}
+            {outlookStatus === 'error' && outlookError && <div className={styles.keyPreview}>{outlookError}</div>}
+            <div className={styles.cardFooter}>
+              {outlookStatus === 'connected' ? (
+                <Button size="sm" variant="secondary" leftIcon={<FiSettings />} onClick={() => setOutlookModalOpen(true)}>
+                  Manage Accounts
+                </Button>
+              ) : (
+                <Button size="sm" leftIcon={<FiCheckCircle />} onClick={handleConnectOutlook}>
+                  Connect
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <div>
+        <div className={styles.sectionEyebrow}>Business Systems</div>
+        <div className={styles.grid}>
+          {/* Gorilla Dash — a dedicated card over the same generic Custom
+              Integration flow (customHeaders auth) every other CRM/SaaS
+              uses; see buildGorillaDashPayload/handleSaveGorillaDash above. */}
+          <Card className={styles.card}>
+            <div className={styles.cardHeader}>
+              <span className={clsx(styles.iconTile, styles.iconTileGorillaDash)}>🦍</span>
+              <div className={styles.cardTitleRow}>
+                <div className={styles.cardName}>Gorilla Dash</div>
+                <div className={styles.cardCategory}>CRM</div>
+              </div>
+              {badgeFor({ status: gorillaDashIntegration ? 'connected' : 'disconnected' })}
+            </div>
+            <p className={styles.cardDescription}>Sync people, enquiries, and tribe data — connect it to your AI Agent.</p>
+            {gorillaDashIntegration?.baseUrl && <div className={styles.keyPreview}>{gorillaDashIntegration.baseUrl}</div>}
+            <div className={styles.cardFooter}>
+              {gorillaDashIntegration ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    leftIcon={<FiSliders />}
+                    onClick={() => setBuilderProvider(GORILLA_DASH_PROVIDER)}
+                  >
+                    Manage Resources
+                  </Button>
+                  <Button size="sm" variant="ghost" leftIcon={<FiTrash2 />} onClick={handleDisconnectGorillaDash}>
+                    Disconnect
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" leftIcon={<FiLink />} onClick={openGorillaDashModal}>
+                  Connect
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
       </div>
 
       {/* Custom Integrations — connect any CRM/SaaS via API Key, Bearer
@@ -607,8 +760,16 @@ export function IntegrationsPage() {
           offered here. */}
       <Card className={styles.customSection}>
         <div className={styles.customHeader}>
-          <span className={styles.sectionTitle}>Custom Integrations</span>
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <div className={styles.customHeaderText}>
+            <span className={styles.customHeaderIcon}>
+              <FiLink2 size={18} />
+            </span>
+            <div>
+              <div className={styles.sectionTitle}>Custom Integrations</div>
+              <p className={styles.sectionSubtitle}>Connect any REST API with an API key, bearer token, basic auth, or custom headers.</p>
+            </div>
+          </div>
+          <div className={styles.customActions}>
             <Button size="sm" variant="secondary" leftIcon={<FiUploadCloud />} onClick={openImportModal}>
               Import Connector Config
             </Button>
@@ -617,21 +778,29 @@ export function IntegrationsPage() {
             </Button>
           </div>
         </div>
-        {customIntegrations.length === 0 ? (
-          <p className={styles.cardDescription}>
-            Connect any REST API — a CRM, SaaS tool, or internal system — with an API key, bearer token, basic
-            auth, or custom headers.
-          </p>
+        {otherCustomIntegrations.length === 0 ? (
+          <div className={styles.emptyState}>
+            <span className={styles.emptyStateIcon}>
+              <FiGrid size={20} />
+            </span>
+            <p className={styles.emptyStateText}>
+              No custom integrations yet. Connect a CRM, SaaS tool, or internal system — with an API key, bearer
+              token, basic auth, or custom headers — or import a connector config to set one up in one shot.
+            </p>
+          </div>
         ) : (
           <div className={styles.accountList}>
-            {customIntegrations.map((integration) => (
+            {otherCustomIntegrations.map((integration) => (
               <div key={integration.provider} className={styles.accountRow}>
-                <div>
-                  <div className={styles.accountEmail}>{integration.provider}</div>
-                  <span className={styles.accountOwner}>
-                    {integration.authType ? AUTH_TYPE_LABELS[integration.authType] : 'API Key'}
-                    {integration.baseUrl ? ` · ${integration.baseUrl}` : ''}
-                  </span>
+                <div className={styles.accountRowMain}>
+                  <Avatar name={integration.provider} size="md" />
+                  <div>
+                    <div className={styles.accountEmail}>{integration.provider}</div>
+                    <span className={styles.accountOwner}>
+                      {integration.authType ? AUTH_TYPE_LABELS[integration.authType] : 'API Key'}
+                      {integration.baseUrl ? ` · ${integration.baseUrl}` : ''}
+                    </span>
+                  </div>
                 </div>
                 <div className={styles.accountActions}>
                   <Badge variant="success" dot>
@@ -897,6 +1066,62 @@ export function IntegrationsPage() {
             <Button loading={connecting} onClick={handleSaveAnthropicKey}>
               Save Key
             </Button>
+          </div>
+        </Modal>
+      )}
+
+      {gorillaDashModalOpen && (
+        <Modal
+          open
+          onClose={() => setGorillaDashModalOpen(false)}
+          title="Gorilla Dash Integration"
+          description="Paste your Gorilla Dash API Key and API Secret. They're encrypted and stored server-side — never exposed to the browser."
+        >
+          <div className={styles.accountList}>
+            <Input
+              label="API Key"
+              type="password"
+              value={gorillaDashApiKey}
+              onChange={(e) => {
+                setGorillaDashApiKey(e.target.value);
+                setGorillaDashTestResult(null);
+              }}
+              autoFocus
+            />
+            <Input
+              label="API Secret"
+              type="password"
+              value={gorillaDashApiSecret}
+              onChange={(e) => {
+                setGorillaDashApiSecret(e.target.value);
+                setGorillaDashTestResult(null);
+              }}
+            />
+
+            {gorillaDashTestResult && (
+              <div className={gorillaDashTestResult.ok ? styles.testResultOk : styles.testResultFail}>
+                {gorillaDashTestResult.message}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-2)' }}>
+              <Button
+                variant="secondary"
+                loading={testingGorillaDash}
+                disabled={!gorillaDashApiKey.trim() || !gorillaDashApiSecret.trim()}
+                onClick={handleTestGorillaDash}
+              >
+                Test Connection
+              </Button>
+              <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                <Button variant="ghost" onClick={() => setGorillaDashModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button loading={savingGorillaDash} onClick={handleSaveGorillaDash}>
+                  Save Connection
+                </Button>
+              </div>
+            </div>
           </div>
         </Modal>
       )}

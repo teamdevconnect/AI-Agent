@@ -46,7 +46,12 @@
   min-width: fit-content;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
-  transition: width var(--duration-slow) var(--ease-out);
+  cursor: pointer;
+  transition: width var(--duration-slow) var(--ease-out), opacity 0.12s;
+}
+
+.bar:hover {
+  opacity: 0.85;
 }
 
 .barLabel {

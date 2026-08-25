@@ -9,7 +9,9 @@ import { Card, InfoPopover, SectionCard, Skeleton } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { aiFollowupSummaryService } from '@/services/aiFollowupSummaryService';
 import { emailIntelligenceService } from '@/services/emailIntelligenceService';
+import { EmailDetailModal } from '@/features/business-intelligence/components/EmailDetailModal';
 import { PriorityQueueCard } from './PriorityQueueCard';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import biStyles from '@/features/business-intelligence/business-intelligence.module.css';
 import styles from '../analytics-dashboard.module.css';
 import heroStyles from './AiFollowupHero.module.css';
@@ -21,15 +23,17 @@ function StatCard({
   value,
   note,
   info,
+  onClick,
 }: {
   icon: IconType;
   label: string;
   value: string | number;
   note: string;
   info?: ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <Card className={statStyles.cell}>
+    <Card className={statStyles.cell} interactive={!!onClick} onClick={onClick}>
       <span className={statStyles.iconBadge}>
         <Icon size={16} />
       </span>
@@ -62,6 +66,8 @@ function StatCard({
 export function AiFollowupSummarySection() {
   const queryClient = useQueryClient();
   const [generating, setGenerating] = useState(false);
+  const [openPopup, setOpenPopup] = useState<'due' | 'overdue' | 'priority' | 'replies' | null>(null);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['dash-ai-followup-summary'],
@@ -90,19 +96,47 @@ export function AiFollowupSummarySection() {
   const summary = data?.aiGeneratedSummary ?? null;
   const reminders = data?.followUpReminders ?? [];
 
-  const { dueTodayCount, overdueCount } = useMemo(() => {
+  const { dueTodayCount, overdueCount, dueTodayRows, overdueRows } = useMemo(() => {
     const today = dayjs();
     const pending = reminders.filter((f) => f.status === 'pending');
+    const toRow = (f: (typeof reminders)[number]): DrillDownRow => ({
+      id: f._id,
+      title: f.title,
+      subtitle: f.businessName ?? undefined,
+      meta: new Date(f.dueDate).toLocaleDateString(),
+    });
+    const dueToday = pending.filter((f) => dayjs(f.dueDate).isSame(today, 'day'));
+    const overdue = pending.filter((f) => dayjs(f.dueDate).isBefore(today, 'day'));
     return {
-      dueTodayCount: pending.filter((f) => dayjs(f.dueDate).isSame(today, 'day')).length,
-      overdueCount: pending.filter((f) => dayjs(f.dueDate).isBefore(today, 'day')).length,
+      dueTodayCount: dueToday.length,
+      overdueCount: overdue.length,
+      dueTodayRows: dueToday.map(toRow),
+      overdueRows: overdue.map(toRow),
     };
   }, [reminders]);
 
-  const suggestedRepliesCount = useMemo(
-    () => (pendingEmails ?? []).filter((e) => !!e.draftReply).length,
-    [pendingEmails],
-  );
+  const suggestedReplyEmails = useMemo(() => (pendingEmails ?? []).filter((e) => !!e.draftReply), [pendingEmails]);
+  const suggestedRepliesCount = suggestedReplyEmails.length;
+
+  const priorityRows: DrillDownRow[] = (summary?.highPriorityCustomers ?? []).map((c, i) => ({
+    id: `${c.businessName}-${i}`,
+    title: c.businessName,
+    subtitle: c.reason,
+  }));
+
+  const replyRows: DrillDownRow[] = suggestedReplyEmails.map((e) => ({
+    id: e._id,
+    title: e.subject || '(no subject)',
+    subtitle: e.matchedBusinessName ?? e.fromAddress,
+    meta: new Date(e.receivedAt).toLocaleString(),
+  }));
+
+  const popupConfig: Record<'due' | 'overdue' | 'priority' | 'replies', { title: string; rows: DrillDownRow[]; onRowClick?: (row: DrillDownRow) => void }> = {
+    due: { title: 'Due Today', rows: dueTodayRows },
+    overdue: { title: 'Overdue Follow-Ups', rows: overdueRows },
+    priority: { title: 'High-Priority Customers', rows: priorityRows },
+    replies: { title: 'Suggested Replies', rows: replyRows, onRowClick: (row) => setSelectedEmailId(row.id) },
+  };
 
   return (
     <div className={styles.tabContent}>
@@ -132,6 +166,7 @@ export function AiFollowupSummarySection() {
             value={dueTodayCount}
             note="customer actions"
             info={<p>Pending follow-up reminders whose due date is today.</p>}
+            onClick={() => setOpenPopup('due')}
           />
           <StatCard
             icon={FiAlertTriangle}
@@ -139,6 +174,7 @@ export function AiFollowupSummarySection() {
             value={overdueCount}
             note="need a response"
             info={<p>Pending follow-up reminders whose due date has already passed.</p>}
+            onClick={() => setOpenPopup('overdue')}
           />
           <StatCard
             icon={FiStar}
@@ -151,6 +187,7 @@ export function AiFollowupSummarySection() {
                 the AI's own reasoning produces it, which is why it shows "—" until you generate a summary.
               </p>
             }
+            onClick={summary ? () => setOpenPopup('priority') : undefined}
           />
           <StatCard
             icon={FiMessageSquare}
@@ -158,6 +195,7 @@ export function AiFollowupSummarySection() {
             value={suggestedRepliesCount}
             note="ready to review"
             info={<p>Pending inbox emails where the AI has already prepared a draft reply — always available, independent of whether an AI summary has been generated.</p>}
+            onClick={() => setOpenPopup('replies')}
           />
         </div>
       )}
@@ -237,6 +275,16 @@ export function AiFollowupSummarySection() {
           ))
         )}
       </SectionCard>
+
+      <DrillDownModal
+        open={!!openPopup}
+        onClose={() => setOpenPopup(null)}
+        title={openPopup ? popupConfig[openPopup].title : ''}
+        isLoading={false}
+        rows={openPopup ? popupConfig[openPopup].rows : []}
+        onRowClick={openPopup ? popupConfig[openPopup].onRowClick : undefined}
+      />
+      <EmailDetailModal id={selectedEmailId} onClose={() => setSelectedEmailId(null)} />
     </div>
   );
 }
