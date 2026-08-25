@@ -9,6 +9,7 @@ export * from './Switch';
 export * from './Skeleton';
 export * from './Spinner';
 export * from './Tooltip';
+export * from './InfoPopover';
 export * from './Modal';
 export * from './Dropdown';
 export * from './Tabs';

@@ -5,23 +5,42 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { FiTrendingUp, FiPackage, FiArrowUpRight, FiTarget, FiZap, FiHelpCircle } from 'react-icons/fi';
 import type { IconType } from 'react-icons';
-import { Badge, Card, Skeleton } from '@/components/ui';
+import type { ReactNode } from 'react';
+import { Badge, Card, InfoPopover, Skeleton } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { formatINR as money } from '@/utils/currency';
 import { vendorProfitabilityService, type VendorCustomerCompareResult } from '@/services/vendorProfitabilityService';
 import { ROUTES } from '@/constants/routes';
 import biStyles from '@/features/business-intelligence/business-intelligence.module.css';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import styles from '../analytics-dashboard.module.css';
 import statStyles from './VendorProfitabilityStats.module.css';
 import panelStyles from './VendorProfitabilityPanel.module.css';
 
-function StatCard({ icon: Icon, label, value, note }: { icon: IconType; label: string; value: string; note: string }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  note,
+  info,
+  onClick,
+}: {
+  icon: IconType;
+  label: string;
+  value: string;
+  note: string;
+  info?: ReactNode;
+  onClick?: () => void;
+}) {
   return (
-    <Card className={statStyles.cell}>
+    <Card className={statStyles.cell} interactive={!!onClick} onClick={onClick}>
       <span className={statStyles.iconBadge}>
         <Icon size={16} />
       </span>
-      <div className={statStyles.label}>{label}</div>
+      <div className={statStyles.label}>
+        {label}
+        {info && <InfoPopover title={label}>{info}</InfoPopover>}
+      </div>
       <div className={statStyles.value}>{value}</div>
       <div className={statStyles.note}>{note}</div>
     </Card>
@@ -61,6 +80,14 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
   });
 
   const hasRows = !!data && data.rows.length > 0;
+  const [showRows, setShowRows] = useState(false);
+  const dealRows: DrillDownRow[] = (data?.rows ?? []).map((r) => ({
+    id: r.dealId,
+    title: r.dealName ?? r.dealId,
+    subtitle: r.vendorNames.join(', ') || undefined,
+    meta: r.currencyMismatch ? 'Currency mismatch' : r.grossMarginPct !== null ? `${r.grossMarginPct}% margin` : undefined,
+    value: r.currencyMismatch ? undefined : (r.grossProfit ?? 0),
+  }));
 
   return (
     <div className={styles.tabContent}>
@@ -84,19 +111,32 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
             label="Customer revenue"
             value={money(data.totals.customerRevenue)}
             note={data.totals.customerRevenue > 0 ? 'in this period' : 'no linked transactions'}
+            info={<p>Revenue from deals/quotes that have a vendor cost linked to them — not total org revenue. Only transactions with a real vendor-cost link factor into this comparison.</p>}
+            onClick={() => setShowRows(true)}
           />
-          <StatCard icon={FiPackage} label="Vendor cost paid" value={money(data.totals.vendorCost)} note="in this period" />
+          <StatCard
+            icon={FiPackage}
+            label="Vendor cost paid"
+            value={money(data.totals.vendorCost)}
+            note="in this period"
+            info={<p>Total vendor cost from paid or partially-paid finance documents linked to a deal — driven by real invoice payment status, not vendor quotes (which only supply the vendor's name).</p>}
+            onClick={() => setShowRows(true)}
+          />
           <StatCard
             icon={FiArrowUpRight}
             label="Gross profit"
             value={money(data.totals.grossProfit)}
             note={hasRows ? 'in this period' : 'awaiting linked costs'}
+            info={<p>Customer revenue minus vendor cost paid, summed across every deal with a linked cost. Transactions with mismatched currencies are excluded from this total (flagged separately below).</p>}
+            onClick={() => setShowRows(true)}
           />
           <StatCard
             icon={FiTarget}
             label="Gross margin"
             value={data.totals.grossMarginPct !== null ? `${data.totals.grossMarginPct}%` : '—'}
             note={data.totals.grossMarginPct !== null ? 'of customer revenue' : 'not enough data'}
+            info={<p>Gross profit as a percentage of customer revenue. No Net Profit figure is shown anywhere on this tab — only Gross.</p>}
+            onClick={() => setShowRows(true)}
           />
         </div>
       )}
@@ -105,7 +145,13 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
         <div className={panelStyles.header}>
           <div className={panelStyles.headerText}>
             <div className={panelStyles.label}>Cost Intelligence</div>
-            <div className={panelStyles.title}>Vendor profitability</div>
+            <div className={panelStyles.title}>
+              Vendor profitability
+              <InfoPopover title="Vendor profitability">
+                <p>One row per deal that has a linked, paid vendor cost. <strong>Vendor cost</strong> comes from paid/partially-paid finance documents linked to the deal; <strong>customer revenue/paid</strong> from the deal's own quote(s).</p>
+                <p>A row shows a "Currency mismatch" badge instead of gross profit when its vendor cost and customer revenue are in different currencies — those are excluded from the totals above rather than converted.</p>
+              </InfoPopover>
+            </div>
             <p className={panelStyles.subtitle}>Connect vendor quotes and payments to understand margin by deal.</p>
           </div>
           {hasRows && (
@@ -225,6 +271,8 @@ export function VendorProfitabilitySection({ dateFrom, dateTo }: { dateFrom: str
           )}
         </div>
       )}
+
+      <DrillDownModal open={showRows} onClose={() => setShowRows(false)} title="Vendor Profitability by Deal" isLoading={isLoading} rows={dealRows} />
     </div>
   );
 }

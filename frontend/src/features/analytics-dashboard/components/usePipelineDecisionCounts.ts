@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { dealsService } from '@/services/dealsService';
+import { dealsService, type Deal } from '@/services/dealsService';
 import { quotesService } from '@/services/quotesService';
 
 export interface PipelineDecisionCounts {
@@ -8,6 +8,12 @@ export interface PipelineDecisionCounts {
   // same real join DealsNeedingDecisionTable uses (dealsService + quotesService,
   // no dedicated backend endpoint for this exact cross-reference).
   awaitingResponseCount: number;
+  // Additive — the real deal records behind the two derived buckets, so
+  // DealFunnelCard/DealStatusDistributionCard's click-to-drill-down popups
+  // never need a second, duplicate join of the same already-fetched data.
+  awaitingResponseDeals: Deal[];
+  inReviewDeals: Deal[];
+  openDeals: Deal[];
   isLoading: boolean;
 }
 
@@ -31,11 +37,24 @@ export function usePipelineDecisionCounts(dateFrom: string, dateTo: string, stor
     queryFn: () => quotesService.listFiltered({ dateFrom, dateTo }, 1, 100),
   });
 
-  const awaitingResponseCount = useMemo(() => {
-    if (!openDeals || !quotesInRange) return 0;
-    const openDealIds = new Set(openDeals.items.map((d) => d._id));
-    return quotesInRange.items.filter((q) => q.dealId && openDealIds.has(q.dealId) && q.clientApprovalStatus !== 'approved').length;
+  const { awaitingResponseDeals, inReviewDeals } = useMemo(() => {
+    if (!openDeals || !quotesInRange) return { awaitingResponseDeals: [], inReviewDeals: [] };
+    const awaitingDealIds = new Set(
+      quotesInRange.items.filter((q) => q.dealId && q.clientApprovalStatus !== 'approved').map((q) => q.dealId!),
+    );
+    const awaiting: Deal[] = [];
+    const review: Deal[] = [];
+    for (const deal of openDeals.items) {
+      (awaitingDealIds.has(deal._id) ? awaiting : review).push(deal);
+    }
+    return { awaitingResponseDeals: awaiting, inReviewDeals: review };
   }, [openDeals, quotesInRange]);
 
-  return { awaitingResponseCount, isLoading: dealsLoading || quotesLoading };
+  return {
+    awaitingResponseCount: awaitingResponseDeals.length,
+    awaitingResponseDeals,
+    inReviewDeals,
+    openDeals: openDeals?.items ?? [],
+    isLoading: dealsLoading || quotesLoading,
+  };
 }

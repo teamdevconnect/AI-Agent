@@ -1,26 +1,46 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import toast from 'react-hot-toast';
 import { FiZap, FiClock, FiAlertTriangle, FiStar, FiMessageSquare } from 'react-icons/fi';
 import type { IconType } from 'react-icons';
-import { Card, SectionCard, Skeleton } from '@/components/ui';
+import { Card, InfoPopover, SectionCard, Skeleton } from '@/components/ui';
 import { extractErrorMessage } from '@/utils/errors';
 import { aiFollowupSummaryService } from '@/services/aiFollowupSummaryService';
 import { emailIntelligenceService } from '@/services/emailIntelligenceService';
+import { EmailDetailModal } from '@/features/business-intelligence/components/EmailDetailModal';
 import { PriorityQueueCard } from './PriorityQueueCard';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import biStyles from '@/features/business-intelligence/business-intelligence.module.css';
 import styles from '../analytics-dashboard.module.css';
 import heroStyles from './AiFollowupHero.module.css';
 import statStyles from './AiFollowupStats.module.css';
 
-function StatCard({ icon: Icon, label, value, note }: { icon: IconType; label: string; value: string | number; note: string }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  note,
+  info,
+  onClick,
+}: {
+  icon: IconType;
+  label: string;
+  value: string | number;
+  note: string;
+  info?: ReactNode;
+  onClick?: () => void;
+}) {
   return (
-    <Card className={statStyles.cell}>
+    <Card className={statStyles.cell} interactive={!!onClick} onClick={onClick}>
       <span className={statStyles.iconBadge}>
         <Icon size={16} />
       </span>
-      <div className={statStyles.label}>{label}</div>
+      <div className={statStyles.label}>
+        {label}
+        {info && <InfoPopover title={label}>{info}</InfoPopover>}
+      </div>
       <div className={statStyles.value}>{value}</div>
       <div className={statStyles.note}>{note}</div>
     </Card>
@@ -46,6 +66,8 @@ function StatCard({ icon: Icon, label, value, note }: { icon: IconType; label: s
 export function AiFollowupSummarySection() {
   const queryClient = useQueryClient();
   const [generating, setGenerating] = useState(false);
+  const [openPopup, setOpenPopup] = useState<'due' | 'overdue' | 'priority' | 'replies' | null>(null);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['dash-ai-followup-summary'],
@@ -74,19 +96,47 @@ export function AiFollowupSummarySection() {
   const summary = data?.aiGeneratedSummary ?? null;
   const reminders = data?.followUpReminders ?? [];
 
-  const { dueTodayCount, overdueCount } = useMemo(() => {
+  const { dueTodayCount, overdueCount, dueTodayRows, overdueRows } = useMemo(() => {
     const today = dayjs();
     const pending = reminders.filter((f) => f.status === 'pending');
+    const toRow = (f: (typeof reminders)[number]): DrillDownRow => ({
+      id: f._id,
+      title: f.title,
+      subtitle: f.businessName ?? undefined,
+      meta: new Date(f.dueDate).toLocaleDateString(),
+    });
+    const dueToday = pending.filter((f) => dayjs(f.dueDate).isSame(today, 'day'));
+    const overdue = pending.filter((f) => dayjs(f.dueDate).isBefore(today, 'day'));
     return {
-      dueTodayCount: pending.filter((f) => dayjs(f.dueDate).isSame(today, 'day')).length,
-      overdueCount: pending.filter((f) => dayjs(f.dueDate).isBefore(today, 'day')).length,
+      dueTodayCount: dueToday.length,
+      overdueCount: overdue.length,
+      dueTodayRows: dueToday.map(toRow),
+      overdueRows: overdue.map(toRow),
     };
   }, [reminders]);
 
-  const suggestedRepliesCount = useMemo(
-    () => (pendingEmails ?? []).filter((e) => !!e.draftReply).length,
-    [pendingEmails],
-  );
+  const suggestedReplyEmails = useMemo(() => (pendingEmails ?? []).filter((e) => !!e.draftReply), [pendingEmails]);
+  const suggestedRepliesCount = suggestedReplyEmails.length;
+
+  const priorityRows: DrillDownRow[] = (summary?.highPriorityCustomers ?? []).map((c, i) => ({
+    id: `${c.businessName}-${i}`,
+    title: c.businessName,
+    subtitle: c.reason,
+  }));
+
+  const replyRows: DrillDownRow[] = suggestedReplyEmails.map((e) => ({
+    id: e._id,
+    title: e.subject || '(no subject)',
+    subtitle: e.matchedBusinessName ?? e.fromAddress,
+    meta: new Date(e.receivedAt).toLocaleString(),
+  }));
+
+  const popupConfig: Record<'due' | 'overdue' | 'priority' | 'replies', { title: string; rows: DrillDownRow[]; onRowClick?: (row: DrillDownRow) => void }> = {
+    due: { title: 'Due Today', rows: dueTodayRows },
+    overdue: { title: 'Overdue Follow-Ups', rows: overdueRows },
+    priority: { title: 'High-Priority Customers', rows: priorityRows },
+    replies: { title: 'Suggested Replies', rows: replyRows, onRowClick: (row) => setSelectedEmailId(row.id) },
+  };
 
   return (
     <div className={styles.tabContent}>
@@ -110,15 +160,43 @@ export function AiFollowupSummarySection() {
         <Skeleton height={100} />
       ) : (
         <div className={statStyles.grid}>
-          <StatCard icon={FiClock} label="Due today" value={dueTodayCount} note="customer actions" />
-          <StatCard icon={FiAlertTriangle} label="Overdue" value={overdueCount} note="need a response" />
+          <StatCard
+            icon={FiClock}
+            label="Due today"
+            value={dueTodayCount}
+            note="customer actions"
+            info={<p>Pending follow-up reminders whose due date is today.</p>}
+            onClick={() => setOpenPopup('due')}
+          />
+          <StatCard
+            icon={FiAlertTriangle}
+            label="Overdue"
+            value={overdueCount}
+            note="need a response"
+            info={<p>Pending follow-up reminders whose due date has already passed.</p>}
+            onClick={() => setOpenPopup('overdue')}
+          />
           <StatCard
             icon={FiStar}
             label="High priority"
             value={summary ? summary.highPriorityCustomers.length : '—'}
             note={summary ? 'open opportunities' : 'generate a summary to see this'}
+            info={
+              <p>
+                Customers the AI judged high-priority when the summary below was generated — this isn't a stored field, only
+                the AI's own reasoning produces it, which is why it shows "—" until you generate a summary.
+              </p>
+            }
+            onClick={summary ? () => setOpenPopup('priority') : undefined}
           />
-          <StatCard icon={FiMessageSquare} label="Suggested replies" value={suggestedRepliesCount} note="ready to review" />
+          <StatCard
+            icon={FiMessageSquare}
+            label="Suggested replies"
+            value={suggestedRepliesCount}
+            note="ready to review"
+            info={<p>Pending inbox emails where the AI has already prepared a draft reply — always available, independent of whether an AI summary has been generated.</p>}
+            onClick={() => setOpenPopup('replies')}
+          />
         </div>
       )}
 
@@ -175,7 +253,11 @@ export function AiFollowupSummarySection() {
         </div>
       )}
 
-      <SectionCard title="Real Follow-Up Reminders" glass>
+      <SectionCard
+        title="Real Follow-Up Reminders"
+        glass
+        info={<p>Every pending follow-up reminder for this org/store, regardless of due date — the full list the Due today/Overdue stat tiles above are counted from.</p>}
+      >
         {isLoading || !data ? (
           <Skeleton height={160} />
         ) : data.followUpReminders.length === 0 ? (
@@ -193,6 +275,16 @@ export function AiFollowupSummarySection() {
           ))
         )}
       </SectionCard>
+
+      <DrillDownModal
+        open={!!openPopup}
+        onClose={() => setOpenPopup(null)}
+        title={openPopup ? popupConfig[openPopup].title : ''}
+        isLoading={false}
+        rows={openPopup ? popupConfig[openPopup].rows : []}
+        onRowClick={openPopup ? popupConfig[openPopup].onRowClick : undefined}
+      />
+      <EmailDetailModal id={selectedEmailId} onClose={() => setSelectedEmailId(null)} />
     </div>
   );
 }

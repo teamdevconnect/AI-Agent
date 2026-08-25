@@ -1,12 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import clsx from 'clsx';
 import { AreaChart, Area, XAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { FiArrowUpRight, FiArrowDownRight } from 'react-icons/fi';
-import { Card } from '@/components/ui';
+import { Card, InfoPopover } from '@/components/ui';
 import { formatINR as money } from '@/utils/currency';
 import { dealsService } from '@/services/dealsService';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import styles from './RevenueMomentumCard.module.css';
 
 export interface RevenueMomentumCardProps {
@@ -23,6 +24,7 @@ export interface RevenueMomentumCardProps {
 // no won deals genuinely show zero rather than being skipped, so the chart
 // doesn't imply activity that didn't happen.
 export function RevenueMomentumCard({ dateFrom, dateTo, storeId }: RevenueMomentumCardProps) {
+  const [showDeals, setShowDeals] = useState(false);
   const { data: wonDeals, isLoading } = useQuery({
     queryKey: ['analytics-revenue-momentum', dateFrom, dateTo, storeId],
     queryFn: () =>
@@ -59,10 +61,23 @@ export function RevenueMomentumCard({ dateFrom, dateTo, storeId }: RevenueMoment
     return { series: points, total: totalValue, momentumPct: pct };
   }, [wonDeals, dateFrom, dateTo]);
 
+  const dealRows: DrillDownRow[] = (wonDeals?.items ?? []).map((d) => ({
+    id: d._id,
+    title: d.name,
+    subtitle: d.expectedClosingDate,
+    value: d.monetaryValue,
+  }));
+
   return (
-    <Card className={styles.card}>
+    <Card className={styles.card} interactive={series.length > 1} onClick={series.length > 1 ? () => setShowDeals(true) : undefined}>
       <div className={styles.label}>Performance Signal</div>
-      <div className={styles.title}>Revenue momentum</div>
+      <div className={styles.title}>
+        Revenue momentum
+        <InfoPopover title="Revenue momentum">
+          <p>Day-by-day won-deal value across the selected period, bucketed by each deal's expected closing date. Days with no won deals genuinely show zero.</p>
+          <p>The percentage compares the second half of the period's total against the first half — positive means revenue is accelerating, negative means it's slowing.</p>
+        </InfoPopover>
+      </div>
 
       <div className={styles.valueRow}>
         <span className={styles.value}>{money(total)}</span>
@@ -117,6 +132,14 @@ export function RevenueMomentumCard({ dateFrom, dateTo, storeId }: RevenueMoment
           </ResponsiveContainer>
         </div>
       )}
+
+      <DrillDownModal
+        open={showDeals}
+        onClose={() => setShowDeals(false)}
+        title="Won Deals in This Period"
+        isLoading={isLoading}
+        rows={dealRows}
+      />
     </Card>
   );
 }

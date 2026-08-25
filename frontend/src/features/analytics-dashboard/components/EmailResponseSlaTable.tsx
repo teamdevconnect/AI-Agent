@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Skeleton } from '@/components/ui';
+import { Card, Skeleton, InfoPopover } from '@/components/ui';
 import { emailAnalyticsService } from '@/services/emailAnalyticsService';
+import { EmailDetailModal } from '@/features/business-intelligence/components/EmailDetailModal';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import styles from './EmailResponseSlaTable.module.css';
 
 function bucketCount(buckets: { bucket: string; count: number }[] | undefined, key: string): number {
@@ -27,6 +29,14 @@ export interface EmailResponseSlaTableProps {
 // bucket because a missed email is by definition already >24h old.
 export function EmailResponseSlaTable({ dateFrom, dateTo, storeId }: EmailResponseSlaTableProps) {
   const filters = { dateFrom, dateTo, storeId: storeId ? [storeId] : [] };
+  const [selectedEmployee, setSelectedEmployee] = useState<{ userId: string; userName: string } | null>(null);
+  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+
+  const { data: employeeMissed, isLoading: employeeMissedLoading } = useQuery({
+    queryKey: ['dash-email-sla-employee-missed', dateFrom, dateTo, storeId, selectedEmployee?.userId],
+    queryFn: () => emailAnalyticsService.listEmails('missed', { ...filters, employeeId: [selectedEmployee!.userId] }, 1, 100),
+    enabled: !!selectedEmployee,
+  });
 
   const { data: sent, isLoading: sentLoading } = useQuery({
     queryKey: ['dash-email-sla-sent', dateFrom, dateTo, storeId],
@@ -56,9 +66,22 @@ export function EmailResponseSlaTable({ dateFrom, dateTo, storeId }: EmailRespon
 
   const isLoading = sentLoading || missedLoading;
 
+  const employeeMissedRows: DrillDownRow[] = (employeeMissed?.items ?? []).map((item) => ({
+    id: item._id,
+    title: item.subject || '(no subject)',
+    subtitle: item.matchedBusinessName ?? item.fromAddress,
+    meta: new Date(item.receivedAt).toLocaleString(),
+  }));
+
   return (
     <Card className={styles.card}>
-      <div className={styles.title}>Email response SLA</div>
+      <div className={styles.title}>
+        Email response SLA
+        <InfoPopover title="Email response SLA">
+          <p><strong>Missed</strong> means a relevant email still awaiting a reply more than 24 hours after it was received — not a general response-time metric.</p>
+          <p>The three age buckets (24–48h, 48–72h, 72h+) break down how overdue each employee's missed emails are; there's no 0–24h bucket since a missed email is already past 24h by definition. <strong>Urgent</strong> counts missed emails the AI flagged as urgent priority.</p>
+        </InfoPopover>
+      </div>
       <p className={styles.subtitle}>Sent vs missed, bucketed by time to reply.</p>
 
       {isLoading ? (
@@ -84,7 +107,7 @@ export function EmailResponseSlaTable({ dateFrom, dateTo, storeId }: EmailRespon
                 const total = r.sent + r.missed;
                 const missedPct = total > 0 ? (r.missed / total) * 100 : 0;
                 return (
-                  <tr key={r.userId}>
+                  <tr key={r.userId} className={styles.clickableRow} onClick={() => setSelectedEmployee({ userId: r.userId, userName: r.userName })}>
                     <td className={styles.nameCell}>{r.userName}</td>
                     <td>{r.sent}</td>
                     <td>
@@ -106,6 +129,16 @@ export function EmailResponseSlaTable({ dateFrom, dateTo, storeId }: EmailRespon
           </table>
         </div>
       )}
+
+      <DrillDownModal
+        open={!!selectedEmployee}
+        onClose={() => setSelectedEmployee(null)}
+        title={selectedEmployee ? `${selectedEmployee.userName} — Missed Emails` : ''}
+        isLoading={employeeMissedLoading}
+        rows={employeeMissedRows}
+        onRowClick={(row) => setSelectedEmailId(row.id)}
+      />
+      <EmailDetailModal id={selectedEmailId} onClose={() => setSelectedEmailId(null)} />
     </Card>
   );
 }

@@ -20,6 +20,9 @@
 }
 
 .title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 4px;
   font-size: var(--text-md);
   font-weight: 700;

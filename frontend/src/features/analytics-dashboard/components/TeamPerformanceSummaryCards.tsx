@@ -1,22 +1,44 @@
 import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import type { IconType } from 'react-icons';
 import { FiTrendingUp, FiTarget, FiActivity, FiClock } from 'react-icons/fi';
-import { Card } from '@/components/ui';
+import { useState } from 'react';
+import { Card, InfoPopover } from '@/components/ui';
 import { formatINR as money } from '@/utils/currency';
 import { dealsService } from '@/services/dealsService';
 import { employeeProductivityService } from '@/services/employeeProductivityService';
 import type { AnalyticsDashboardOverview } from '@/services/analyticsDashboardService';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import styles from './TeamPerformanceSummaryCards.module.css';
 
-function StatCard({ icon: Icon, label, value, note, noteTone }: { icon: IconType; label: string; value: string | number; note?: string; noteTone?: 'positive' | 'negative' | 'neutral' }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  note,
+  noteTone,
+  info,
+  onClick,
+}: {
+  icon: IconType;
+  label: string;
+  value: string | number;
+  note?: string;
+  noteTone?: 'positive' | 'negative' | 'neutral';
+  info?: ReactNode;
+  onClick?: () => void;
+}) {
   return (
-    <Card className={styles.cell}>
+    <Card className={styles.cell} interactive={!!onClick} onClick={onClick}>
       <span className={styles.iconBadge}>
         <Icon size={16} />
       </span>
-      <div className={styles.label}>{label}</div>
+      <div className={styles.label}>
+        {label}
+        {info && <InfoPopover title={label}>{info}</InfoPopover>}
+      </div>
       <div className={styles.value}>{value}</div>
       {note && <div className={styles[`note-${noteTone ?? 'neutral'}`]}>{note}</div>}
     </Card>
@@ -37,9 +59,18 @@ export interface TeamPerformanceSummaryCardsProps {
 // employeeProductivityService's own real per-employee rows (same endpoint
 // "Workload by member" below uses, sharing its cache).
 export function TeamPerformanceSummaryCards({ data, dateFrom, dateTo, storeId }: TeamPerformanceSummaryCardsProps) {
+  const [openPopup, setOpenPopup] = useState<'revenue' | 'won' | 'completion' | 'overdue' | null>(null);
+
   const { data: productivity } = useQuery({
     queryKey: ['dash-productivity', dateFrom, dateTo, storeId],
     queryFn: () => employeeProductivityService.getOverview({ dateFrom, dateTo, employeeId: [], storeId: storeId ? [storeId] : [] }),
+  });
+
+  const { data: wonDealsList, isLoading: wonDealsListLoading } = useQuery({
+    queryKey: ['analytics-won-deals-list', dateFrom, dateTo, storeId],
+    queryFn: () =>
+      dealsService.listFiltered({ dealStatus: ['won'], dateFrom, dateTo, dateField: 'expectedClosingDate', ...(storeId ? { storeId: [storeId] } : {}) }, 1, 100),
+    enabled: openPopup === 'won' || openPopup === 'revenue',
   });
 
   const prevFrom = dayjs(dateFrom).subtract(1, 'month').format('YYYY-MM-DD');
@@ -92,6 +123,31 @@ export function TeamPerformanceSummaryCards({ data, dateFrom, dateTo, storeId }:
   const expectedPct = (daysElapsed / totalDaysInPeriod) * 100;
   const onTrack = completionPct !== null ? completionPct >= expectedPct * 0.9 : null;
 
+  const wonDealRows: DrillDownRow[] = (wonDealsList?.items ?? []).map((d) => ({
+    id: d._id,
+    title: d.name,
+    subtitle: d.expectedClosingDate,
+    value: d.monetaryValue,
+  }));
+
+  const completionRows: DrillDownRow[] = (productivity?.rows ?? []).map((r) => {
+    const completed = r.deals.completed + r.emails.completed + r.quotes.completed;
+    const assigned = r.deals.assigned + r.emails.assigned + r.quotes.assigned;
+    return { id: r.userId, title: r.userName, subtitle: `${completed}/${assigned} completed`, meta: assigned > 0 ? `${Math.round((completed / assigned) * 100)}%` : '—' };
+  });
+
+  const overdueRows: DrillDownRow[] = (productivity?.rows ?? [])
+    .map((r) => ({ userId: r.userId, userName: r.userName, overdue: r.deals.overdue + r.emails.overdue + r.quotes.overdue }))
+    .filter((r) => r.overdue > 0)
+    .map((r) => ({ id: r.userId, title: r.userName, value: r.overdue }));
+
+  const popupConfig: Record<'revenue' | 'won' | 'completion' | 'overdue', { title: string; rows: DrillDownRow[]; isLoading: boolean }> = {
+    revenue: { title: 'Won Deals (Revenue)', rows: wonDealRows, isLoading: wonDealsListLoading },
+    won: { title: 'Won Deals', rows: wonDealRows, isLoading: wonDealsListLoading },
+    completion: { title: 'Completion by Member', rows: completionRows, isLoading: !productivity },
+    overdue: { title: 'Members with Overdue Work', rows: overdueRows, isLoading: !productivity },
+  };
+
   return (
     <div className={styles.grid}>
       <StatCard
@@ -100,6 +156,8 @@ export function TeamPerformanceSummaryCards({ data, dateFrom, dateTo, storeId }:
         value={money(data.revenue.achieved)}
         note={revenueTrendPct !== null ? `${revenueTrendPct >= 0 ? '+' : ''}${revenueTrendPct.toFixed(1)}% vs. previous period` : undefined}
         noteTone={revenueTrendPct !== null ? (revenueTrendPct >= 0 ? 'positive' : 'negative') : 'neutral'}
+        info={<p>Same revenue-achieved figure as the Overview tab's Revenue against target card. The trend percentage compares the last two points of the monthly revenue trend.</p>}
+        onClick={() => setOpenPopup('revenue')}
       />
       <StatCard
         icon={FiTarget}
@@ -107,6 +165,8 @@ export function TeamPerformanceSummaryCards({ data, dateFrom, dateTo, storeId }:
         value={data.deals.wonCount}
         note={`${wonDelta >= 0 ? '+' : ''}${wonDelta} vs. previous period`}
         noteTone={wonDelta >= 0 ? 'positive' : 'negative'}
+        info={<p>Deals marked Won whose expected closing date falls in this period, compared against the same count for the equivalent prior period.</p>}
+        onClick={() => setOpenPopup('won')}
       />
       <StatCard
         icon={FiActivity}
@@ -114,6 +174,14 @@ export function TeamPerformanceSummaryCards({ data, dateFrom, dateTo, storeId }:
         value={completionPct !== null ? `${completionPct.toFixed(1)}%` : '—'}
         note={onTrack !== null ? (onTrack ? 'On track for this period' : 'Behind pace for this period') : undefined}
         noteTone={onTrack === false ? 'negative' : 'positive'}
+        info={
+          <p>
+            Completed work ÷ assigned work across every team member's deals, emails, and quotes combined (the same data
+            "Workload by member" below shows per-person). On track/behind pace compares this against how much of the period
+            has elapsed.
+          </p>
+        }
+        onClick={() => setOpenPopup('completion')}
       />
       <StatCard
         icon={FiClock}
@@ -125,6 +193,16 @@ export function TeamPerformanceSummaryCards({ data, dateFrom, dateTo, storeId }:
             : 'Nothing overdue'
         }
         noteTone={totals.overdue > 0 ? 'negative' : 'positive'}
+        info={<p>Count of overdue deals, emails, and quotes summed across the whole team, from the same per-member breakdown as "Workload by member" below.</p>}
+        onClick={() => setOpenPopup('overdue')}
+      />
+
+      <DrillDownModal
+        open={!!openPopup}
+        onClose={() => setOpenPopup(null)}
+        title={openPopup ? popupConfig[openPopup].title : ''}
+        isLoading={openPopup ? popupConfig[openPopup].isLoading : false}
+        rows={openPopup ? popupConfig[openPopup].rows : []}
       />
     </div>
   );

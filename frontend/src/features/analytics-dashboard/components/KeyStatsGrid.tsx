@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { Card } from '@/components/ui';
+import { Card, InfoPopover } from '@/components/ui';
 import { formatINR as money } from '@/utils/currency';
 import { dealsService } from '@/services/dealsService';
 import { customerQuotePaymentService } from '@/services/customerQuotePaymentService';
+import { DrillDownModal, type DrillDownRow } from './DrillDownModal';
 import styles from './KeyStatsGrid.module.css';
+
+type OpenDrilldown = 'conversion' | 'outstanding' | 'health' | null;
 
 const BUCKET_LABELS: Record<string, string> = {
   noDueDate: 'no due date',
@@ -41,6 +44,25 @@ export interface KeyStatsGridProps {
 // small real datasets (same real endpoints the Pipeline & Quotes and
 // Customers & Email tabs already use) rather than inventing numbers.
 export function KeyStatsGrid({ deals, businessHealthScore, revenueTrend, dateFrom, dateTo, storeId, onDealsClick }: KeyStatsGridProps) {
+  const [openDrilldown, setOpenDrilldown] = useState<OpenDrilldown>(null);
+
+  const { data: closedDealsResult, isLoading: closedDealsLoading } = useQuery({
+    queryKey: ['analytics-closed-deals', dateFrom, dateTo, storeId],
+    queryFn: () =>
+      dealsService.listFiltered(
+        { dealStatus: ['won', 'lost'], dateFrom, dateTo, dateField: 'expectedClosingDate', ...(storeId ? { storeId: [storeId] } : {}) },
+        1,
+        100,
+      ),
+    enabled: openDrilldown === 'conversion',
+  });
+
+  const { data: outstandingQuotesResult, isLoading: outstandingQuotesLoading } = useQuery({
+    queryKey: ['analytics-outstanding-quotes', dateFrom, dateTo, storeId],
+    queryFn: () => customerQuotePaymentService.listQuotes({ dateFrom, dateTo, employeeId: [], storeId: storeId ? [storeId] : [] }, 1, 100),
+    enabled: openDrilldown === 'outstanding',
+  });
+
   const { data: openDeals } = useQuery({
     queryKey: ['analytics-open-deals-aging', dateFrom, dateTo, storeId],
     queryFn: () =>
@@ -76,10 +98,32 @@ export function KeyStatsGrid({ deals, businessHealthScore, revenueTrend, dateFro
     ? paymentSummary.agingBuckets.filter((b) => b.bucket !== 'noDueDate' && b.bucket !== 'current').reduce((s, b) => s + b.amount, 0)
     : 0;
 
+  const closedDealRows: DrillDownRow[] = (closedDealsResult?.items ?? []).map((d) => ({
+    id: d._id,
+    title: d.name,
+    subtitle: d.dealStatus,
+    meta: d.expectedClosingDate,
+    value: d.monetaryValue,
+  }));
+
+  const outstandingRows: DrillDownRow[] = (outstandingQuotesResult?.items ?? [])
+    .map((q) => ({ id: q._id, title: q.clientDetails?.companyName ?? q.quoteName ?? 'Untitled quote', subtitle: `Quote #${q.quoteNumber ?? q._id.slice(-4)}`, outstanding: q.quoteAmount - q.paidAmount }))
+    .filter((r) => r.outstanding > 0)
+    .sort((a, b) => b.outstanding - a.outstanding)
+    .map((r) => ({ id: r.id, title: r.title, subtitle: r.subtitle, value: r.outstanding }));
+
+  const trendRows: DrillDownRow[] = revenueTrend.map((t, i) => ({ id: `${t.period}-${i}`, title: t.period, value: t.achieved }));
+
   return (
     <div className={styles.grid}>
       <Card interactive={!!onDealsClick} onClick={onDealsClick} className={styles.cell}>
-        <div className={styles.label}>Deals Won</div>
+        <div className={styles.label}>
+          Deals Won
+          <InfoPopover title="Deals Won">
+            <p>Count of deals marked <strong>Won</strong> whose expected closing date falls in the selected period.</p>
+            <p><strong>Overdue</strong>/<strong>pending</strong> below refer to this period's still-open deals: overdue ones have an expected closing date already in the past.</p>
+          </InfoPopover>
+        </div>
         <div className={styles.value}>{deals.wonCount}</div>
         <div className={styles.caption}>of {totalDeals} deals in range</div>
         <div className={styles.divider} />
@@ -88,16 +132,31 @@ export function KeyStatsGrid({ deals, businessHealthScore, revenueTrend, dateFro
         </div>
       </Card>
 
-      <Card className={styles.cell}>
-        <div className={styles.label}>Conversion</div>
+      <Card className={styles.cell} interactive onClick={() => setOpenDrilldown('conversion')}>
+        <div className={styles.label}>
+          Conversion
+          <InfoPopover title="Conversion">
+            <p>Won deals ÷ closed deals (won + lost) in this period, as a percentage.</p>
+            <p>Only deals that have actually closed count — open deals aren't included in either side of the ratio.</p>
+          </InfoPopover>
+        </div>
         <div className={styles.value}>{conversionPct !== null ? `${conversionPct}%` : '—'}</div>
         <div className={styles.caption}>won / closed deals</div>
         <div className={styles.divider} />
         <div className={styles.footer}>{deals.lostCount} deals lost this month</div>
       </Card>
 
-      <Card className={styles.cell}>
-        <div className={styles.label}>Business Health</div>
+      <Card className={styles.cell} interactive={revenueTrend.length > 1} onClick={revenueTrend.length > 1 ? () => setOpenDrilldown('health') : undefined}>
+        <div className={styles.label}>
+          Business Health
+          <InfoPopover title="Business Health">
+            <p>
+              A weighted score out of 100: <strong>60%</strong> revenue achievement against target (capped at 100%) plus{' '}
+              <strong>40%</strong> follow-up health (100% minus the share of overdue tasks across the team).
+            </p>
+            <p>The sparkline below traces the same revenue trend shown on the Revenue against target card.</p>
+          </InfoPopover>
+        </div>
         <div className={styles.value}>{businessHealthScore ?? '—'}</div>
         <div className={styles.caption}>composite score out of 100</div>
         {revenueTrend.length > 1 && (
@@ -111,8 +170,14 @@ export function KeyStatsGrid({ deals, businessHealthScore, revenueTrend, dateFro
         )}
       </Card>
 
-      <Card className={styles.cell}>
-        <div className={styles.label}>Outstanding</div>
+      <Card className={styles.cell} interactive onClick={() => setOpenDrilldown('outstanding')}>
+        <div className={styles.label}>
+          Outstanding
+          <InfoPopover title="Outstanding">
+            <p>Total unpaid amount across quotes in this period (quote amount minus what's been paid so far), from the same payment records the Pipeline &amp; Quotes tab uses.</p>
+            <p>The caption shows which aging bucket (current, 1–30, 31–60, 60+ days overdue) holds most of that total.</p>
+          </InfoPopover>
+        </div>
         <div className={styles.value}>{totalOutstanding !== null ? money(totalOutstanding) : '—'}</div>
         <div className={styles.caption}>{bucketSentence ?? 'Loading…'}</div>
         <div className={styles.divider} />
@@ -120,6 +185,28 @@ export function KeyStatsGrid({ deals, businessHealthScore, revenueTrend, dateFro
           {overdueOutstanding > 0 ? `${money(overdueOutstanding)} overdue` : 'No overdue payments'}
         </div>
       </Card>
+
+      <DrillDownModal
+        open={openDrilldown === 'conversion'}
+        onClose={() => setOpenDrilldown(null)}
+        title="Closed Deals (Won + Lost)"
+        isLoading={closedDealsLoading}
+        rows={closedDealRows}
+      />
+      <DrillDownModal
+        open={openDrilldown === 'outstanding'}
+        onClose={() => setOpenDrilldown(null)}
+        title="Outstanding Quotes"
+        isLoading={outstandingQuotesLoading}
+        rows={outstandingRows}
+      />
+      <DrillDownModal
+        open={openDrilldown === 'health'}
+        onClose={() => setOpenDrilldown(null)}
+        title="Revenue Trend (Business Health Input)"
+        isLoading={false}
+        rows={trendRows}
+      />
     </div>
   );
 }
